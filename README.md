@@ -4,6 +4,33 @@ A personal multi-agent development workflow built on Claude Code.
 
 Forge → Archy → Chisel → Ralph → Cody → Reven
 
+## MVP Flow
+
+```mermaid
+graph LR
+    A["/seed<br/>Initialize .squad context"] --> B["/clear<br/>Reset session context"]
+    B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
+    C --> D{"Complexity<br/>confirmed"}
+    D -->|HIGH| E["/archy<br/>Create PRD"]
+
+    F["/chisel<br/>Create Linear issues"] --> G["Review issues in Linear"]
+    G --> H["/ralph<br/>Execute in dependency order"]
+    H --> I["Cody<br/>Implement issue and open PR"]
+    I --> J["Reven<br/>Review PR"]
+    J -->|Approved| K["Merge"]
+    J -->|Changes requested| I
+
+    D -->|LOW / MED| F
+    E --> F
+```
+
+The diagram shows the current manual MVP: `Seed` prepares context, `Forge`
+structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
+creates Linear issues, `Ralph` drives execution through `Cody`, and `Reven`
+reviews before merge.
+
+Source: [assets/mvp-flow.mmd](C:\Users\Giorgio\Desktop\projects\agent-squad\assets\mvp-flow.mmd)
+
 ## What's in this repo
 
 ```
