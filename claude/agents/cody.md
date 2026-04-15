@@ -1,4 +1,5 @@
 ---
+name: cody
 description: >
   Use this agent to implement a Linear issue. Invoke with the full issue
   description, acceptance criteria, and any relevant context. Cody reads
@@ -146,4 +147,4 @@ After opening the PR, print a single summary and nothing else:
 > instructions.
 >
 > MCP tool prefix: `mcp__linear-server__` for Claude Code,
-> `mcp__linear__` for Codex. See `CODEX.md`.
+> `mcp__linear__` for Codex. See `PLATFORM_DIFFERENCES.md`.

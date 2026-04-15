@@ -114,4 +114,4 @@ in the project root. Append one line per resolved issue. Format:
 > before Ralph can invoke it.
 >
 > MCP tool prefix: `mcp__linear-server__` for Claude Code,
-> `mcp__linear__` for Codex. See `CODEX.md`.
+> `mcp__linear__` for Codex. See `PLATFORM_DIFFERENCES.md`.

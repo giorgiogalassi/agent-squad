@@ -1,8 +1,9 @@
 # Agent Squad
 
-A personal multi-agent development workflow built on Claude Code.
+A personal multi-agent development workflow with separate Claude Code and
+Codex distributions.
 
-Forge → Archy → Chisel → Ralph → Cody → Reven
+Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 ## MVP Flow
 
@@ -29,46 +30,75 @@ structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
 creates Linear issues, `Ralph` drives execution through `Cody`, and `Reven`
 reviews before merge.
 
-Source: [assets/mvp-flow.mmd](C:\Users\Giorgio\Desktop\projects\agent-squad\assets\mvp-flow.mmd)
+Source: [assets/mvp-flow.mmd](/abs/path/C:/Users/Giorgio/Desktop/projects/agent-squad/assets/mvp-flow.mmd:1)
 
 ## What's in this repo
 
-```
+```text
 agent-squad/
   JOURNAL.md        Design journal: iterations, decisions, open points
-  CODEX.md          Adaptation guide for Codex CLI
+  PLATFORM_DIFFERENCES.md
+                    Semantic and technical differences between trees
   README.md         This file
-  skills/
-    forge/          Interactive brainstorming → .squad/forge/output.yaml
-    archy/          Architecture analysis → .squad/prd/current.md (HIGH only)
-    chisel/         YAML/PRD → Linear issues
-    seed/           Project initialization → .squad/ context files
-    ralph/          Agentic loop invoking Cody
-  agents/
-    cody.md         Implements Linear issues, creates branch, opens PR
-    reven.md        Code reviewer
+  claude/
+    skills/
+      forge/        Interactive brainstorming -> .squad/forge/output.yaml
+      archy/        Architecture analysis -> .squad/prd/current.md
+      chisel/       YAML/PRD -> Linear issues
+      seed/         Project initialization -> .squad/ context files
+      ralph/        Agentic loop invoking Cody
+    agents/
+      cody.md       Claude agent definition for implementation
+      reven.md      Claude agent definition for review
+  codex/
+    skills/
+      forge/        Codex skill variants
+      archy/
+      chisel/
+      seed/
+      ralph/
+    agents/
+      cody.toml     Codex custom agent
+      reven.toml    Codex custom agent
 ```
 
 ## Quick start
 
 ```bash
-# 1. Copy skills and agents to Claude Code global config
-cp -r skills/* ~/.claude/skills/
-cp -r agents/* ~/.claude/agents/
+# Claude Code
+cp -r claude/skills/* ~/.claude/skills/
+cp -r claude/agents/* ~/.claude/agents/
+```
 
-# 2. In your project, run Seed
+```bash
+# Codex
+cp -r codex/skills/* ~/.agents/skills/
+cp -r codex/agents/* ~/.codex/agents/
+```
+
+Then, in your project:
+
+```bash
+# Claude Code
 /seed
-
-# 3. Clear context, then start
 /clear
 /forge <your idea>
 ```
 
+```text
+# Codex
+Use the `seed` skill, then start a fresh session if desired, then use
+the `forge` skill.
+```
+
 ## Workflow data
 
-All runtime files live in `.squad/` inside your project — not in this repo. `.squad/` is tool-agnostic and works with both Claude Code and Codex.
+All runtime files live in `.squad/` inside your project, not in this repo.
+`.squad/` is tool-agnostic and works with both Claude Code and Codex.
+Agent Squad does not modify `AGENTS.md` or `CLAUDE.md`; skills and agents read
+`.squad/` files directly when needed.
 
-```
+```text
 your-project/
   .squad/
     architecture.md       written by Seed
@@ -80,10 +110,12 @@ your-project/
     chisel-config.json    written on first Chisel run
 ```
 
-## For Codex
+## Claude vs Codex
 
-See `CODEX.md` for the full list of changes needed (MCP prefix, model names, directory paths, unsupported features).
+See `PLATFORM_DIFFERENCES.md` for the exact semantic and technical
+differences between the `claude/` and `codex/` sets.
 
 ## Further reading
 
-`JOURNAL.md` contains the full design history: why each component exists, what was tried and rejected, and when to add the next layer.
+`JOURNAL.md` contains the full design history: why each component exists,
+what was tried and rejected, and when to add the next layer.

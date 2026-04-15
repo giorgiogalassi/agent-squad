@@ -1,0 +1,168 @@
+# Platform Differences
+
+This file explains the semantic and technical differences between the two
+distributions in this repo:
+
+- `claude/`
+- `codex/`
+
+Both trees implement the same Agent Squad workflow and write to the same
+`.squad/` runtime files. The differences are in platform mechanics, not in the
+overall product flow.
+
+---
+
+## Shared Semantics
+
+These behaviors are intentionally the same in both trees:
+
+- `Forge` runs discovery and writes `.squad/forge/output.yaml`
+- `Archy` turns high-complexity work into `.squad/prd/current.md`
+- `Chisel` decomposes YAML or PRD input into Linear issues
+- `Ralph` runs issues in dependency order using `Blocked by:` metadata
+- `Cody` implements issues and opens PRs
+- `Reven` reviews PRs against acceptance criteria and project conventions
+- `.squad/` is the shared workflow contract for both environments
+
+If one of those semantics changes, it should usually change in both trees.
+
+---
+
+## Semantic Differences By Component
+
+### Seed
+
+The biggest semantic difference is `Seed`.
+
+- Claude `Seed` and Codex `Seed` both generate `.squad/` runtime files
+- Neither variant modifies the user's project instruction file by default
+- Claude `Seed` is still written for Claude-native invocation patterns
+- Codex `Seed` is still written for Codex-native invocation patterns
+
+This is no longer about injecting `.squad` into startup instructions. The main
+difference is how each platform invokes and orchestrates the workflow.
+
+### Ralph
+
+`Ralph` is the second major semantic divergence.
+
+- Claude `Ralph` is written for Claude subagent orchestration
+- Codex `Ralph` is written for Codex subagent orchestration
+- The execution intent is the same, but the delegation mechanism is not
+
+### Cody and Reven
+
+`Cody` and `Reven` are behaviorally aligned across both trees, but their
+definition format differs enough that they cannot share one file.
+
+- Claude versions are native Claude subagent definitions
+- Codex versions are native Codex custom agent definitions
+- The role semantics are intentionally kept as close as possible
+
+### Forge, Archy, Chisel
+
+These are mostly semantically aligned. The primary differences are mechanical:
+
+- invocation wording
+- MCP tool prefix
+- platform-local metadata conventions
+
+---
+
+## Technical Differences
+
+### Project Entrypoint
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| Project instruction file | `CLAUDE.md` | `AGENTS.md` |
+| Required for Agent Squad | no | no |
+| Context loading style | skills and agents read `.squad/...` when needed | skills and agents read `.squad/...` when needed |
+
+### Skill Format
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| File shape | `SKILL.md` | `SKILL.md` |
+| Frontmatter approach | keeps `allowed-tools` | keeps only portable metadata |
+| Install target used in this repo | `~/.claude/skills/` | `~/.agents/skills/` |
+
+The Codex skill install path is based on the current local Codex skill system
+and a live Codex run on this machine, which attempted to load user skills from
+`~/.agents/skills/`.
+
+### Agent Format
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| File format | Markdown with YAML frontmatter | standalone TOML |
+| Verified required fields | `name`, `description` | `name`, `description`, `developer_instructions` |
+| Installed location | `.claude/agents/` or `~/.claude/agents/` | `.codex/agents/` or `~/.codex/agents/` |
+
+### Model Naming
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| Default implementation/review model | `sonnet` | `gpt-5.4` |
+| High-complexity analysis model | `opus` | `gpt-5.4` |
+
+### Linear MCP Prefix
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| Linear prefix | `mcp__linear-server__` | `mcp__linear__` |
+
+---
+
+## Verification Status
+
+### Verified from official docs
+
+- Claude custom agents are Markdown files with YAML frontmatter under
+  `.claude/agents/` or `~/.claude/agents/`
+- Claude agent files require `name` and `description`
+- Codex custom agents are standalone TOML files under `.codex/agents/` or
+  `~/.codex/agents/`
+- Codex custom agent files require `name`, `description`, and
+  `developer_instructions`
+
+### Verified from the local install
+
+- Codex currently uses `gpt-5.4` by default on this machine
+- Codex looks for user skills under `~/.agents/skills/` in live runs on this
+  machine
+- Codex plugin-packaged agents use `agents/openai.yaml`, but standalone custom
+  agents use TOML
+- A prompt-driven live check attempted subagent delegation in Codex, which
+  suggests custom agent discovery is wired into the runtime, but the
+  non-interactive run failed before returning a clean end-to-end confirmation
+
+### Inferred / lower-confidence areas
+
+- I did not validate the Codex custom agents through a clean interactive
+  session where they complete a full spawned task end-to-end
+- Claude skills in `claude/skills/` remain structurally consistent with the
+  repo's intended Claude workflow, but I did not execute a live Claude session
+  to validate every slash-command assumption end-to-end
+
+---
+
+## Copy Rules
+
+### Claude
+
+- `claude/skills/*` -> `~/.claude/skills/`
+- `claude/agents/*` -> `~/.claude/agents/`
+
+### Codex
+
+- `codex/skills/*` -> `~/.agents/skills/`
+- `codex/agents/*` -> `~/.codex/agents/`
+
+---
+
+## Maintenance Rule
+
+If you change workflow semantics, mirror the change in both trees.
+
+If you change only platform mechanics, change only the relevant tree.

@@ -2,12 +2,10 @@
 name: chisel
 description: >
   Use this skill to convert a Forge YAML or Archy PRD into Linear issues.
-  Triggers: /chisel, after Forge produces output.yaml, after Archy produces
-  current.md, or when the user asks to create issues from an existing
-  analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, mcp__linear-server__create_issue,
-  mcp__linear-server__list_issue_labels,
-  mcp__linear-server__search_issues, Write
+  Triggers: use the `chisel` skill after Forge produces output.yaml, after
+  Archy produces current.md, or when the user asks to create issues from an
+  existing analysis. Do NOT trigger on direct requests to write code or plan
+  features.
 ---
 
 # Chisel
@@ -79,7 +77,7 @@ other issues in the batch.
 
 ## Issue creation
 
-For each issue, call `mcp__linear-server__create_issue` with:
+For each issue, call `mcp__linear__create_issue` with:
 - `title`: short, action-oriented (verb + noun, max 60 chars)
 - `description`: markdown body. If the issue has a hard dependency,
   the FIRST line must be the dependency declaration (see below).
@@ -88,7 +86,7 @@ For each issue, call `mcp__linear-server__create_issue` with:
 - `projectId`: from config
 - `labelIds`: include review label from config if set
 - `stateId`: map `default_status` from config to the correct state ID
-  by calling `mcp__linear-server__search_issues` to infer available
+  by calling `mcp__linear__search_issues` to infer available
   states if needed
 
 Create issues one at a time. Do not batch them into a single call.
@@ -115,7 +113,7 @@ After all issues are created, print a summary:
   Created N issues:
   - [ISSUE-ID] Title
   - [ISSUE-ID] Title
-  Review them on Linear before invoking /ralph.
+  Review them on Linear before invoking Ralph.
 
 Nothing else after the summary.
 
@@ -133,7 +131,4 @@ Nothing else after the summary.
 
 ---
 
-> **Note:** MCP tool prefix depends on server name at configuration time.
-> For Claude Code with server name `linear-server`: `mcp__linear-server__`
-> For Codex with server name `linear`: `mcp__linear__`
-> See `CODEX.md` for the full adaptation guide.
+> **Note:** In the Codex set, use the Linear MCP prefix `mcp__linear__`.

@@ -1,4 +1,5 @@
 ---
+name: reven
 description: >
   Use this agent to review a pull request. Invoke with the PR number or
   branch name and the issue it addresses. Reven reads the diff, checks

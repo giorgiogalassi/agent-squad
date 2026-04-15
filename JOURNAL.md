@@ -145,7 +145,22 @@ All workflow data files (architecture.md, scout-cache.md, forge output, PRDs, Ch
 
 This separation makes the workflow data tool-agnostic. Both Claude Code and Codex can read and write `.squad/` files without knowing about each other's config conventions.
 
-> **Key decision:** `.squad/` is the workflow data directory. It contains only generated and consumed artifacts, never tool configuration. Skill definitions remain in tool-specific locations because their frontmatter formats require manual adaptation per tool. See `CODEX.md` for the full adaptation guide.
+> **Key decision:** `.squad/` is the workflow data directory. It contains only generated and consumed artifacts, never tool configuration. Skill definitions remain in tool-specific locations because their frontmatter formats require manual adaptation per tool.
+
+---
+
+### Iteration 12: Platform-Specific Distributions
+
+The repository originally treated Claude Code as the canonical source and documented Codex as an adaptation layer. That stopped matching the implementation once the definitions diverged enough that they could no longer be maintained as one shared tree.
+
+The repo was split into two first-class distributions:
+
+- `claude/` for Claude Code skills, agents, and example entrypoint files
+- `codex/` for Codex skills, agents, and example entrypoint files
+
+Both trees preserve the same workflow semantics and write to the same `.squad/` runtime files, but they differ in definition format, install paths, and orchestration mechanics. Those differences are documented explicitly in `PLATFORM_DIFFERENCES.md`.
+
+> **Key decision:** treat Claude and Codex as parallel implementations of the same workflow, not as one canonical implementation plus a thin port. Shared behavior lives in the journal and `.squad/` contract; platform-specific mechanics live in their own trees.
 
 ---
 
@@ -156,7 +171,7 @@ This separation makes the workflow data tool-agnostic. Both Claude Code and Code
 | Name | Type | Model | Role |
 |------|------|-------|------|
 | **Scout** | Skill | n/a | Project context snapshot, cached, invalidated on structural changes |
-| **Seed** | Skill | n/a | One-time project initialization. Produces `.squad/architecture.md` and `.squad/scout-cache.md`, ensures `.squad/` directories exist, updates CLAUDE.md imports. |
+| **Seed** | Skill | n/a | One-time project initialization. Produces `.squad/architecture.md` and `.squad/scout-cache.md`, ensures `.squad/` directories exist, and prepares shared runtime context. |
 | **Forge** | Skill | n/a | Interactive brainstorming session, produces structured YAML with complexity field |
 | **Chisel** | Skill | n/a | Converts YAML or PRD to Linear issues. Single input format, single output format |
 | **Archy** | Skill | Opus or Sonnet | Architectural analysis, produces PRD from Forge YAML on HIGH complexity only |
@@ -197,9 +212,12 @@ This separation makes the workflow data tool-agnostic. Both Claude Code and Code
 | `.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
 | `.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
 | `.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
-| `CLAUDE.md` | Max 200 lines. Entry point for all agents. |
-| `~/.claude/skills/` | Skill definitions. Tool-specific — not shared with Codex. |
-| `~/.claude/agents/` | Agent definitions. Tool-specific — not shared with Codex. |
+| `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
+| `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
+| `claude/agents/` | Claude-specific agent definitions to copy into `~/.claude/agents/`. |
+| `codex/AGENTS.md.example` | Example Codex project entrypoint. Optional; not required by the workflow. |
+| `codex/skills/` | Codex-specific skill definitions to copy into `~/.agents/skills/`. |
+| `codex/agents/` | Codex-specific custom agent definitions to copy into `~/.codex/agents/`. |
 
 ---
 
@@ -335,67 +353,29 @@ The assumption breaks if branch protection rules require review from someone oth
 
 ## 7. Skill and Agent Definitions
 
-Canonical definitions live in the files of this repository:
+Canonical definitions live in the platform-specific trees of this repository:
 
 ```
-skills/
-  forge/SKILL.md
-  archy/SKILL.md
-  chisel/SKILL.md
-  seed/SKILL.md
-  ralph/SKILL.md
-agents/
-  cody.md
-  reven.md
+claude/
+  skills/
+    forge/SKILL.md
+    archy/SKILL.md
+    chisel/SKILL.md
+    seed/SKILL.md
+    ralph/SKILL.md
+  agents/
+    cody.md
+    reven.md
+codex/
+  skills/
+    forge/SKILL.md
+    archy/SKILL.md
+    chisel/SKILL.md
+    seed/SKILL.md
+    ralph/SKILL.md
+  agents/
+    cody.toml
+    reven.toml
 ```
 
-For Claude Code, copy `skills/` to `~/.claude/skills/` and `agents/` to `~/.claude/agents/`.
-
-For Codex adaptations, see `CODEX.md`.
-
----
-
-## 8. Setup and Configuration
-
-### 8.1 Linear MCP — Claude Code
-
-```bash
-claude mcp add --transport http linear-server https://mcp.linear.app/mcp
-# Then in a session:
-/mcp   # complete OAuth flow
-```
-
-Tool prefix in skill definitions: `mcp__linear-server__`
-
-### 8.2 Linear MCP — Codex
-
-```toml
-# ~/.codex/config.toml
-[features]
-experimental_use_rmcp_client = true
-
-[mcp_servers.linear]
-url = "https://mcp.linear.app/mcp"
-```
-
-```bash
-codex mcp login linear
-```
-
-Tool prefix in skill definitions: `mcp__linear__`
-
-### 8.3 First run on a new project
-
-```
-1. Clone or submodule this repo
-2. Copy skills/ → ~/.claude/skills/  (or ~/.codex/skills/ for Codex)
-   Copy agents/ → ~/.claude/agents/
-3. cd <your-project>
-4. /seed          → creates .squad/ context files and directories
-5. /clear
-6. Review .squad/architecture.md and .squad/scout-cache.md
-7. /chisel        → triggers config flow, creates .squad/chisel-config.json
-8. Ready for /forge
-```
-
-> Re-run `/seed` after adding new major dependencies, changing framework, or restructuring folders. Always `/clear` after `/seed`.
+For exact format and behavior differences between the two trees, see `PLATFORM_DIFFERENCES.md`.
