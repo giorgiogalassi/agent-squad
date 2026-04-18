@@ -1,0 +1,15 @@
+graph LR
+    A["/seed<br/>Initialize .squad context"] --> B["/clear<br/>Reset session context"]
+    B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
+    C --> D{"Complexity<br/>confirmed"}
+    D -->|HIGH| E["/archy<br/>Create PRD"]
+
+    F["/chisel<br/>Create Linear issues"] --> G["Review issues in Linear"]
+    G --> H["/ralph<br/>Execute in dependency order"]
+    H --> I["Cody<br/>Implement issue and open PR"]
+    I --> J["Reven<br/>Review PR"]
+    J -->|Approved| K["Merge"]
+    J -->|Changes requested| I
+
+    D -->|LOW / MED| F
+    E --> F
