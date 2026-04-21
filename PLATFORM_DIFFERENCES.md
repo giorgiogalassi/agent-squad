@@ -67,6 +67,41 @@ These are mostly semantically aligned. The primary differences are mechanical:
 - MCP tool prefix
 - platform-local metadata conventions
 
+### Lore
+
+Lore is the most semantically divergent agent across platforms
+because Claude Code has native auto-memory and Codex does not.
+
+**Claude Lore** owns the cross-tool layer only:
+- Never duplicates content in ~/.claude/ auto-memory directories
+- Writes cross-tool preferences to development.md only
+- Does not write to project decisions.md (auto-memory handles that
+  locally for Claude Code sessions)
+
+**Codex Lore** owns the full memory layer:
+- Writes both global preferences and project-local decisions
+- lore prefer writes to both development.md and decisions.md
+
+**Shared behavior (identical across both):**
+- Vault location: .squad/lore-config.json → ~/second-brain/ default
+- lore start deduces project from git, always overwrites INDEX.md
+- Timestamp mismatch detection and inline recovery offer
+- 7-day staleness check with git branch status
+- status.md schema and overwrite behavior
+- Experience log schema with type field and 5 type definitions
+- lore end confirms active project for next session
+- lore recover reconstructs from git evidence
+- 100-line cap on development.md with curation step
+- Confirmation required before any write
+- <private> tag stripping
+- Cody incremental checkpoint at PR open
+- Instance namespacing ([claude-code] / [codex])
+
+**No MCP dependency in either platform.**
+The vault is a plain markdown directory. Both Lore definitions
+use Read, Write, and Bash tools exclusively. MCP is not used and
+not recommended for Lore's access patterns. See docs/backends.md.
+
 ---
 
 ## Technical Differences
@@ -98,6 +133,7 @@ and a live Codex run on this machine, which attempted to load user skills from
 | File format | Markdown with YAML frontmatter | standalone TOML |
 | Verified required fields | `name`, `description` | `name`, `description`, `developer_instructions` |
 | Installed location | `.claude/agents/` or `~/.claude/agents/` | `.codex/agents/` or `~/.codex/agents/` |
+| Lore | `claude/agents/lore.md` | `codex/agents/lore.toml` |
 
 ### Model Naming
 
@@ -153,11 +189,13 @@ and a live Codex run on this machine, which attempted to load user skills from
 
 - `claude/skills/*` -> `~/.claude/skills/`
 - `claude/agents/*` -> `~/.claude/agents/`
+- `claude/agents/lore.md` -> `~/.claude/agents/`
 
 ### Codex
 
 - `codex/skills/*` -> `~/.agents/skills/`
 - `codex/agents/*` -> `~/.codex/agents/`
+- `codex/agents/lore.toml` -> `~/.codex/agents/`
 
 ---
 

@@ -7,6 +7,19 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 ## MVP Flow
 
+```text
+lore start      Read second-brain, orient companion. Run at start of squad sessions.
+/seed           Initialize .squad/ AND scaffold second-brain project files.
+/clear          Reset session context.
+/forge          Interactive discovery, writes output.yaml.
+/archy          (HIGH only) Create PRD.
+/chisel         Create Linear issues.
+/ralph          Execute issues in dependency order (invokes Cody).
+Cody            Implement issue and open PR.
+Reven           Review PR.
+lore end        Propose status.md + session log writes. Confirm before writing.
+```
+
 ```mermaid
 graph LR
     A["/seed<br/>Initialize .squad context"] --> B["/clear<br/>Reset session context"]
@@ -25,7 +38,7 @@ graph LR
     E --> F
 ```
 
-The diagram shows the current manual MVP: `Seed` prepares context, `Forge`
+The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
 structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
 creates Linear issues, `Ralph` drives execution through `Cody`, and `Reven`
 reviews before merge.
@@ -50,6 +63,7 @@ agent-squad/
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
+      lore.md       Claude agent for second-brain memory
   codex/
     skills/
       forge/        Codex skill variants
@@ -60,6 +74,7 @@ agent-squad/
     agents/
       cody.toml     Codex custom agent
       reven.toml    Codex custom agent
+      lore.toml     Codex custom agent for second-brain
 ```
 
 ## Quick start
@@ -108,6 +123,14 @@ your-project/
     prd/current.md        written by Archy
     prd/archive/          archived by Chisel
     chisel-config.json    written on first Chisel run
+  second-brain/
+    INDEX.md              Vault entry point. Read by all companions via Lore at session start.
+    preferences/
+      development.md      Global cross-tool preferences. Written by Lore via `lore prefer`. Capped at 100 lines.
+    projects/<name>/
+      status.md           Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
+      decisions.md        Key decisions log. Append-only. Written by Lore (Codex) or auto-memory (Claude Code).
+    experiences/YYYY-MM/  Monthly session logs. Appended by Lore at session end. Never loaded by default.
 ```
 
 ## Claude vs Codex

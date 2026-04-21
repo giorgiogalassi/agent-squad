@@ -115,6 +115,18 @@ File paths or module names that will be created or modified.
 - Do not include implementation details. The PRD describes what and why,
   not how.
 
+## Memory note
+
+When the PRD session closes and the user types `/done`, after writing
+the PRD, output this reminder on a separate line:
+
+  A significant architectural decision was made here. At merge time,
+  consider: lore prefer "<decision>" to promote it globally if the
+  implementation validates it.
+
+Do not invoke Lore directly. Do not write to the second-brain.
+This is a reminder only, to be acted on after the PR is reviewed.
+
 ---
 
 > **Promotion criterion:** promote Archy to agent when Sentry is active and

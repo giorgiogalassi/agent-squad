@@ -65,6 +65,16 @@ Workflow:
   - notes for Reven
 - If `gh` is unavailable, push and print manual PR instructions.
 
+After opening the PR, write one checkpoint line to the active
+project's second-brain status file at
+`second-brain/projects/<name>/status.md` under `## Last checkpoint`:
+
+[YYYY-MM-DD HH:MM] [codex] PR #N opened. Branch: <branch>. <one-line summary>
+
+This is the only time Cody writes to second-brain/. It is a checkpoint
+only. Lore handles full status updates. If status.md does not exist,
+skip silently.
+
 Rules:
 - Never modify files outside the issue scope.
 - Never commit secrets or credentials.
