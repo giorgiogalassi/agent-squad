@@ -38,15 +38,30 @@ captures. Lore owns the cross-tool layer only:
 ## Vault location
 
 Resolution order:
-1. `.squad/lore-config.json` field `vault_path` if the file exists
+1. `SECOND_BRAIN_PATH` environment variable (if set and non-empty)
 2. Default: `~/second-brain/`
+
+Never read `.squad/lore-config.json` for vault path resolution.
 
 On first invocation, if the vault path does not exist:
   Ask: "Second-brain vault not found at <path>. Create it? [Y/n]"
   Wait for confirmation before creating anything.
 
-After confirming, write `.squad/lore-config.json`:
-  { "vault_path": "<confirmed-path>" }
+## lore-config.json
+
+Stored at `<vault>/lore-config.json` (vault root). Schema:
+
+```json
+{
+  "projects": {
+    "/absolute/path/to/project": "display-name"
+  }
+}
+```
+
+The `projects` field maps absolute CWD paths to display names. There is
+no `vault_path` field. If the file does not exist yet, treat `projects`
+as an empty map and create the file on first write.
 
 ## Loading discipline
 
@@ -66,19 +81,58 @@ Never load the full vault. Follow this order:
    `[YYYY-MM-DD HH:MM] [lore] start — session opened`
    Each session gets a clean log. Skills append to it as they run.
 
-1. Deduce project name:
+1. Resolve vault path:
+   a. Check `SECOND_BRAIN_PATH` environment variable. If set and non-empty,
+      use it as the vault path.
+   b. Otherwise use `~/second-brain/`.
+   c. If the vault path does not exist, ask: "Second-brain vault not found
+      at <path>. Create it? [Y/n]" and wait for confirmation.
+
+2. Deduce candidate project name:
    a. Run: `git rev-parse --show-toplevel`
-      Extract the final path component as the project name.
-   b. If not in a git repo, use current directory name.
+      Extract the final path component as the candidate name.
+      Record the full absolute path as `cwd_path`.
+   b. If not in a git repo, use current directory name and path.
    c. If ambiguous or both fail, read INDEX.md active project
       and ask: "Use last active project <name>? [Y/n]"
 
-2. Update INDEX.md active project to deduced name.
+3. Resolve display name via `<vault>/lore-config.json`:
+   a. Read `<vault>/lore-config.json`. If it does not exist, treat
+      `projects` as an empty map.
+   b. If `projects[cwd_path]` exists: use the stored display name silently.
+      Skip to step 5.
+   c. If no entry for `cwd_path` exists:
+      - Check whether `<vault>/projects/<candidate>/` already exists.
+      - No conflict: create the directory, add `cwd_path -> candidate`
+        to `projects`, write the updated `lore-config.json`, use
+        `candidate` as the display name. No prompt needed.
+      - Conflict: prompt once —
+          "A vault project named `<candidate>` already exists.
+          Display name for this project [`<candidate>-2`]:"
+        Use the entered name (or `<candidate>-2` if blank).
+        Create the directory, record `cwd_path -> chosen-name`
+        in `lore-config.json`, write the file.
+        Subsequent `lore start` calls from the same path read the
+        mapping and never prompt again.
+
+4. Migration detection (run only when step 3c executed, i.e. first
+   encounter of this CWD path):
+   a. Check whether `<cwd_path>/.squad/` exists.
+   b. If it exists, prompt:
+        "Found `.squad/` in this project. Move it to the vault? [Y/n]"
+   c. On confirmation (Y): move `<cwd_path>/.squad/` to
+        `<vault>/projects/<project-name>/.squad/`
+      and remove the original directory.
+   d. On decline (n): proceed without migrating. Note:
+        "The local `.squad/` will be ignored. Vault path is
+        `<vault>/projects/<project-name>/`."
+
+5. Update INDEX.md active project to the resolved display name.
    Write the full updated INDEX.md. This is always an overwrite.
 
-3. Read `<vault>/projects/<project>/status.md`
+6. Read `<vault>/projects/<project>/status.md`
 
-4. Check for timestamp mismatch:
+7. Check for timestamp mismatch:
    Compare `Last updated` timestamp with `Last checkpoint` timestamp.
    If Last checkpoint is newer than Last updated:
      Output warning:
@@ -87,7 +141,7 @@ Never load the full vault. Follow this order:
        Run lore recover now? [Y/n]"
      If user confirms: run lore recover inline before continuing.
 
-5. Check for staleness:
+8. Check for staleness:
    If Last updated is older than 7 days:
      Run:
        git log --oneline -5
@@ -95,7 +149,7 @@ Never load the full vault. Follow this order:
      If the working branch is behind main, include in orientation:
        "⚠ Branch <branch> is behind main. Consider rebasing."
 
-6. Output a single orientation paragraph: active project, last known
+9. Output a single orientation paragraph: active project, last known
    state, single next action. Nothing else.
 
 ### `lore end [logfile]`
