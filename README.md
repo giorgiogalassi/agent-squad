@@ -43,8 +43,6 @@ structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
 creates Linear issues, `Ralph` drives execution through `Cody`, and `Reven`
 reviews before merge.
 
-Source: [assets/mvp-flow.mmd](/abs/path/C:/Users/Giorgio/Desktop/projects/agent-squad/assets/mvp-flow.mmd:1)
-
 ## What's in this repo
 
 ```text
@@ -77,24 +75,35 @@ agent-squad/
       lore.toml     Codex custom agent for second-brain
 ```
 
-## Quick start
+## Installation
+
+Squad is installed globally. No files need to be added to any host project.
+After install, Squad is available in every project immediately.
+
+> Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
+> `archy`, `chisel`, `seed`, or `ralph` in `~/.claude/agents/`,
+> `~/.claude/skills/`, `~/.codex/agents/`, or `~/.codex/skills/`, they will
+> be overwritten by the commands below.
 
 ```bash
 # Claude Code
-cp -r claude/skills/* ~/.claude/skills/
 cp -r claude/agents/* ~/.claude/agents/
+cp -r claude/skills/* ~/.claude/skills/
 ```
 
 ```bash
 # Codex
-cp -r codex/skills/* ~/.agents/skills/
 cp -r codex/agents/* ~/.codex/agents/
+cp -r codex/skills/* ~/.codex/skills/
 ```
 
-Then, in your project:
+## Quick start
+
+Once installed, open any project and run:
 
 ```bash
 # Claude Code
+lore start
 /seed
 /clear
 /forge <your idea>
@@ -102,35 +111,50 @@ Then, in your project:
 
 ```text
 # Codex
-Use the `seed` skill, then start a fresh session if desired, then use
-the `forge` skill.
+Run `lore start`, then use the `seed` skill, then start a fresh session
+if desired, then use the `forge` skill.
 ```
+
+## Vault setup
+
+On the first `lore start`, Lore creates the vault automatically.
+
+- Default vault location: `~/second-brain/`
+- Override with the `SECOND_BRAIN_PATH` environment variable:
+  `export SECOND_BRAIN_PATH=/path/to/your/vault`
+- `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
+  by default).
+- Per-project `.squad/` state lives inside the vault at
+  `<vault>/<project-name>/.squad/`, not in the host project directory.
+
+Host projects have zero Squad footprint — no `.squad/` directory, no config
+files are written to the project itself.
 
 ## Workflow data
 
-All runtime files live in `.squad/` inside your project, not in this repo.
+All runtime files live in the vault, not in your project directory.
 `.squad/` is tool-agnostic and works with both Claude Code and Codex.
 Agent Squad does not modify `AGENTS.md` or `CLAUDE.md`; skills and agents read
-`.squad/` files directly when needed.
+vault files directly when needed.
 
 ```text
-your-project/
-  .squad/
-    architecture.md       written by Seed
-    scout-cache.md        written by Seed
-    decisions.md          maintained by you
-    forge/output.yaml     written by Forge
-    prd/current.md        written by Archy
-    prd/archive/          archived by Chisel
-    chisel-config.json    written on first Chisel run
-  second-brain/
-    INDEX.md              Vault entry point. Read by all companions via Lore at session start.
-    preferences/
-      development.md      Global cross-tool preferences. Written by Lore via `lore prefer`. Capped at 100 lines.
-    projects/<name>/
-      status.md           Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
-      decisions.md        Key decisions log. Append-only. Written by Lore (Codex) or auto-memory (Claude Code).
-    experiences/YYYY-MM/  Monthly session logs. Appended by Lore at session end. Never loaded by default.
+~/second-brain/                    (or $SECOND_BRAIN_PATH)
+  lore-config.json                 Vault config. Written by Lore on first start.
+  INDEX.md                         Vault entry point. Read by all companions via Lore at session start.
+  preferences/
+    development.md                 Global cross-tool preferences. Written by Lore via `lore prefer`. Capped at 100 lines.
+  projects/<name>/
+    .squad/
+      architecture.md              written by Seed
+      scout-cache.md               written by Seed
+      decisions.md                 maintained by you
+      forge/output.yaml            written by Forge
+      prd/current.md               written by Archy
+      prd/archive/                 archived by Chisel
+      chisel-config.json           written on first Chisel run
+    status.md                      Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
+    decisions.md                   Key decisions log. Append-only. Written by Lore (Codex) or auto-memory (Claude Code).
+  experiences/YYYY-MM/             Monthly session logs. Appended by Lore at session end. Never loaded by default.
 ```
 
 ## Claude vs Codex
