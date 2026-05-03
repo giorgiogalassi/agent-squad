@@ -263,7 +263,7 @@ When all phases are complete, print this summary and nothing else:
     <vault_path>/INDEX.md (created or updated)
     <vault_path>/preferences/development.md (if new vault)
     .squad/lore-config.json (vault path saved)
-  Run /clear before your next session to start with clean context.
+  Run lore start before your next planning or coding task.
 
 Adjust the Written list to reflect only what was actually changed.
 

@@ -1,15 +1,20 @@
 graph LR
-    A["/seed<br/>Initialize .squad context"] --> B["/clear<br/>Reset session context"]
+    A["/seed<br/>Initialize .squad context"] --> B["lore start<br/>Orient + create session.log"]
     B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
-    C --> D{"Complexity<br/>confirmed"}
+    C --> D{"Complexity"}
     D -->|HIGH| E["/archy<br/>Create PRD"]
+    D -->|"LOW / MED"| T{"change_type"}
+    E --> T
 
-    F["/chisel<br/>Create Linear issues"] --> G["Review issues in Linear"]
+    T -->|docs| M["Implement directly<br/>(or /chisel for tracking)"]
+    T -->|"code / mixed"| F["/chisel<br/>Create Linear issues"]
+
+    F --> G["Review issues in Linear"]
     G --> H["/ralph<br/>Execute in dependency order"]
-    H --> I["Cody<br/>Implement issue and open PR"]
+    H --> I["Cody<br/>Implement + open PR<br/>Checkpoints session.log"]
     I --> J["Reven<br/>Review PR"]
     J -->|Approved| K["Merge"]
-    J -->|Changes requested| I
+    J -->|"Changes requested"| I
 
-    D -->|LOW / MED| F
-    E --> F
+    K --> L["lore end session.log<br/>Stop hook (Claude) / explicit (Codex)"]
+    M --> L

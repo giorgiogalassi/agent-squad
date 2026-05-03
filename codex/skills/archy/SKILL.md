@@ -117,7 +117,7 @@ File paths or module names that will be created or modified.
 
 ## Memory note
 
-When the PRD session closes and the user types `/done`, after writing
+When the PRD session closes and the user types `done`, after writing
 the PRD, output this reminder on a separate line:
 
   A significant architectural decision was made here. At merge time,

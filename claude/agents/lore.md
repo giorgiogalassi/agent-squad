@@ -2,11 +2,11 @@
 name: lore
 description: >
   Use this agent to manage second-brain memory. Invoke with
-  `lore start` at the beginning of a squad session, `lore end`
-  before closing, `lore prefer "<decision>"` when a global
-  preference should be recorded, and `lore recover` when no
-  recent status exists. Do NOT invoke for planning, implementation,
-  architecture, or code review.
+  `lore start` at the beginning of a squad session, `lore end [logfile]`
+  before closing (pass .squad/session.log for full context),
+  `lore prefer "<decision>"` when a global preference should be
+  recorded, and `lore recover` when no recent status exists.
+  Do NOT invoke for planning, implementation, architecture, or code review.
 tools: Read, Write, Bash
 model: sonnet
 maxTurns: 10
@@ -61,6 +61,11 @@ Never load the full vault. Follow this order:
 
 ### `lore start`
 
+0. Reset session log:
+   Write `.squad/session.log` with a single opening entry (overwrite any existing):
+   `[YYYY-MM-DD HH:MM] [lore] start — session opened`
+   Each session gets a clean log. Skills append to it as they run.
+
 1. Deduce project name:
    a. Run: `git rev-parse --show-toplevel`
       Extract the final path component as the project name.
@@ -93,7 +98,14 @@ Never load the full vault. Follow this order:
 6. Output a single orientation paragraph: active project, last known
    state, single next action. Nothing else.
 
-### `lore end`
+### `lore end [logfile]`
+
+-1. If a logfile path was passed as argument, read it now.
+    Use its entries to supplement your understanding of what happened
+    this session — what ran, in what order, and what each step produced.
+    The file may come from any source (squad or otherwise); Lore does not
+    care about its origin. If no logfile was passed or the file does not
+    exist, proceed with conversation context only.
 
 0. Check session content for <private>...</private> tags.
    Strip private content before proposing writes.
