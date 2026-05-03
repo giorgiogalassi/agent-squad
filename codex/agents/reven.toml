@@ -52,4 +52,17 @@ Rules:
 - Never rewrite the code in the review; describe what must change.
 - If you cannot access the diff or branch, report the error and stop.
 - Write the review in English regardless of conversation language.
+
+## Memory note
+
+When the verdict is APPROVED on a feature that introduced a new
+architectural pattern (identifiable by new files, new abstractions,
+or PRD references in the PR body), add this line at the end of
+the review output:
+
+  This PR validated a new pattern. Consider:
+  lore prefer "<pattern>" if this should apply globally.
+
+Do not invoke Lore directly. Do not write to the second-brain.
+This is a prompt for the user to act on after merge.
 """

@@ -164,6 +164,128 @@ Both trees preserve the same workflow semantics and write to the same `.squad/` 
 
 ---
 
+### Iteration 13: Second Brain and Lore
+
+Three gaps in the MVP became apparent after sustained multi-project use:
+
+1. **Cross-session amnesia** — each session started cold, with no
+   memory of what was decided or where work stopped, especially when
+   switching between Claude Code and Codex mid-day.
+
+2. **Cross-tool gap** — Claude Code native auto-memory is inaccessible
+   to Codex and vice versa. No shared layer existed for companions on
+   different tools working the same project.
+
+3. **Preference drift** — architectural preferences discovered during
+   HIGH-complexity features had no home. They lived in project-specific
+   decisions but never graduated to global cross-tool knowledge.
+
+**Solution: Lore agent + second-brain vault**
+
+A new `~/second-brain/` directory (outside any repo) serves as a
+tool-agnostic vault. Both Claude Code and Codex read from and write
+to it via Lore using direct file tools — no MCP, no daemon, no
+external dependencies. The vault is plain markdown, readable in any
+editor, visualizable in Obsidian without Obsidian needing to run
+for Lore to function.
+
+The vault contains four layers:
+
+- `INDEX.md` — orientation entry point, overwritten by every
+  `lore start`. An output, not something you maintain manually.
+- `projects/<n>/status.md` — structured resumption handoff,
+  overwritten each session end
+- `preferences/development.md` — global cross-tool preferences,
+  capped at 100 lines with a curation step
+- `experiences/YYYY-MM/` — append-only session logs, typed
+  (session/decision/feature/bugfix/discovery), never loaded by default
+
+**Why Lore is an agent not a skill**
+
+Memory management requires judgment: deciding what is worth writing,
+when a local preference has become global, when to curate vs append.
+Skills are for deterministic tasks. Lore is not deterministic.
+
+**Why the vault is outside the repo**
+
+The vault is personal and cross-project. Putting it inside any
+project repo would pollute git history with personal memory entries
+and couple a personal knowledge layer to a specific codebase.
+Seed scaffolds the vault at first project initialization and writes
+`.squad/lore-config.json` so all subsequent Lore invocations resolve
+consistently.
+
+**Why Lore diverges across platforms**
+
+Claude Code has native auto-memory for project-local preferences.
+Codex has no equivalent. Claude Lore defers project-local memory to
+auto-memory and owns only the cross-tool layer. Codex Lore owns the
+full stack. The user-facing interface (lore start, lore end,
+lore prefer, lore recover) is identical across both platforms.
+
+**Why no MCP**
+
+Lore always knows exactly which file it needs. There is no search
+problem to solve. Direct file reads are faster, cheaper, and have
+zero manifest overhead. MCP servers for Obsidian preload tool
+manifests of 7 to 1,212 tools on every request — cost without
+benefit for Lore's access patterns.
+
+**INDEX.md as output not input**
+
+Early design treated INDEX.md as a file you maintain. Simulation
+revealed this creates drift: the wrong project loads on session start
+after a project switch. The fix was making INDEX.md a pure output —
+every `lore start` deduces the project from git and overwrites
+INDEX.md. You never touch it manually.
+
+**Invocation is manual by design**
+
+Automatic session-start triggers add complexity without proportionate
+value. Manual invocation at natural boundaries is lower friction and
+more reliable. The exception is the Cody incremental checkpoint —
+written at PR open to ensure partial recovery is possible if the
+session expires before `lore end`.
+
+**Preference promotion discipline**
+
+Preferences are only written to `development.md` via `lore prefer`,
+called after a pattern has been validated by implementation — not
+during planning. The trigger is Reven's APPROVED verdict on a HIGH
+complexity feature. Planning reveals intent; merge validates it.
+
+**Simulation findings**
+
+Two simulation rounds identified five issues, all resolved:
+
+1. Stale status body vs fresh Cody checkpoint — fixed by timestamp
+   mismatch detection and inline recovery offer in lore start
+2. No project argument on lore start — fixed by git-based deduction,
+   INDEX.md always overwritten as a side effect
+3. Session ends without lore end — fixed by recovery path and
+   proactive offer when mismatch detected
+4. Stale branch not detected — fixed by 7-day staleness check with
+   lightweight git branch status
+5. INDEX.md not reset after project switch — eliminated by making
+   INDEX.md a pure output of lore start
+
+**Community patterns incorporated**
+
+- 100-line cap with periodic curation (file-based memory research)
+- Filesystem-as-RAM mental model encoded in SQUAD.md
+- Promotion rule: local → global only when pattern appears across
+  2+ projects
+- Type taxonomy on experience entries (session/decision/feature/
+  bugfix/discovery) from claude-mem observation categorization
+- <private> tag convention from claude-mem privacy control
+- Instance namespacing for parallel sessions
+
+> **Promotion criterion:** when Sentry is active, Sentry calls
+> `lore start` and `lore end` automatically at flow boundaries.
+> Lore's internal behavior does not change — only who invokes it.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -178,6 +300,7 @@ Both trees preserve the same workflow semantics and write to the same `.squad/` 
 | **Cody** | Agent | Sonnet | Assigns issue, creates branch, implements, opens PR. Invoked directly or by Ralph. |
 | **Qugh** | Agent | Sonnet | QA behavioral testing, runs in parallel with Reven via Agent Teams |
 | **Reven** | Agent | Sonnet | Code review, runs in parallel with Qugh via Agent Teams |
+| **Lore** | Agent | Sonnet / gpt-5.4 | Second-brain memory: session orientation, status handoff, preference recording, git-based recovery. Filesystem only, no MCP. |
 | **Oak** | Agent | Sonnet | Documentation, daily job reading full git log |
 | **Ralph** | Loop | Sonnet | Agentic loop invoking Cody, max 3 retries, escalates on persistent failure |
 | **Sentry** | Orchestrator | Sonnet | Reads complexity from YAML, routes to correct flow, reconciles feedback |
@@ -234,6 +357,7 @@ Both trees preserve the same workflow semantics and write to the same `.squad/` 
 | **Reven** | Reviews every PR. You invoke Reven manually after Cody opens the PR. |
 | **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
 | **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
+| **Lore** | Manages second-brain vault. Invoke manually at session start/end and via `lore prefer` after HIGH-complexity merges. |
 
 ### What is out of the MVP
 

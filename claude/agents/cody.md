@@ -116,6 +116,18 @@ PR body must include: what was done, acceptance criteria checklist,
 and any notes for Reven.
 If `gh` is unavailable, push the branch and print instructions.
 
+After the PR is created, write one checkpoint line to
+`.squad/` — wait, write it to the active project's
+`second-brain/projects/<name>/status.md` under `## Last checkpoint`:
+
+```
+[YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>
+```
+
+This is the only time Cody writes to `second-brain/`. It is a
+checkpoint only — not a full status update. Lore handles the rest.
+If `status.md` does not exist, skip silently.
+
 ## Output
 
 After opening the PR, print a single summary and nothing else:

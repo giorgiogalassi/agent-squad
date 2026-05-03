@@ -62,14 +62,14 @@ If any of these is not applicable, note it explicitly in the PRD.
 
 When all decision points are resolved, say:
 
-  I have enough to write the PRD. Type /done to proceed or keep going
+  I have enough to write the PRD. Type done to proceed or keep going
   if you want to add anything.
 
-Do not close the session automatically. Always wait for explicit `/done`.
+Do not close the session automatically. Always wait for explicit `done`.
 
 ## Output
 
-When the user types `/done`, write the PRD to `.squad/prd/current.md` and
+When the user types `done`, write the PRD to `.squad/prd/current.md` and
 confirm with a single line:
 
   PRD written to .squad/prd/current.md
@@ -115,6 +115,18 @@ File paths or module names that will be created or modified.
 - Omit sections that are genuinely not applicable.
 - Do not include implementation details. The PRD describes what and why,
   not how.
+
+## Memory note
+
+When the PRD session closes and the user types `done`, after writing
+the PRD, output this reminder on a separate line:
+
+  A significant architectural decision was made here. At merge time,
+  consider: lore prefer "<decision>" to promote it globally if the
+  implementation validates it.
+
+Do not invoke Lore directly. Do not write to the second-brain.
+This is a reminder only, to be acted on after the PR is reviewed.
 
 ---
 

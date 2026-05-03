@@ -5,7 +5,7 @@ description: >
   before writing any code. Triggers: /forge, "let's plan", "I want to build",
   "I need to add", "help me think through". Do NOT trigger on direct code
   requests like "write a function" or "fix this bug".
-allowed-tools: Read, Glob
+allowed-tools: Read, Glob, Write, Bash
 ---
 
 # Forge
@@ -32,6 +32,7 @@ You must fill these slots before proposing to close the session:
 - acceptance_criteria: how do you know it is done
 - constraints: technical, business, or time constraints
 - edge_cases: at least two non-happy-path scenarios
+- change_type: whether the change is primarily code, docs, or mixed
 
 These are the minimum. If the user's input is complex, surface additional
 slots naturally (dependencies, affected modules, open questions).
@@ -52,10 +53,12 @@ repeat what they have already covered.
 When all required slots are filled and you have no critical open questions, say:
 
   I have enough to produce the analysis. Complexity: [low / medium / high].
-  Type /done to proceed or keep going if you want to add anything.
+  change_type: [code / docs / mixed]. Recommended path: [implement directly /
+  chisel pipeline (or /chisel for tracking if docs)].
+  Type done to proceed or keep going if you want to add anything.
 
-The user can also type `/done` at any time to close early. Do not close the
-session automatically. Always wait for explicit `/done`.
+The user can also type `done` at any time to close early. Do not close the
+session automatically. Always wait for explicit `done`.
 
 ## Complexity classification
 
@@ -70,9 +73,24 @@ Classify complexity based on these criteria:
 State the classification clearly when proposing to close. The user confirms
 or corrects it before you produce the YAML.
 
+## change_type classification
+
+Infer `change_type` from scope and affected_modules. Do not ask the user —
+infer it yourself and state it when proposing to close:
+- **docs:** all changes are to documentation, configuration, or non-source files
+  (.md, .toml, .yaml config, .mmd, .json config)
+- **code:** at least one change requires writing or modifying source code
+- **mixed:** significant changes to both source code and non-code files
+
+`change_type` drives the recommended next step:
+- `docs` → implement directly (or /chisel if Linear tracking is needed)
+- `code` or `mixed` → route through /chisel pipeline
+
+The routing is a recommendation, not a gate. The user always decides.
+
 ## Output
 
-When the user types `/done`, write the YAML to `.squad/forge/output.yaml` and
+When the user types `done`, write the YAML to `.squad/forge/output.yaml` and
 print a single confirmation line:
 
   Output written to .squad/forge/output.yaml
@@ -82,6 +100,7 @@ Nothing else after the confirmation line.
 ```yaml
 type: fix | feature
 complexity: low | medium | high
+change_type: code | docs | mixed
 scope: ""
 acceptance_criteria:
   - ""
@@ -104,3 +123,16 @@ notes: ""
 - `notes` captures any decision or assumption made during the session that is
   not captured elsewhere.
 - Omit empty optional fields rather than leaving them blank.
+
+## Session log
+
+At session start, append to `.squad/session.log` (read existing content first,
+then write with new line appended; create the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [forge] start
+
+When writing output.yaml, append:
+
+  [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.

@@ -96,6 +96,155 @@ This ensures Forge can write `output.yaml` and Chisel can archive PRDs on
 first run regardless of whether the repo included placeholder directories.
 `mkdir -p` is idempotent: safe to run on every Seed invocation.
 
+## Phase 6: scaffold second-brain project files
+
+Resolve vault path:
+1. Check `SECOND_BRAIN_PATH` environment variable
+2. Check `.squad/lore-config.json` field `vault_path`
+3. Default: `~/second-brain/`
+
+If the vault path does not exist:
+  Ask: "Second-brain vault not found at <path>. Create it?"
+  Wait for confirmation before proceeding.
+
+Ensure these vault directories exist:
+  <vault_path>/projects/
+  <vault_path>/preferences/
+  <vault_path>/experiences/
+  <vault_path>/docs
+
+Check if `<vault_path>/projects/<project-name>/` exists.
+If not, create:
+
+`<vault_path>/projects/<project-name>/status.md`:
+```markdown
+---
+title: <project-name> — Status
+tags: [status, active]
+project: <project-name>
+---
+
+# Status — <project-name>
+Last updated: — by —
+
+## Goal
+—
+
+## Done
+—
+
+## Next
+—
+
+## Blocked
+—
+
+## Last checkpoint
+—
+
+## Context refs
+—
+```
+
+`<vault_path>/projects/<project-name>/decisions.md`:
+```markdown
+---
+title: <project-name> — Decisions
+tags: [decisions]
+project: <project-name>
+---
+
+# Decisions — <project-name>
+
+> Key architectural decisions made during development.
+> Append-only. Format: `## [YYYY-MM-DD] <decision title>`
+> Managed by Lore.
+```
+
+If `<vault_path>/INDEX.md` does not exist, create it:
+```markdown
+---
+title: Second Brain Index
+tags: [index]
+---
+
+# Second Brain — Index
+
+> Entry point for all companions. Read this first.
+
+## Active project
+
+Name: <project-name>
+Status: [[projects/<project-name>/status]]
+Last worked: <YYYY-MM-DD>
+Companion: —
+
+## Projects
+
+| Project | Status | Last updated |
+|---------|--------|--------------|
+| [[projects/<project-name>/status\|<project-name>]] | active | <YYYY-MM-DD> |
+
+## Preferences
+
+[[preferences/development]]
+```
+
+If `<vault_path>/preferences/development.md` does not exist, create it:
+```markdown
+---
+title: Development Preferences
+tags: [preferences]
+---
+
+# Development Preferences
+
+> Cross-tool preferences validated by implementation.
+> Cap: 100 lines. Managed by Lore via `lore prefer`.
+> Format: `- [YYYY-MM-DD] [project] <preference>`
+```
+
+If `<vault_path>/docs/backends.md` does not exist, create it:
+```markdown
+---
+title: Setup — Backends
+tags: [docs, setup]
+---
+
+# Backends
+
+Vault path: ~/second-brain/
+Configured in: .squad/lore-config.json
+
+## Storage
+
+Filesystem only. Lore reads and writes ~/second-brain/ directly
+using file tools. No MCP required.
+
+## Obsidian
+
+Open ~/second-brain/ in Obsidian to visualize the note graph.
+Obsidian does not need to be running for Lore to function.
+Install Front Matter Title plugin to display title frontmatter
+as node labels instead of filenames.
+
+## MCP
+
+Not configured. Not recommended for Lore's access patterns.
+Direct file reads are faster and have zero manifest overhead.
+```
+Never overwrite this file — it is a personal note the user may
+have edited.
+
+If the project already exists in the vault, update INDEX.md to add
+the project to the Projects table if not already listed.
+
+If everything already exists, skip silently.
+
+Write `.squad/lore-config.json` with the resolved vault path if it
+does not already exist:
+  { "vault_path": "<resolved-path>" }
+
 ## Output
 
 When all phases are complete, print this summary and nothing else:
@@ -107,7 +256,13 @@ When all phases are complete, print this summary and nothing else:
   Directories ensured:
     .squad/forge/
     .squad/prd/archive/
-  Start a fresh session before your next planning or coding task.
+  Second-brain (if new project):
+    <vault_path>/projects/<name>/status.md
+    <vault_path>/projects/<name>/decisions.md
+    <vault_path>/INDEX.md (created or updated)
+    <vault_path>/preferences/development.md (if new vault)
+    .squad/lore-config.json (vault path saved)
+  Run lore start before your next planning or coding task.
 
 Adjust the Written list to reflect only what was actually changed.
 

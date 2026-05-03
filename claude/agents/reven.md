@@ -75,6 +75,19 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
   Do not produce a review without reading the code.
 - Write the review in English regardless of conversation language.
 
+## Memory note
+
+When the verdict is `APPROVED` on a feature that introduced a new
+architectural pattern (identifiable by new files, new abstractions,
+or PRD references in the PR body), add this line at the end of
+the review output:
+
+  This PR validated a new pattern. Consider:
+  lore prefer "<pattern>" if this should apply globally.
+
+Do not invoke Lore directly. Do not write to the second-brain.
+This is a prompt for the user to act on after merge.
+
 ---
 
 > **Note:** Reven outputs the review in the session. In the MVP you act on
