@@ -76,11 +76,6 @@ Never load the full vault. Follow this order:
 
 ### `lore start`
 
-0. Reset session log:
-   Write `.squad/session.log` with a single opening entry (overwrite any existing):
-   `[YYYY-MM-DD HH:MM] [lore] start — session opened`
-   Each session gets a clean log. Skills append to it as they run.
-
 1. Resolve vault path:
    a. Check `SECOND_BRAIN_PATH` environment variable. If set and non-empty,
       use it as the vault path.
@@ -100,7 +95,7 @@ Never load the full vault. Follow this order:
    a. Read `<vault>/lore-config.json`. If it does not exist, treat
       `projects` as an empty map.
    b. If `projects[cwd_path]` exists: use the stored display name silently.
-      Skip to step 5.
+      Skip to step 6.
    c. If no entry for `cwd_path` exists:
       - Check whether `<vault>/projects/<candidate>/` already exists.
       - No conflict: create the directory, add `cwd_path -> candidate`
@@ -115,7 +110,13 @@ Never load the full vault. Follow this order:
         Subsequent `lore start` calls from the same path read the
         mapping and never prompt again.
 
-4. Migration detection (run only when step 3c executed, i.e. first
+4. Reset session log:
+   Write `<vault>/<project-name>/.squad/session.log` with a single opening
+   entry (overwrite any existing):
+   `[YYYY-MM-DD HH:MM] [lore] start — session opened`
+   Each session gets a clean log. Skills append to it as they run.
+
+5. Migration detection (run only when step 3c executed, i.e. first
    encounter of this CWD path):
    a. Check whether `<cwd_path>/.squad/` exists.
    b. If it exists, prompt:
@@ -127,12 +128,12 @@ Never load the full vault. Follow this order:
         "The local `.squad/` will be ignored. Vault path is
         `<vault>/projects/<project-name>/`."
 
-5. Update INDEX.md active project to the resolved display name.
+6. Update INDEX.md active project to the resolved display name.
    Write the full updated INDEX.md. This is always an overwrite.
 
-6. Read `<vault>/projects/<project>/status.md`
+7. Read `<vault>/projects/<project>/status.md`
 
-7. Check for timestamp mismatch:
+8. Check for timestamp mismatch:
    Compare `Last updated` timestamp with `Last checkpoint` timestamp.
    If Last checkpoint is newer than Last updated:
      Output warning:
@@ -141,7 +142,7 @@ Never load the full vault. Follow this order:
        Run lore recover now? [Y/n]"
      If user confirms: run lore recover inline before continuing.
 
-8. Check for staleness:
+9. Check for staleness:
    If Last updated is older than 7 days:
      Run:
        git log --oneline -5
@@ -149,8 +150,8 @@ Never load the full vault. Follow this order:
      If the working branch is behind main, include in orientation:
        "⚠ Branch <branch> is behind main. Consider rebasing."
 
-9. Output a single orientation paragraph: active project, last known
-   state, single next action. Nothing else.
+10. Output a single orientation paragraph: active project, last known
+    state, single next action. Nothing else.
 
 ### `lore end [logfile]`
 
