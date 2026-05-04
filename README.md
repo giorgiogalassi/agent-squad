@@ -82,7 +82,7 @@ After install, Squad is available in every project immediately.
 
 > Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
 > `archy`, `chisel`, `seed`, or `ralph` in `~/.claude/agents/`,
-> `~/.claude/skills/`, `~/.codex/agents/`, or `~/.codex/skills/`, they will
+> `~/.claude/skills/`, `~/.codex/agents/`, or `~/.agents/skills/`, they will
 > be overwritten by the commands below.
 
 ```bash
@@ -94,7 +94,7 @@ cp -r claude/skills/* ~/.claude/skills/
 ```bash
 # Codex
 cp -r codex/agents/* ~/.codex/agents/
-cp -r codex/skills/* ~/.codex/skills/
+cp -r codex/skills/* ~/.agents/skills/
 ```
 
 ## Quick start
