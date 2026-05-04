@@ -18,10 +18,24 @@ Cody does.
 
 ## On start
 
-Read `.squad/chisel-config.json` to get the team and project identifiers.
-If invoked with a specific issue ID (`/ralph GG-12`), work only on that issue.
-Otherwise fetch all open issues in the current project with status matching
-`default_status` from config.
+### Path resolution protocol
+
+Before reading any file, resolve the vault path and derive the project name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
+2. **Project name:** run `git rev-parse --show-toplevel` via Bash, take the basename of the result.
+3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
+4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+
+Project source files (source code, git operations) and `progress.txt` in the
+project root continue to be accessed via CWD.
+
+### Startup
+
+Read `<vault>/<project>/.squad/chisel-config.json` to get the team and project
+identifiers. If invoked with a specific issue ID (`/ralph GG-12`), work only
+on that issue. Otherwise fetch all open issues in the current project with
+status matching `default_status` from config.
 
 ## Phase 1: build the execution order
 
@@ -54,8 +68,8 @@ Work through the execution order one issue at a time.
 Spawn Cody as a subagent with:
 - The full issue description
 - The acceptance criteria
-- Contents of `.squad/architecture.md` and `.squad/scout-cache.md`
-- Contents of `progress.txt` if present
+- Contents of `<vault>/<project>/.squad/architecture.md` and `<vault>/<project>/.squad/scout-cache.md`
+- Contents of `progress.txt` (project root, CWD) if present
 
 Cody's task: assign the issue, create a dedicated branch, implement,
 run tests, and open a PR.
