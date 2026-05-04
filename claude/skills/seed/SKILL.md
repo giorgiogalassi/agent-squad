@@ -221,17 +221,17 @@ tags: [docs, setup]
 
 # Backends
 
-Vault path: ~/second-brain/
+Vault path: <vault>
 Configured in: <vault>/lore-config.json
 
 ## Storage
 
-Filesystem only. Lore reads and writes ~/second-brain/ directly
+Filesystem only. Lore reads and writes <vault> directly
 using file tools. No MCP required.
 
 ## Obsidian
 
-Open ~/second-brain/ in Obsidian to visualize the note graph.
+Open <vault> in Obsidian to visualize the note graph.
 Obsidian does not need to be running for Lore to function.
 Install Front Matter Title plugin to display title frontmatter
 as node labels instead of filenames.
