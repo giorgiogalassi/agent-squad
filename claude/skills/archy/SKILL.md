@@ -5,7 +5,7 @@ description: >
   into a PRD before Chisel creates issues. Triggers: /archy, after Forge
   produces complexity: high. Do NOT trigger on low or medium complexity
   outputs from Forge.
-allowed-tools: Read, Glob, Write
+allowed-tools: Read, Glob, Write, Bash
 ---
 
 # Archy
@@ -31,9 +31,9 @@ Project source files (source code, git operations) continue to be accessed via C
 ### Files to read
 
 Read these three files before asking any question:
-1. `<vault>/<project>/.squad/forge/output.yaml`  — what the user wants to build
-2. `<vault>/<project>/.squad/architecture.md`    — existing conventions and decisions
-3. `<vault>/<project>/.squad/scout-cache.md`     — current project snapshot
+1. `<vault>/<display-name>/.squad/forge/output.yaml`  — what the user wants to build
+2. `<vault>/<display-name>/.squad/architecture.md`    — existing conventions and decisions
+3. `<vault>/<display-name>/.squad/scout-cache.md`     — current project snapshot
 
 If a file does not exist, continue without it. Do not ask the user to
 provide it. If the YAML references specific modules or files, read them
@@ -82,10 +82,10 @@ Do not close the session automatically. Always wait for explicit `done`.
 
 ## Output
 
-When the user types `done`, write the PRD to `<vault>/<project>/.squad/prd/current.md`
+When the user types `done`, write the PRD to `<vault>/<display-name>/.squad/prd/current.md`
 and confirm with a single line:
 
-  PRD written to <vault>/<project>/.squad/prd/current.md
+  PRD written to <vault>/<display-name>/.squad/prd/current.md
 
 Nothing else after that line.
 
