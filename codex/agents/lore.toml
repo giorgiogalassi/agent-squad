@@ -116,7 +116,7 @@ Never load the full vault. Follow this order:
         <vault>/projects/<project-name>/."
 
 5. Update INDEX.md active project to the resolved display name.
-   Write the full updated INDEX.md. This is always an overwrite.
+   Write the full updated INDEX.md. This is always an overwrite — it is an output, not manual input.
 
 6. Read <vault>/projects/<project>/status.md
 
