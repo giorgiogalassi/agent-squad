@@ -3,8 +3,12 @@ claude --resume 91ea0866-fe9f-4b75-bdfa-ebe52655e852
 # Squad
 
 Agent Squad is a personal multi-agent development workflow.
-It runs on Claude Code and Codex. All runtime files live in `.squad/`.
-Second-brain files live in `second-brain/`.
+It runs on Claude Code and Codex. Skills are installed globally in
+`~/.claude/` and `~/.codex/`. Host projects have zero Squad footprint.
+
+All runtime state lives in the vault (`~/second-brain/` or
+`$SECOND_BRAIN_PATH`). Per-project `.squad/` directories live inside the
+vault at `<vault>/<project-name>/.squad/`, not in the host project.
 
 ## Principles
 
@@ -15,9 +19,10 @@ Anything important gets written to disk.
 ## Loading discipline (all companions follow this)
 
 Before reading raw project files, follow this order:
-1. Read `second-brain/INDEX.md` + active project
-   `second-brain/projects/<n>/status.md` (via Lore)
-2. Read `.squad/architecture.md` + `.squad/scout-cache.md`
+1. Read `<vault>/INDEX.md` + active project
+   `<vault>/projects/<n>/status.md` (via Lore)
+2. Read `<vault>/projects/<n>/.squad/architecture.md` +
+   `<vault>/projects/<n>/.squad/scout-cache.md`
 3. Read raw project files only when needed for the current task
 
 Never load all files upfront. Load only what the task requires.
@@ -53,9 +58,34 @@ no MCP required.
 
 ## Second-brain contract
 
-`second-brain/` is tool-agnostic. Both Claude Code and Codex read and
-write it. Lore is the only agent that writes to `second-brain/`.
-No other agent writes there directly.
+The vault is tool-agnostic. Both Claude Code and Codex read and write it.
+Lore is the only agent that writes to the vault. No other agent writes
+there directly, except Cody which checkpoints `status.md` at PR open.
+
+Vault layout:
+
+```text
+<vault>/                           (default: ~/second-brain/, override: $SECOND_BRAIN_PATH)
+  lore-config.json                 Vault config. Written by Lore on first start.
+  INDEX.md                         Entry point read by all companions at session start.
+  preferences/
+    development.md                 Global cross-tool preferences.
+  projects/<name>/
+    .squad/                        Per-project Squad state (tool-agnostic).
+      architecture.md
+      scout-cache.md
+      decisions.md
+      forge/output.yaml
+      prd/current.md
+      prd/archive/
+      chisel-config.json
+    status.md                      Resumption handoff. Written by Lore, checkpointed by Cody.
+    decisions.md                   Key decisions log. Append-only.
+  experiences/YYYY-MM/             Monthly session logs.
+```
+
+Host projects contain only their own source code — no `.squad/` directory
+and no `lore-config.json` are written to the project root.
 
 ## Sentry note
 
