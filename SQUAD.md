@@ -1,5 +1,3 @@
-claude --resume 91ea0866-fe9f-4b75-bdfa-ebe52655e852
-
 # Squad
 
 Agent Squad is a personal multi-agent development workflow.

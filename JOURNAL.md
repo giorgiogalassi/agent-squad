@@ -2,7 +2,7 @@
 
 *From first sketch to MVP and final architecture*
 
-Giorgio Galassi | 2025
+Giorgio Galassi | 2025–2026
 
 ---
 
@@ -286,6 +286,60 @@ Two simulation rounds identified five issues, all resolved:
 
 ---
 
+### Iteration 14: Global Installation and Vault-First State
+
+After sustained use it became clear that the squad-in-project model had three compounding problems:
+
+1. **Noise** — squad files (skill definitions, `.squad/` directories, `lore-config.json`) appeared in `git status` of every host project, creating cognitive overhead and accidental commits.
+2. **Duplication** — every new project required copying the same agent and skill definitions, meaning updates had to be propagated manually across all active projects.
+3. **Config split** — `lore-config.json` lived inside `.squad/` in the project, coupling a user-level config to a per-project directory, while the vault it pointed to was outside every project. The config belonged with the vault, not with the project.
+
+**Solution: global install + vault-first state**
+
+Squad agents and skills now install once globally — `~/.claude/agents/` and `~/.claude/skills/` for Claude Code, `~/.codex/agents/` and `~/.agents/skills/` for Codex — and are immediately available in every project directory with no project-level files required.
+
+All per-project operational state moves from `<project-root>/.squad/` to `<vault>/<project-name>/.squad/`. The vault becomes the single source of truth for all squad memory. Host projects have zero squad footprint.
+
+**`lore-config.json` redesign**
+
+The config file moved from `<project>/.squad/lore-config.json` to `<vault>/lore-config.json`. The `vault_path` field was removed — it is redundant when the file is at the vault root. A new `projects` field maps absolute CWD paths to vault display names, replacing fragile basename-only derivation with an explicit, persistent mapping.
+
+```json
+{
+  "projects": {
+    "/absolute/path/to/project": "display-name"
+  }
+}
+```
+
+**Vault path resolution (simplified)**
+
+With the config removed from projects, the vault path is resolved at runtime in two steps: `SECOND_BRAIN_PATH` env var if set, otherwise `~/second-brain/`. No stored config needed.
+
+**Project name disambiguation**
+
+On first encounter of a new CWD path, Lore derives the candidate name from `git rev-parse --show-toplevel` basename, checks whether a vault directory with that name already exists, and either creates it silently (no conflict) or prompts once for a display name (conflict). The CWD-to-name mapping is written to `lore-config.json` and never prompted again.
+
+**Migration detection**
+
+On `lore start`, if the current project has a `<project-root>/.squad/` directory and no vault mapping yet, Lore prompts once: "Found `.squad/` in this project. Move it to the vault? [Y/n]". On confirmation it moves the directory and removes the original. On decline it proceeds without migrating. No manual migration command required.
+
+**Skill path resolution protocol**
+
+All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common four-step resolution protocol at session start:
+1. Vault path from `SECOND_BRAIN_PATH` or `~/second-brain/`
+2. Project basename from `git rev-parse --show-toplevel`
+3. Display name lookup from `<vault>/lore-config.json`
+4. All `.squad/` paths resolve to `<vault>/<display-name>/.squad/`
+
+`Bash` is required in `allowed-tools` for any Claude skill that runs `git rev-parse`.
+
+> **Key decision:** vault-first is absolute. No skill reads from `<project-root>/.squad/`. The vault is the only `.squad/` location, and the only path resolution that matters is the vault-relative one.
+
+> **Post-merge correction (GG-18):** Reven reviewing main against the PRD found that `codex/agents/lore.toml` still wrote `session.log` to the project root (step 0, before vault resolution). The Claude version had been fixed correctly in GG-13. The Codex version required a follow-up fix to mirror the same deferral — writing to `<vault>/<project-name>/.squad/session.log` after step 3 once the display name is resolved. This confirmed the value of running Reven against the full merged diff, not just individual PRs.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -293,7 +347,7 @@ Two simulation rounds identified five issues, all resolved:
 | Name | Type | Model | Role |
 |------|------|-------|------|
 | **Scout** | Skill | n/a | Project context snapshot, cached, invalidated on structural changes |
-| **Seed** | Skill | n/a | One-time project initialization. Produces `.squad/architecture.md` and `.squad/scout-cache.md`, ensures `.squad/` directories exist, and prepares shared runtime context. |
+| **Seed** | Skill | n/a | One-time project initialization. Produces `architecture.md` and `scout-cache.md` in `<vault>/<project>/.squad/`, ensures vault directories exist, and scaffolds second-brain project files. |
 | **Forge** | Skill | n/a | Interactive brainstorming session, produces structured YAML with complexity field |
 | **Chisel** | Skill | n/a | Converts YAML or PRD to Linear issues. Single input format, single output format |
 | **Archy** | Skill | Opus or Sonnet | Architectural analysis, produces PRD from Forge YAML on HIGH complexity only |
@@ -328,13 +382,14 @@ Two simulation rounds identified five issues, all resolved:
 
 | File | Purpose |
 |------|---------|
-| `.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
-| `.squad/architecture.md` | Stack, patterns, conventions. Written by Seed. Read by Forge, Archy, Cody, Reven. |
-| `.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
-| `.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
-| `.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
-| `.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
-| `.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
+| `<vault>/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
+| `<vault>/<project>/.squad/architecture.md` | Stack, patterns, conventions. Written by Seed. Read by Forge, Archy, Cody, Reven. |
+| `<vault>/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
+| `<vault>/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
+| `<vault>/<project>/.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
+| `<vault>/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
+| `<vault>/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
+| `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
 | `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
 | `claude/agents/` | Claude-specific agent definitions to copy into `~/.claude/agents/`. |
