@@ -37,6 +37,22 @@ identifiers. If invoked with a specific issue ID (`/ralph GG-12`), work only
 on that issue. Otherwise fetch all open issues in the current project with
 status matching `default_status` from config.
 
+## Preflight checks
+
+Before doing any other work, verify that the `gh` CLI is available and
+authenticated. These checks run once at startup, before any issue is touched.
+
+1. Run `which gh`. If the command is not found:
+   - Print: `ERROR: gh CLI not found on PATH. Install gh and authenticate before running Ralph.`
+   - Surface the issue to the user immediately and stop. Do not proceed.
+
+2. Run `gh auth status`. If the output indicates you are not logged in
+   (exit code non-zero or output contains "not logged in"):
+   - Print: `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
+   - Surface the issue to the user immediately and stop. Do not proceed.
+
+Only continue to Phase 1 after both checks pass.
+
 ## Phase 1: build the execution order
 
 Read every issue in the batch. For each issue, check the first line of its
