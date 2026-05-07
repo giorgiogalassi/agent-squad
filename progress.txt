@@ -1,0 +1,3 @@
+[GG-19] 2026-05-07 resolved. Added CLAUDE.md with Squad Distribution, Scope Boundaries, and Environment Preflight sections. PR: #10. Branch: feature/gg-19.
+[GG-20] 2026-05-07 resolved. Added PostToolUse hook to .claude/settings.json for codex/ mirror warning. PR: #11. Branch: feature/gg-20.
+[GG-21] 2026-05-07 resolved. Added gh preflight checks to Ralph and Reven skill files (both distributions). PR: #12. Branch: feature/gg-21.

@@ -26,6 +26,21 @@ Before doing anything else, resolve the vault path and derive the project name:
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
+## Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to CLAUDE.md,
+   workspace-level config, or any global settings unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase concluded with a
+   recommendation to skip the next phase (e.g. "implement directly" instead of
+   routing through /chisel), confirm with the user before invoking that phase.
+   Do not auto-chain past a concluded STOP.
+
 ## Behavior
 
 You conduct a conversational session, not an interrogation. Ask one question

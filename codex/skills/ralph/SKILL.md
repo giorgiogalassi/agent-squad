@@ -28,6 +28,21 @@ Before reading any file, resolve the vault path and derive the project name:
 Project source files (source code, git operations) and `progress.txt` in the
 project root continue to be accessed via CWD.
 
+### Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase concluded to skip
+   invoking Ralph (e.g. the issue batch was empty or Chisel concluded not to
+   proceed), confirm with the user before starting the loop. Do not auto-chain
+   past a concluded STOP.
+
 ### Startup
 
 Read `<vault>/<project>/.squad/chisel-config.json` to get the team and project

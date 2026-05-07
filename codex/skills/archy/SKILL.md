@@ -27,6 +27,20 @@ Before reading any file, resolve the vault path and derive the project name:
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
+### Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase (e.g. Forge)
+   concluded with a recommendation to skip Archy (complexity was not high),
+   confirm with the user before proceeding. Do not auto-chain past a concluded STOP.
+
 ### Files to read
 
 Read these three files before asking any question:

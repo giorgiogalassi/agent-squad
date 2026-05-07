@@ -21,6 +21,20 @@ Read these files before reviewing if they exist:
 
 Then read the issue and the PR provided in your prompt.
 
+## Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. Vault-based state lives
+   outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase concluded to skip
+   review (e.g. the PR was already approved or review was deferred), confirm
+   with the user before proceeding. Do not auto-chain past a concluded STOP.
+
 ## Preflight checks
 
 Before gathering the diff or posting any review output, verify that the
