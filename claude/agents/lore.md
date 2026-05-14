@@ -91,13 +91,16 @@ Never load the full vault. Follow this order:
 3. Read `<vault>/projects/<project>/status.md`
 
 4. Check for timestamp mismatch:
-   Compare `Last updated` timestamp with `Last checkpoint` timestamp.
-   If Last checkpoint is newer than Last updated:
+   Get current time via: date "+%Y-%m-%d %H:%M"
+   If Last updated is more than 30 minutes ago AND Last checkpoint
+   is newer than Last updated:
      Output warning:
        "⚠ status.md body was last fully updated <date> but has a
        checkpoint from <checkpoint-time>. The body may be stale.
        Run lore recover now? [Y/n]"
      If user confirms: run lore recover inline before continuing.
+   If Last updated is within 30 minutes: proceed silently.
+   This prevents false positives when switching tools mid-session.
 
 5. Check for staleness:
    If Last updated is older than 7 days:
@@ -107,7 +110,15 @@ Never load the full vault. Follow this order:
      If the working branch is behind main, include in orientation:
        "⚠ Branch <branch> is behind main. Consider rebasing."
 
-6. Output a single orientation paragraph: active project, last known
+6. Auto-load context refs:
+   Read the ## Context refs section of status.md.
+   Load each file listed there automatically — no confirmation needed.
+   You made this list at the end of the last session; trust it.
+   If a listed file does not exist, note it inline:
+     "⚠ Context ref not found: <path> — skipping."
+   Then continue loading the remaining refs.
+
+7. Output a single orientation paragraph: active project, last known
    state, single next action. Nothing else.
 
 ### `lore end [logfile]`
@@ -128,24 +139,27 @@ Never load the full vault. Follow this order:
 
    Overwrite `<vault>/projects/<n>/status.md`:
 
+   ```markdown
    ---
-   title: <project> — Status
+   title: <project-name> — Status
    tags: [status, active]
-   project: <project>
+   project: <project-name>
    ---
 
-   # Status — <project>
+   # Status — <project-name>
    Last updated: <YYYY-MM-DD HH:MM> by <companion>
 
    ## Goal
    What this session was trying to accomplish.
 
    ## Done
-   - Concrete list of completed actions.
+   Compressed summary of completed work. Not a raw list — a distilled
+   description of what changed and why it matters for resumption.
+   Keep under 5 lines. Archive detail to the experience log.
 
    ## Next
-   Single next action. One item only. Specific enough for a
-   cold-start companion to act on without context.
+   ACTION: <single next action, verb-first, specific>
+   CONTEXT: <one line of relevant context for a cold-start companion>
 
    ## Blocked
    Anything awaiting human input or external dependency. Empty if none.
@@ -154,8 +168,34 @@ Never load the full vault. Follow this order:
    [YYYY-MM-DD HH:MM] <one-line description of last confirmed state>
 
    ## Context refs
-   Paths to decisions or context files relevant to resuming.
-   ---
+   Files to auto-load on next lore start. Be selective — each file
+   costs tokens on every session start until removed.
+   - <path/to/file>
+   - <path/to/file>
+   ```
+
+   When writing the Done section: compress. Do not reproduce the
+   full action list from the session. Write a 2-5 line summary of
+   what changed and what state the project is now in. Detailed
+   actions are captured in the experience log — status.md carries
+   only what a cold-start companion needs to orient.
+
+   When writing the Next section: use the ACTION/CONTEXT format.
+   ACTION is verb-first and specific enough to execute without
+   asking questions. CONTEXT is one line of background that
+   explains why this is next.
+
+   Total status.md length should not exceed 400 tokens. If the
+   proposed write exceeds this, compress the Done section further
+   before proposing.
+
+   When writing the Context refs section: list only files that
+   will be needed at the start of the next session. Typically:
+   - .squad/architecture.md if conventions are relevant
+   - .squad/forge/output.yaml if a Forge session is in progress
+   - second-brain/projects/<n>/decisions.md if decisions are active
+   Remove files from a previous session that are no longer relevant.
+   This list is loaded automatically on next lore start.
 
    Update tag to [status, paused] if work is being suspended.
 
