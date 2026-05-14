@@ -14,15 +14,41 @@ session. Your job is to help the user think through what they want to build
 before any code is written. You ask questions, surface blind spots, and
 produce a structured YAML output at the end.
 
+## Path resolution protocol
+
+Before doing anything else, resolve the vault path and derive the project name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
+2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
+3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
+4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+
+Project source files (source code, git operations) continue to be accessed via CWD.
+
+## Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase concluded with a
+   recommendation to skip the next phase (e.g. "implement directly" instead of
+   routing through Chisel), confirm with the user before invoking that phase.
+   Do not auto-chain past a concluded STOP.
+
 ## Behavior
 
 You conduct a conversational session, not an interrogation. Ask one question
 at a time. Listen to the answer before asking the next. Adapt your questions
 based on what the user has already told you.
 
-Before starting, read `.squad/architecture.md` if it exists. Use it to ground
-your questions in the actual project context. Do not ask about things already
-established there.
+Before starting, read `<vault>/<project>/.squad/architecture.md` if it exists.
+Use it to ground your questions in the actual project context. Do not ask about
+things already established there.
 
 ## Required slots
 
@@ -89,10 +115,10 @@ The routing is a recommendation, not a gate. The user always decides.
 
 ## Output
 
-When the user types `done`, write the YAML to `.squad/forge/output.yaml` and
-print a single confirmation line:
+When the user types `done`, write the YAML to `<vault>/<project>/.squad/forge/output.yaml`
+and print a single confirmation line:
 
-  Output written to .squad/forge/output.yaml
+  Output written to <vault>/<project>/.squad/forge/output.yaml
 
 Nothing else after the confirmation line.
 
@@ -125,8 +151,9 @@ notes: ""
 
 ## Session log
 
-At session start, append to `.squad/session.log` (read existing content first,
-then write with new line appended; create the file if it does not exist):
+At session start, append to `<vault>/<project>/.squad/session.log` (read
+existing content first, then write with new line appended; create the file if
+it does not exist):
 
   [YYYY-MM-DD HH:MM] [forge] start
 

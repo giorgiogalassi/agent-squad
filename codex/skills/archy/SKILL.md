@@ -16,10 +16,37 @@ decision points before writing anything.
 
 ## On start
 
+### Path resolution protocol
+
+Before reading any file, resolve the vault path and derive the project name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
+2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
+3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
+4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+
+Project source files (source code, git operations) continue to be accessed via CWD.
+
+### Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase (e.g. Forge)
+   concluded with a recommendation to skip Archy (complexity was not high),
+   confirm with the user before proceeding. Do not auto-chain past a concluded STOP.
+
+### Files to read
+
 Read these three files before asking any question:
-1. `.squad/forge/output.yaml`  — what the user wants to build
-2. `.squad/architecture.md`    — existing conventions and decisions
-3. `.squad/scout-cache.md`     — current project snapshot
+1. `<vault>/<project>/.squad/forge/output.yaml`  — what the user wants to build
+2. `<vault>/<project>/.squad/architecture.md`    — existing conventions and decisions
+3. `<vault>/<project>/.squad/scout-cache.md`     — current project snapshot
 
 If a file does not exist, continue without it. Do not ask the user to
 provide it. If the YAML references specific modules or files, read them
@@ -68,10 +95,10 @@ Do not close the session automatically. Always wait for explicit `done`.
 
 ## Output
 
-When the user types `done`, write the PRD to `.squad/prd/current.md` and
-confirm with a single line:
+When the user types `done`, write the PRD to `<vault>/<project>/.squad/prd/current.md`
+and confirm with a single line:
 
-  PRD written to .squad/prd/current.md
+  PRD written to <vault>/<project>/.squad/prd/current.md
 
 Nothing else after that line.
 

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); if ! command -v python3 >/dev/null 2>&1; then echo \"[codex-mirror] WARNING: python3 not found — hook inactive, cannot check codex/ mirror\"; exit 0; fi; FILE=$(echo \"$INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"tool_input\\\",{}).get(\\\"file_path\\\",\\\"\\\"))\" 2>/dev/null); if echo \"$FILE\" | grep -qE \"(^|/)claude/\"; then MIRROR=$(echo \"$FILE\" | sed \"s|/claude/|/codex/|\"); echo \"\"; echo \"[codex-mirror] WARNING: You edited a file under claude/:\"; echo \"  $FILE\"; echo \"  Check whether the same change is needed in codex/:\"; echo \"  $MIRROR\"; echo \"\"; fi; exit 0'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,9 +16,37 @@ about the feature. Your only job is to read, decompose, and create.
 
 ## On start
 
-Check if `.squad/chisel-config.json` exists and contains valid configuration.
-If it does, read it silently and proceed. If it does not exist or is missing
-required fields, run the configuration flow before doing anything else.
+### Path resolution protocol
+
+Before reading any file, resolve the vault path and derive the project name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
+2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
+3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
+4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+
+Project source files (source code, git operations) continue to be accessed via CWD.
+
+### Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase (e.g. Forge)
+   concluded with a recommendation to skip this skill, confirm with the user
+   before proceeding. Do not auto-chain past a concluded STOP.
+
+### Configuration check
+
+Check if `<vault>/<project>/.squad/chisel-config.json` exists and contains
+valid configuration. If it does, read it silently and proceed. If it does not
+exist or is missing required fields, run the configuration flow before doing
+anything else.
 
 ## Configuration flow
 
@@ -29,7 +57,7 @@ Ask these questions one at a time:
    (e.g. 'needs-review', or press enter to skip)"
 4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
 
-After collecting answers, write `.squad/chisel-config.json`:
+After collecting answers, write `<vault>/<project>/.squad/chisel-config.json`:
 
 ```json
 {
@@ -44,16 +72,16 @@ After collecting answers, write `.squad/chisel-config.json`:
 
 Confirm with a single line:
 
-  Configuration saved to .squad/chisel-config.json
+  Configuration saved to <vault>/<project>/.squad/chisel-config.json
 
 Then proceed immediately to issue creation.
 
 ## Input
 
 Read the correct input based on what is available:
-- If `.squad/prd/current.md` exists and was produced in this session
-  (complexity: high): read it as input.
-- Otherwise: read `.squad/forge/output.yaml`.
+- If `<vault>/<project>/.squad/prd/current.md` exists and was produced in
+  this session (complexity: high): read it as input.
+- Otherwise: read `<vault>/<project>/.squad/forge/output.yaml`.
 
 Do not ask the user which file to use. Infer from context.
 
@@ -125,9 +153,9 @@ Nothing else after the summary.
   ambiguity in the description. Do not ask the user to clarify.
 - If a PRD has open questions, include them in the relevant issue description
   so Cody is aware.
-- After creating issues, move `.squad/prd/current.md` to `.squad/prd/archive/`
-  with a timestamp suffix: `current-YYYYMMDD-HHMMSS.md`. Only do this if the
-  PRD was the input.
+- After creating issues, move `<vault>/<project>/.squad/prd/current.md` to
+  `<vault>/<project>/.squad/prd/archive/` with a timestamp suffix:
+  `current-YYYYMMDD-HHMMSS.md`. Only do this if the PRD was the input.
 
 ---
 

@@ -16,10 +16,55 @@ write code. Cody does.
 
 ## On start
 
-Read `.squad/chisel-config.json` to get the team and project identifiers.
-If invoked with a specific issue ID (`GG-12`), work only on that issue.
-Otherwise fetch all open issues in the current project with status matching
-`default_status` from config.
+### Path resolution protocol
+
+Before reading any file, resolve the vault path and derive the project name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
+2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
+3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
+4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+
+Project source files (source code, git operations) and `progress.txt` in the
+project root continue to be accessed via CWD.
+
+### Scope boundary advisory
+
+These are advisory guidelines that apply throughout this skill:
+
+1. **No over-promotion to global config.** Do not promote items to workspace-level
+   config, global settings, or any shared config file unless the user explicitly
+   requests it. Promotion to global scope requires user intent, not inference.
+2. **No workspace artifacts.** Do not create symlinks, `.squad/` directories,
+   or any state files inside the user's workspace. All `.squad/` state lives
+   in the vault path resolved above, outside the workspace.
+3. **Confirm before chaining past a STOP.** If a prior phase concluded to skip
+   invoking Ralph (e.g. the issue batch was empty or Chisel concluded not to
+   proceed), confirm with the user before starting the loop. Do not auto-chain
+   past a concluded STOP.
+
+### Startup
+
+Read `<vault>/<project>/.squad/chisel-config.json` to get the team and project
+identifiers. If invoked with a specific issue ID (`GG-12`), work only on that
+issue. Otherwise fetch all open issues in the current project with status
+matching `default_status` from config.
+
+## Preflight checks
+
+Before doing any other work, verify that the `gh` CLI is available and
+authenticated. These checks run once at startup, before any issue is touched.
+
+1. Run `which gh`. If the command is not found:
+   - Print: `ERROR: gh CLI not found on PATH. Install gh and authenticate before running Ralph.`
+   - Surface the issue to the user immediately and stop. Do not proceed.
+
+2. Run `gh auth status`. If the output indicates you are not logged in
+   (exit code non-zero or output contains "not logged in"):
+   - Print: `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
+   - Surface the issue to the user immediately and stop. Do not proceed.
+
+Only continue to Phase 1 after both checks pass.
 
 ## Phase 1: build the execution order
 
@@ -52,8 +97,8 @@ Work through the execution order one issue at a time.
 Spawn Cody as a Codex sub-agent with:
 - The full issue description
 - The acceptance criteria
-- Contents of `.squad/architecture.md` and `.squad/scout-cache.md`
-- Contents of `progress.txt` if present
+- Contents of `<vault>/<project>/.squad/architecture.md` and `<vault>/<project>/.squad/scout-cache.md`
+- Contents of `progress.txt` (project root, CWD) if present
 
 Cody's task: assign the issue, create a dedicated branch, implement,
 run tests, and open a PR.
