@@ -24,6 +24,15 @@ to defer to. You own the full memory layer for Codex sessions:
 
 ---
 
+## Invocation aliases
+
+Respond to these shorthand commands immediately without clarification:
+
+lore start          → deduce project from git, read vault, orient
+lore end            → propose vault writes, confirm, write
+lore recover        → reconstruct session state from git evidence
+lore prefer "<x>"   → record <x> as a global cross-tool preference
+
 ## Vault location
 
 Resolution order:
@@ -122,13 +131,16 @@ Never load the full vault. Follow this order:
 7. Read <vault>/projects/<project>/status.md
 
 8. Check for timestamp mismatch:
-   Compare Last updated timestamp with Last checkpoint timestamp.
-   If Last checkpoint is newer than Last updated:
-     Output warning:
+   Get current time via: date "+%Y-%m-%d %H:%M"
+   If Last updated is more than 30 minutes ago AND Last checkpoint
+   is newer than Last updated:
+     Output:
        "⚠ status.md body was last fully updated <date> but has a
        checkpoint from <checkpoint-time>. The body may be stale.
        Run lore recover now? [Y/n]"
      If user confirms: run lore recover inline before continuing.
+   If Last updated is within 30 minutes: proceed silently.
+   This prevents false positives when switching tools mid-session.
 
 9. Check for staleness:
    If Last updated is older than 7 days:
@@ -138,7 +150,15 @@ Never load the full vault. Follow this order:
      If the working branch is behind main, include in orientation:
        "⚠ Branch <branch> is behind main. Consider rebasing."
 
-10. Output a single orientation paragraph: active project, last known
+10. Auto-load context refs:
+   Read the ## Context refs section of status.md.
+   Load each file listed there automatically — no confirmation.
+   You made this list at the end of the last session; trust it.
+   If a listed file does not exist, note it:
+     "⚠ Context ref not found: <path> — skipping."
+   Then continue loading remaining refs.
+
+11. Output a single orientation paragraph: active project, last known
     state, single next action. Nothing else.
 
 ### lore end [logfile]
@@ -160,31 +180,51 @@ Never load the full vault. Follow this order:
    Overwrite <vault>/projects/<n>/status.md using this schema:
 
      ---
-     title: <project> — Status
+     title: <project-name> — Status
      tags: [status, active]
-     project: <project>
+     project: <project-name>
      ---
 
-     # Status — <project>
+     # Status — <project-name>
      Last updated: <YYYY-MM-DD HH:MM> by codex
 
      ## Goal
      What this session was trying to accomplish.
 
      ## Done
-     - Concrete list of completed actions.
+     Compressed summary of completed work. Not a raw list — a distilled
+     description of what changed and why it matters for resumption.
+     Keep under 5 lines. Archive detail to the experience log.
 
      ## Next
-     Single next action. One item only.
+     ACTION: <single next action, verb-first, specific>
+     CONTEXT: <one line of relevant context for a cold-start companion>
 
      ## Blocked
      Anything awaiting input or external dependency. Empty if none.
 
      ## Last checkpoint
-     [YYYY-MM-DD HH:MM] <one-line description>
+     [YYYY-MM-DD HH:MM] <one-line description of last confirmed state>
 
      ## Context refs
-     Paths to decisions or context files relevant to resuming.
+     Files to auto-load on next lore start. Be selective.
+     - <path/to/file>
+     - <path/to/file>
+
+   When writing Done: compress. 2-5 line summary of what changed
+   and what state the project is in. Detail goes to experience log.
+
+   When writing Next: use ACTION/CONTEXT format.
+   ACTION is verb-first, specific enough to execute without questions.
+   CONTEXT is one line explaining why this is next.
+
+   Total status.md length should not exceed 400 tokens. Compress
+   the Done section further if the proposed write exceeds this.
+
+   When writing Context refs: list only files needed at next session
+   start. Typically architecture.md, active forge output, or decisions
+   if relevant. Remove stale refs from previous sessions.
+   This list is loaded automatically on next lore start.
 
    Update tag to [status, paused] if work is being suspended.
 

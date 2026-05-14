@@ -2,3 +2,8 @@
 [GG-20] 2026-05-07 resolved. Added PostToolUse hook to .claude/settings.json for codex/ mirror warning. PR: #11. Branch: feature/gg-20.
 [GG-21] 2026-05-07 resolved. Added gh preflight checks to Ralph and Reven skill files (both distributions). PR: #12. Branch: feature/gg-21.
 [GG-22] 2026-05-07 resolved. Added scope boundary advisory notes to all skill files in both claude/ and codex/ distributions. PR: #13. Branch: feature/gg-22.
+[GG-28] 2026-05-14 resolved. Added invocation aliases section to claude/agents/lore.md and codex/agents/lore.toml. PR: #14. Branch: feature/gg-28.
+[GG-29] 2026-05-14 resolved. Applied context engineering improvements to claude/agents/lore.md and codex/agents/lore.toml (staleness check fix, auto-load context refs, status.md schema update, lore end compression + context refs guidance). PR: #18. Branch: feature/gg-29 (based on feature/gg-28).
+[GG-30] 2026-05-14 resolved. Added invocation aliases section to claude/agents/cody.md and codex/agents/cody.toml. PR: #15. Branch: feature/gg-30.
+[GG-31] 2026-05-14 resolved. Added invocation aliases section to claude/agents/reven.md and codex/agents/reven.toml. PR: #16. Branch: feature/gg-31.
+[GG-32] 2026-05-14 resolved. Updated JOURNAL.md (Iteration 13 context engineering patterns), PLATFORM_DIFFERENCES.md (Lore shared behavior list), and second-brain/projects/example/status.md (full schema replacement). PR: #17. Branch: feature/gg-32.
