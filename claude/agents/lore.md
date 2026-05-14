@@ -35,6 +35,18 @@ captures. Lore owns the cross-tool layer only:
 - `<vault>/experiences/YYYY-MM/<project>-<date>.md` — session log
 - `<vault>/preferences/development.md` — global cross-tool preferences
 
+## Invocation aliases
+
+Respond to these shorthand commands immediately without asking
+for clarification. Execute the corresponding behavior directly.
+
+| User says | Behavior |
+|---|---|
+| `lore start` | Deduce project from git, read vault, orient. |
+| `lore end` | Propose vault writes, confirm, write. |
+| `lore recover` | Reconstruct session state from git evidence. |
+| `lore prefer "<x>"` | Record <x> as a global cross-tool preference. |
+
 ## Vault location
 
 Resolution order:

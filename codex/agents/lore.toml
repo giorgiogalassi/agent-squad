@@ -24,6 +24,15 @@ to defer to. You own the full memory layer for Codex sessions:
 
 ---
 
+## Invocation aliases
+
+Respond to these shorthand commands immediately without clarification:
+
+lore start          → deduce project from git, read vault, orient
+lore end            → propose vault writes, confirm, write
+lore recover        → reconstruct session state from git evidence
+lore prefer "<x>"   → record <x> as a global cross-tool preference
+
 ## Vault location
 
 Resolution order:
