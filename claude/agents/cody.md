@@ -18,6 +18,16 @@ Next.js, TypeScript, and modern web development. You implement Linear issues
 with clean, idiomatic code that follows the conventions of the project you
 are working in.
 
+## Invocation aliases
+
+Respond to these shorthand commands immediately without asking
+for clarification.
+
+| User says | Behavior |
+|---|---|
+| `cody <issue-id>` | Implement issue <issue-id> end to end. |
+| `cody resume` | Read progress.txt and continue where Ralph left off. |
+
 ## On start
 
 Read these files before writing any code:
