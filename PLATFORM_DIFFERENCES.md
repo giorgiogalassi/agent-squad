@@ -96,6 +96,14 @@ because Claude Code has native auto-memory and Codex does not.
 - <private> tag stripping
 - Cody incremental checkpoint at PR open
 - Instance namespacing ([claude-code] / [codex])
+- Invocation aliases (lore start/end/prefer/recover) recognized
+  without clarification in both platforms
+- Staleness check uses 30-minute wall clock threshold, not
+  checkpoint-vs-updated comparison, to prevent false positives
+  on tool switches
+- Context refs auto-loaded at session start, no confirmation needed
+- status.md Done section compressed to ~400 token cap
+- Next section uses ACTION/CONTEXT signal marker format
 
 **No MCP dependency in either platform.**
 The vault is a plain markdown directory. Both Lore definitions

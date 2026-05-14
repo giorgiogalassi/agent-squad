@@ -280,6 +280,27 @@ Two simulation rounds identified five issues, all resolved:
 - <private> tag convention from claude-mem privacy control
 - Instance namespacing for parallel sessions
 
+**Context engineering patterns applied**
+
+The vault read/write design maps to established context engineering
+patterns:
+
+- status.md as an anchored iterative summarization document —
+  overwritten each session, never appended, compressed to ~400 tokens
+- Context refs as JIT retrieval — files pre-selected at session end,
+  auto-loaded at session start without prompting
+- INDEX.md as index-first loading — one small file orients the
+  companion before any content is loaded
+- ACTION/CONTEXT signal markers in the Next section — minimal
+  Context State Object eliminating prose parsing
+- Compressed Done section preventing context rot from accumulated
+  session history
+
+The failure mode these patterns prevent is context rot — accumulated
+stale content degrading companion orientation over time. The 400-token
+cap on status.md and the compression discipline at lore end are the
+primary defenses.
+
 > **Promotion criterion:** when Sentry is active, Sentry calls
 > `lore start` and `lore end` automatically at flow boundaries.
 > Lore's internal behavior does not change — only who invokes it.
