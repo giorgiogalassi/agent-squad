@@ -289,6 +289,17 @@ Adjust the Written list to reflect only what was actually changed.
 - Never read source files unless explicitly referenced by a config file.
 - Write in English regardless of project language or conversation language.
 
+## Session log
+
+When all phases are complete, append to
+`<vault>/projects/<project-name>/.squad/session.log` (read existing content
+first, then write with the new line appended; the file exists because
+`lore start` created it):
+
+  [YYYY-MM-DD HH:MM] [seed] end — context files written
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
+
 ---
 
 > **Note:** Seed requires Bash tool permissions for the `find` and `mkdir`

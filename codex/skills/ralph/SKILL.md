@@ -186,6 +186,23 @@ in the project root. Append one line per resolved issue. Format:
 - Max 3 retries per issue, retryable failures only. After 3, escalate
   and continue. Immediate-escalation conditions skip retries entirely.
 
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs]
+
+When printing the end of batch report, append:
+
+  [YYYY-MM-DD HH:MM] [ralph] end — resolved: N, escalated: [...], skipped: [...]
+
+Per-issue detail stays in `progress.txt`. The session log records batch
+boundaries only.
+
+Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
+
 ---
 
 > **Note:** In the Codex set, Ralph delegates through Codex sub-agent tools

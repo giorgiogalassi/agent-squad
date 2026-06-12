@@ -157,6 +157,20 @@ Nothing else after the summary.
   `<vault>/projects/<project>/.squad/prd/archive/` with a timestamp suffix:
   `current-YYYYMMDD-HHMMSS.md`. Only do this if the PRD was the input.
 
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [chisel] start
+
+After all issues are created, append:
+
+  [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
+
+Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
+
 ---
 
 > **Note:** In the Codex set, use the Linear MCP prefix `mcp__linear__`.

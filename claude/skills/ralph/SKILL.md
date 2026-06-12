@@ -5,7 +5,7 @@ description: >
   issues. Triggers: /ralph, /ralph <issue-id>, "start working on issues",
   "resolve the issues". Do NOT trigger on feature planning, code review
   requests, or documentation tasks.
-allowed-tools: Read, Bash, mcp__linear-server__list_issues,
+allowed-tools: Read, Write, Bash, mcp__linear-server__list_issues,
   mcp__linear-server__get_issue, mcp__linear-server__update_issue
 ---
 
@@ -181,6 +181,23 @@ in the project root. Append one line per resolved issue. Format:
 - Write `progress.txt` in English regardless of conversation language.
 - Max 3 retries per issue, retryable failures only. After 3, escalate
   and continue. Immediate-escalation conditions skip retries entirely.
+
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs]
+
+When printing the end of batch report, append:
+
+  [YYYY-MM-DD HH:MM] [ralph] end — resolved: N, escalated: [...], skipped: [...]
+
+Per-issue detail stays in `progress.txt`. The session log records batch
+boundaries only.
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
 
 ---
 

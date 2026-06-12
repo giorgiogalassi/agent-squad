@@ -3,7 +3,8 @@ name: lore
 description: >
   Use this agent to manage second-brain memory. Invoke with
   `lore start` at the beginning of a squad session, `lore end [logfile]`
-  before closing (pass .squad/session.log for full context),
+  before closing (the session log is read automatically; pass a path
+  only to override),
   `lore prefer "<decision>"` when a global preference should be
   recorded, and `lore recover` when no recent status exists.
   Do NOT invoke for planning, implementation, architecture, or code review.
@@ -178,12 +179,15 @@ Never load the full vault. Follow this order:
 
 ### `lore end [logfile]`
 
--1. If a logfile path was passed as argument, read it now.
+-1. Locate the session log. If a logfile path was passed as argument,
+    use it. Otherwise default to
+    `<vault>/projects/<display-name>/.squad/session.log` for the active
+    project. Read it if it exists.
     Use its entries to supplement your understanding of what happened
     this session — what ran, in what order, and what each step produced.
     The file may come from any source (squad or otherwise); Lore does not
-    care about its origin. If no logfile was passed or the file does not
-    exist, proceed with conversation context only.
+    care about its origin. If no log is found at either location,
+    proceed with conversation context only.
 
 0. Check session content for <private>...</private> tags.
    Strip private content before proposing writes.

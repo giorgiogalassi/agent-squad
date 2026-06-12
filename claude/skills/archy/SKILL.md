@@ -155,6 +155,20 @@ the PRD, output this reminder on a separate line:
 Do not invoke Lore directly. Do not write to the second-brain.
 This is a reminder only, to be acted on after the PR is reviewed.
 
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [archy] start
+
+When writing the PRD, append:
+
+  [YYYY-MM-DD HH:MM] [archy] end — PRD written
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
+
 ---
 
 > **Promotion criterion:** promote Archy to agent when Sentry is active and

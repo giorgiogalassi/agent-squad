@@ -90,6 +90,20 @@ Vault layout:
 Host projects contain only their own source code — no `.squad/` directory
 and no `lore-config.json` are written to the project root.
 
+## Session log
+
+Each session has one log at
+`<vault>/projects/<display-name>/.squad/session.log`. `lore start` resets
+it, skills append milestone lines as they run, and `lore end` reads it by
+default. The log is what lets a session survive `/clear` boundaries:
+conversation context resets, the log does not.
+
+Line format: `[YYYY-MM-DD HH:MM] [component] event — details`
+
+Writers: lore, seed, forge, archy, chisel, ralph. Agents do not write to
+the session log. Cody checkpoints `status.md` at PR open instead, and
+Reven runs read-only by design.
+
 ## Sentry note
 
 When Sentry is active it calls Lore automatically at session boundaries.

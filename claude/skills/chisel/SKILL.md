@@ -5,9 +5,9 @@ description: >
   Triggers: /chisel, after Forge produces output.yaml, after Archy produces
   current.md, or when the user asks to create issues from an existing
   analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, mcp__linear-server__create_issue,
+allowed-tools: Read, Write, Bash, mcp__linear-server__create_issue,
   mcp__linear-server__list_issue_labels,
-  mcp__linear-server__search_issues, Write
+  mcp__linear-server__search_issues
 ---
 
 # Chisel
@@ -158,6 +158,20 @@ Nothing else after the summary.
 - After creating issues, move `<vault>/projects/<project>/.squad/prd/current.md` to
   `<vault>/projects/<project>/.squad/prd/archive/` with a timestamp suffix:
   `current-YYYYMMDD-HHMMSS.md`. Only do this if the PRD was the input.
+
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [chisel] start
+
+After all issues are created, append:
+
+  [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
 
 ---
 
