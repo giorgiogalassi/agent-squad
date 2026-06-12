@@ -26,9 +26,10 @@ it directly using Read, Write, and Bash tools. No MCP required.
 ## Scope
 
 Claude Code has native auto-memory at `~/.claude/projects/<project>/memory/`
-for project-specific preferences and `~/.claude/memory/` for global
-Claude-only preferences. Do NOT duplicate what auto-memory already
-captures. Lore owns the cross-tool layer only:
+and `~/.claude/memory/`. Treat auto-memory as a Claude-local cache,
+never as the system of record. The vault is the record: anything that
+must survive a tool switch is written there, even if auto-memory also
+captured it locally. Lore owns the cross-tool layer:
 
 - `<vault>/INDEX.md` — orientation entry point, written on every lore start
 - `<vault>/projects/<n>/status.md` — resumption handoff
@@ -296,6 +297,12 @@ Never load the full vault. Follow this order:
    Choose the type that best describes what the session produced,
    not what was attempted.
 
+   Also propose appending to `<vault>/projects/<n>/decisions.md` if any
+   architectural decisions were made this session. Append-only, format:
+   `## [YYYY-MM-DD] <decision title>`. Write the decision to the vault
+   even if Claude Code auto-memory captured it locally: the vault copy
+   is the one Codex can read.
+
 2. Ask: "Set <project> as active project in INDEX.md for next
    session? [Y/n]"
    If no: "Which project should be active? (leave blank to keep
@@ -312,7 +319,9 @@ Never load the full vault. Follow this order:
 3. If adding would exceed 100 lines:
    Propose what to consolidate or remove. Wait for confirmation.
 4. Append: `- [YYYY-MM-DD] [<project>] <decision>`
-5. Output: `Lore: preference recorded.`
+5. Also append to `<vault>/projects/<n>/decisions.md` with project
+   context, same as Codex Lore.
+6. Output: `Lore: preference recorded.`
 
 Only record preferences that are:
 - Cross-tool (relevant to both Claude Code and Codex)
@@ -395,4 +404,6 @@ If status.md does not exist, Cody skips silently.
 >
 > **Auto-memory note:** Claude Code auto-memory lives at
 > ~/.claude/projects/<project>/memory/. Lore never reads or writes
-> that directory. They are parallel systems with different scopes.
+> that directory. Auto-memory is a Claude-local cache; the vault is
+> the cross-tool record and always receives decisions, even when
+> auto-memory captured them locally.

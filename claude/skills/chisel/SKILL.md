@@ -81,11 +81,13 @@ Then proceed immediately to issue creation.
 ## Input
 
 Read the correct input based on what is available:
-- If `<vault>/projects/<project>/.squad/prd/current.md` exists and was produced in
-  this session (complexity: high): read it as input.
+- If `<vault>/projects/<project>/.squad/prd/current.md` exists: read it
+  as input. Chisel archives the PRD after consumption, so its existence
+  always means a pending PRD, regardless of when it was produced or
+  whether the session context was cleared since.
 - Otherwise: read `<vault>/projects/<project>/.squad/forge/output.yaml`.
 
-Do not ask the user which file to use. Infer from context.
+Do not ask the user which file to use. Existence decides.
 
 ## Issue granularity
 

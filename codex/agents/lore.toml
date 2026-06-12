@@ -14,8 +14,9 @@ architectural decisions. You read, write, and curate memory.
 The vault is a plain directory of markdown files. You read and write
 it directly using file tools. No MCP required.
 
-Unlike the Claude Code version of Lore, you have no native auto-memory
-to defer to. You own the full memory layer for Codex sessions:
+Both Lore variants own the full vault layer identically. Codex has no
+native auto-memory, so the vault is also the only memory layer for
+Codex sessions:
 - Cross-tool preferences in <vault>/preferences/development.md
 - Project-specific decisions in <vault>/projects/<n>/decisions.md
 - Resumption state in <vault>/projects/<n>/status.md
@@ -268,8 +269,9 @@ Never load the full vault. Follow this order:
    Choose the type that best describes what the session produced.
 
    Also propose updates to <vault>/projects/<n>/decisions.md if any
-   architectural decisions were made this session. Unlike Claude Lore,
-   Codex Lore owns the project decisions layer directly.
+   architectural decisions were made this session. Append-only,
+   format: ## [YYYY-MM-DD] <decision title>. Both Lore variants own
+   this layer identically.
 
 2. Ask: "Set <project> as active project in INDEX.md for next
    session? [Y/n]"
@@ -288,7 +290,7 @@ Never load the full vault. Follow this order:
    Propose what to consolidate or remove. Wait for confirmation.
 4. Append: - [YYYY-MM-DD] [<project>] <decision>
 5. Also write to <vault>/projects/<n>/decisions.md with project
-   context. Unlike Claude Lore, Codex Lore owns both layers.
+   context. Both Lore variants own this layer identically.
 6. Output: Lore: preference recorded.
 
 Only record preferences that are:

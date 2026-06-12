@@ -72,15 +72,13 @@ These are mostly semantically aligned. The primary differences are mechanical:
 Lore is the most semantically divergent agent across platforms
 because Claude Code has native auto-memory and Codex does not.
 
-**Claude Lore** owns the cross-tool layer only:
-- Never duplicates content in ~/.claude/ auto-memory directories
-- Writes cross-tool preferences to development.md only
-- Does not write to project decisions.md (auto-memory handles that
-  locally for Claude Code sessions)
-
-**Codex Lore** owns the full memory layer:
-- Writes both global preferences and project-local decisions
-- lore prefer writes to both development.md and decisions.md
+**Both Lore variants own the full vault layer identically**, including
+project decisions.md and development.md. The remaining divergence is
+small: Claude Code additionally has native auto-memory, which Lore
+treats as a Claude-local cache and never reads or writes. The vault is
+the cross-tool system of record; decisions made in Claude Code sessions
+are written to vault decisions.md even when auto-memory also captured
+them, because the vault copy is the only one Codex can read.
 
 **Shared behavior (identical across both):**
 - Vault location: SECOND_BRAIN_PATH env var → ~/second-brain/ default; lore-config.json lives at the vault root

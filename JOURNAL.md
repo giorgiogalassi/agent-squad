@@ -361,6 +361,28 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 
 ---
 
+### Iteration 15: Decision Layer Correction and Contract Hardening
+
+A full consistency review of the repository against its own design surfaced one architectural hole and several contract-level repairs.
+
+**The decisions layer was structurally incomplete.** Claude Lore deferred project decisions to Claude Code auto-memory, which writes to `~/.claude/`, a location Codex cannot read. The consequence: decisions made during Claude Code sessions, the primary tool, never reached the vault's `decisions.md`. The file SQUAD.md called the cross-tool decisions log was in practice Codex-only. The fix reframes the relationship: auto-memory is a Claude-local cache, never the system of record. Both Lore variants now write vault `decisions.md` identically. The duplication cost is a few lines per session; the previous cost was a vault missing most of its decisions.
+
+> **Key decision:** the vault is the system of record for anything that must survive a tool switch, even when a tool-native memory layer also captured it locally. Native memory is a cache.
+
+**Contract hardening, in the same pass:**
+
+- The vault path schema was unified to `<vault>/projects/<display-name>/.squad/` everywhere; half the definitions used a layout without the `projects/` segment, so files were written to one tree and read from another. SQUAD.md now states the canonical schema in one place so Reven can review path references against a single source.
+- Cody and Reven received the path resolution protocol; both still read project-relative `.squad/` paths that stopped existing in Iteration 14.
+- Seed no longer derives project names. It requires the `lore start` mapping in `lore-config.json` and stops if absent. Lore owns naming and conflict resolution; Seed consumes the mapping.
+- Ralph's failure criteria were specified (open point 5.4): retryable vs immediate escalation vs not-a-failure, with identical consecutive errors escalating without burning remaining retries.
+- The session log became fully instrumented: Forge, Archy, Chisel, Ralph, and Seed all append milestone lines, and `lore end` reads the log by default instead of requiring the path as an argument. The log is what survives `/clear` boundaries; a half-instrumented log was worse than none.
+- `progress.txt` moved into the vault at `<vault>/projects/<name>/.squad/progress.txt`. Writing it to the project root violated the zero-footprint principle that Iteration 14 established.
+- Chisel's input rule changed from "PRD produced in this session" (unverifiable after `/clear`) to pure existence: Chisel archives the PRD after consumption, so existence always means pending.
+- Seed's `architecture.md` template gained a `## Data flow` section: collected data, storage and third parties, tracking and cookies, retention. Seed populates only evidence-backed candidates, marked `[unverified]`, and leaves the rest for manual completion. Archy and Reven consume it today; it is the designed input for a future Lex compliance agent, which was deliberately deferred with an explicit trigger in section 6 rather than built speculatively.
+- The vault is recommended (not required) to be a private git repository: it is the single point of failure for all cross-project memory, and a repo adds history, backup, and multi-machine sync without adding any dependency Lore knows about.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -404,12 +426,13 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 | File | Purpose |
 |------|---------|
 | `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
-| `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions. Written by Seed. Read by Forge, Archy, Cody, Reven. |
+| `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow. Written by Seed. Read by Forge, Archy, Cody, Reven; data flow is Lex's future input. |
 | `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
 | `<vault>/projects/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
 | `<vault>/projects/<project>/.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
 | `<vault>/projects/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
 | `<vault>/projects/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
+| `<vault>/projects/<project>/.squad/progress.txt` | Ralph's per-issue batch memory. Appended by Ralph, read by Cody. |
 | `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
 | `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
@@ -441,6 +464,7 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 - **Qugh:** QA behavioral testing. You handle manual testing. Add when Reven alone misses behavioral issues.
 - **Oak:** daily documentation job. Add when documentation starts drifting noticeably from the codebase.
 - **Agent Teams:** parallel Qugh and Reven. Add when both are active.
+- **Lex:** legal and compliance audit, GDPR baseline. Add when a project approaches production with real users. Reads the `## Data flow` section of `architecture.md` scaffolded by Seed.
 
 ### MVP Flow
 
@@ -539,6 +563,12 @@ The assumption breaks if branch protection rules require review from someone oth
 - New contributors (or future you) are confused by outdated documentation more than once per month.
 
 > Oak is not worth the token cost if documentation quality is already acceptable.
+
+### Add Lex when:
+- A project is approaching production deployment with real users, especially EU users.
+- The product collects or processes personal data: forms, analytics, authentication, payments.
+
+> Lex reads the `## Data flow` section of `architecture.md` and produces a prioritized, evidence-based compliance checklist (GDPR as baseline, since the controller is EU-based regardless of visitor origin). It falls back to targeted source reading only when the section is missing or sparse. Do not build Lex before the trigger fires: the `## Data flow` section already has standalone value for Archy and Reven, and a speculative agent contradicts the discipline this section exists to enforce.
 
 ### Re-run Seed when:
 - You add a new major dependency that changes how code is written.

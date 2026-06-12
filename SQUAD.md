@@ -82,6 +82,7 @@ Vault layout:
       prd/current.md
       prd/archive/
       chisel-config.json
+      progress.txt
     status.md                      Resumption handoff. Written by Lore, checkpointed by Cody.
     decisions.md                   Key decisions log. Append-only.
   experiences/YYYY-MM/             Monthly session logs.

@@ -88,7 +88,33 @@ files you read.
 ## Project structure
 ## Patterns and conventions
 ## Build and test commands
+## Data flow
 ```
+
+Structure the `## Data flow` section as:
+
+```markdown
+## Data flow
+### Collected data
+### Storage and third parties
+### Tracking and cookies
+### Retention
+```
+
+Populate it only with what the files you read provide evidence for.
+Dependency and config inspection can reveal candidates: an analytics key
+in a config file, an SDK in the manifest (supabase, stripe, posthog,
+google-analytics), an SMTP or form provider. List each candidate as one
+line marked `[unverified]`, naming the evidence:
+
+  - [unverified] `@supabase/supabase-js` in package.json: user data
+    likely stored in Supabase
+
+Leave subsections with no evidence as `—` placeholders. Never assert a
+data flow you cannot point to evidence for. The user completes and
+verifies this section manually. Consumers today: Archy and Reven. A
+future Lex agent will read this section as its primary input for
+compliance audits.
 
 If updating an existing file, merge: preserve sections you cannot verify have
 changed, update only what the current project state contradicts or extends.
@@ -241,6 +267,10 @@ Configured in: <vault>/lore-config.json
 
 Filesystem only. Lore reads and writes <vault> directly
 using file tools. No MCP required.
+
+Optional: initialize the vault as a private git repository for
+history, backup, and multi-machine sync. Lore neither requires nor
+uses this; commit manually when you want a checkpoint.
 
 ## Obsidian
 

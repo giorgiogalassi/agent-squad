@@ -126,6 +126,10 @@ On the first `lore start`, Lore creates the vault automatically.
   by default).
 - Per-project `.squad/` state lives inside the vault at
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
+- Recommended: initialize the vault as a private git repository. It is the
+  single source of truth for all squad memory; a repo gives it history,
+  backup, and multi-machine sync at zero cost. Lore neither requires nor
+  uses it.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
 files are written to the project itself.
@@ -152,8 +156,9 @@ vault files directly when needed.
       prd/current.md               written by Archy
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
+      progress.txt                 Ralph's per-issue batch memory. Read by Cody.
     status.md                      Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Append-only. Written by Lore (Codex) or auto-memory (Claude Code).
+    decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
   experiences/YYYY-MM/             Monthly session logs. Appended by Lore at session end. Never loaded by default.
 ```
 

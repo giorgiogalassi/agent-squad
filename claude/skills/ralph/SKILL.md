@@ -27,8 +27,9 @@ Before reading any file, resolve the vault path and derive the project name:
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
 4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
-Project source files (source code, git operations) and `progress.txt` in the
-project root continue to be accessed via CWD.
+Project source files (source code, git operations) continue to be
+accessed via CWD. `progress.txt` lives in the vault at
+`<vault>/projects/<display-name>/.squad/progress.txt`.
 
 ### Scope boundary advisory
 
@@ -102,7 +103,7 @@ Spawn Cody as a subagent with:
 - The full issue description
 - The acceptance criteria
 - Contents of `<vault>/projects/<project>/.squad/architecture.md` and `<vault>/projects/<project>/.squad/scout-cache.md`
-- Contents of `progress.txt` (project root, CWD) if present
+- Contents of `<vault>/projects/<project>/.squad/progress.txt` if present
 
 Cody's task: assign the issue, create a dedicated branch, implement,
 run tests, and open a PR.
@@ -166,8 +167,9 @@ When an issue fails 3 times:
 
 ## Context between iterations
 
-Each Cody invocation is a fresh context. Persist knowledge in `progress.txt`
-in the project root. Append one line per resolved issue. Format:
+Each Cody invocation is a fresh context. Persist knowledge in
+`<vault>/projects/<project>/.squad/progress.txt`. Append one line per
+resolved issue. Format:
 
   [GG-12] 2026-04-08 resolved. Added reservations table.
            Migration in db/migrations/20260408_reservations.sql

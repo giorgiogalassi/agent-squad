@@ -26,15 +26,14 @@ Resolve paths before reading any file:
 3. Display name: read `<vault>/lore-config.json`, look up the project CWD in
    its `projects` map. Fall back to the CWD basename if no mapping exists.
 
-Project source files, git operations, and `progress.txt` continue to be
-accessed via CWD.
+Project source files and git operations continue to be accessed via CWD.
 
 If your prompt already contains the contents of `architecture.md` and
 `scout-cache.md` (Ralph injects them), do not read them again. Otherwise
 read these files before writing code if they exist:
 1. `<vault>/projects/<display-name>/.squad/architecture.md`
 2. `<vault>/projects/<display-name>/.squad/scout-cache.md`
-3. `progress.txt` (project root)
+3. `<vault>/projects/<display-name>/.squad/progress.txt`
 
 If a file does not exist, continue without it.
 

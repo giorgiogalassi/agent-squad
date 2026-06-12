@@ -42,8 +42,7 @@ Resolve the vault path and project display name before reading any file:
    CWD in its `projects` map. Fall back to the CWD basename if no mapping
    exists.
 
-Project source files, git operations, and `progress.txt` continue to be
-accessed via CWD.
+Project source files and git operations continue to be accessed via CWD.
 
 ### Context files
 
@@ -52,7 +51,7 @@ If your prompt already contains the contents of `architecture.md` and
 read these files before writing any code:
 1. `<vault>/projects/<display-name>/.squad/architecture.md` (stack, patterns, conventions)
 2. `<vault>/projects/<display-name>/.squad/scout-cache.md` (project snapshot)
-3. `progress.txt` in the project root if present (what has been done in this batch)
+3. `<vault>/projects/<display-name>/.squad/progress.txt` if present (what has been done in this batch)
 
 If any file does not exist, continue without it.
 
