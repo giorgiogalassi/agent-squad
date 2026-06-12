@@ -379,7 +379,7 @@ A full consistency review of the repository against its own design surfaced one 
 - `progress.txt` moved into the vault at `<vault>/projects/<name>/.squad/progress.txt`. Writing it to the project root violated the zero-footprint principle that Iteration 14 established.
 - Chisel's input rule changed from "PRD produced in this session" (unverifiable after `/clear`) to pure existence: Chisel archives the PRD after consumption, so existence always means pending.
 - Seed's `architecture.md` template gained a `## Data flow` section: collected data, storage and third parties, tracking and cookies, retention. Seed populates only evidence-backed candidates, marked `[unverified]`, and leaves the rest for manual completion. Archy and Reven consume it today; it is the designed input for a future Lex compliance agent, which was deliberately deferred with an explicit trigger in section 6 rather than built speculatively.
-- The vault is recommended (not required) to be a private git repository: it is the single point of failure for all cross-project memory, and a repo adds history, backup, and multi-machine sync without adding any dependency Lore knows about.
+- The vault is recommended (not required) to be a private git repository: it is the single point of failure for all cross-project memory, and a repo adds history, backup, and multi-machine sync. When the repo exists, `lore end` and `lore recover` commit after their confirmed writes, commit only, never push: a backup that depends on remembering to commit reproduces the same human failure mode as forgetting `lore end`. `lore start` also refuses to register the vault itself as a project when a session is opened inside it.
 
 ---
 

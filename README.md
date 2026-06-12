@@ -128,8 +128,10 @@ On the first `lore start`, Lore creates the vault automatically.
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
-  backup, and multi-machine sync at zero cost. Lore neither requires nor
-  uses it.
+  backup, and multi-machine sync at zero cost. When the repo exists,
+  `lore end` and `lore recover` commit after their confirmed writes
+  (commit only, never push); pulling and pushing stay manual. Pull before
+  starting work when using multiple machines.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
 files are written to the project itself.

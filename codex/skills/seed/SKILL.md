@@ -269,8 +269,9 @@ Filesystem only. Lore reads and writes <vault> directly
 using file tools. No MCP required.
 
 Optional: initialize the vault as a private git repository for
-history, backup, and multi-machine sync. Lore neither requires nor
-uses this; commit manually when you want a checkpoint.
+history, backup, and multi-machine sync. When <vault>/.git exists,
+lore end and lore recover commit after their confirmed writes
+(commit only, never push). Without a repo, Lore skips this silently.
 
 ## Obsidian
 

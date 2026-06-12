@@ -85,7 +85,12 @@ Never load the full vault. Follow this order:
       Extract the final path component as the candidate name.
       Record the full absolute path as cwd_path.
    b. If not in a git repo, use current directory name and path.
-   c. If ambiguous or both fail, read INDEX.md active project
+   c. If the resolved path equals the vault path, warn and stop:
+        "This session is running inside the vault itself. The vault
+        is not a project. Open a session in a project directory and
+        run lore start there."
+      Do not register the vault as a project.
+   d. If ambiguous or both fail, read INDEX.md active project
       and ask: "Use last active project <name>? [Y/n]"
 
 3. Resolve display name via <vault>/lore-config.json:
@@ -279,8 +284,17 @@ Never load the full vault. Follow this order:
    current)"
    Update INDEX.md accordingly.
 
-3. After all confirmations write all files and output:
-   Lore: memory updated.
+3. After all confirmations write all files.
+
+4. If <vault>/.git exists, commit the vault:
+     git -C <vault> add -A
+     git -C <vault> commit -m "[lore] <project> session end YYYY-MM-DD HH:MM"
+   Commit only. Never push, pull, or touch remotes. If the vault is
+   not a git repository, skip silently. A commit failure is not an
+   error to surface beyond one line; the vault writes already
+   succeeded.
+
+5. Output: Lore: memory updated.
 
 ### lore prefer "<decision>"
 
@@ -325,6 +339,11 @@ lore end was called.
    lore prefer.
 
 6. Wait for confirmation before writing anything.
+
+7. After a confirmed write, commit the vault using the same rule as
+   lore end step 4, with message
+   "[lore] <project> recovery YYYY-MM-DD HH:MM". Skip silently if
+   the vault is not a git repository.
 
 ### Incremental checkpoint (written by Cody, not Lore)
 
