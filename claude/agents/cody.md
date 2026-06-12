@@ -44,6 +44,12 @@ Resolve the vault path and project display name before reading any file:
 
 Project source files and git operations continue to be accessed via CWD.
 
+**Tracker mode:** use the mode stated in your prompt if present;
+otherwise read `chisel.mode` from
+`<vault>/projects/<display-name>/.squad/chisel-config.json`. Missing
+field means `connected`. In detached mode you never call tracker MCP
+tools and never push or open PRs; see steps 0 and 6.
+
 ### Context files
 
 If your prompt already contains the contents of `architecture.md` and
@@ -66,6 +72,9 @@ Read the issue provided in your prompt. Identify:
 Work in this order. Do not skip steps.
 
 ### 0. Claim the issue
+
+Connected mode only. In detached mode skip this step entirely; Ralph
+records the status change in the batch handoff file.
 
 Before doing anything else:
 - Call `mcp__linear-server__update_issue` to assign the issue to yourself
@@ -133,6 +142,8 @@ If the project has no tests, skip silently.
 
 ### 6. Open a PR
 
+**Connected mode:**
+
 ```bash
 git add -A
 git commit -m "[ISSUE-ID] brief description"
@@ -144,12 +155,29 @@ PR body must include: what was done, acceptance criteria checklist,
 and any notes for Reven.
 If `gh` is unavailable, push the branch and print instructions.
 
-After the PR is created, append one checkpoint line to
+**Detached mode:** commit locally, do not push, do not call `gh` or any
+forge API:
+
+```bash
+git add -A
+git commit -m "[ISSUE-ID] brief description"
+```
+
+Then print a paste-ready PR description: the title line
+`[ISSUE-ID] title` followed by the same body a connected PR would have
+(what was done, acceptance criteria checklist, notes for Reven). The
+user pushes the branch and opens the PR in their forge manually.
+
+**Both modes:** after the PR is created (connected) or the branch is
+committed (detached), append one checkpoint line to
 `<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 ```
 [YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>
+[YYYY-MM-DD HH:MM] [claude-code] Branch <branch> ready for manual push. <one-line summary>
 ```
+
+Use the first form in connected mode, the second in detached mode.
 
 This is the only time Cody writes to `second-brain/`. It is a
 checkpoint only — not a full status update. Lore handles the rest.
@@ -160,7 +188,7 @@ If `status.md` does not exist, skip silently.
 After opening the PR, print a single summary and nothing else:
 
   Done.
-  PR: #N -- [title]
+  PR: #N -- [title]   (detached mode: "not opened -- paste-ready description above")
   Branch: <branch-name>
   Files changed: [list]
   Tests: passed / failed / skipped

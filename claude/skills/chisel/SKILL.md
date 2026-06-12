@@ -53,6 +53,25 @@ anything else.
 ## Configuration flow
 
 Ask these questions one at a time:
+0. "Connected mode (issues created in a tracker via MCP) or detached mode
+   (issues written to a local batch file, you create them in the tracker
+   yourself)?"
+
+If **detached**, ask only:
+1. "Issue ID prefix for local issues? (press enter for 'SQ')"
+
+and write:
+
+```json
+{
+  "chisel": {
+    "mode": "detached",
+    "issue_prefix": "SQ"
+  }
+}
+```
+
+If **connected**, continue:
 1. "What is your Linear team name or ID?"
 2. "What is your Linear project name or ID for this work?"
 3. "What label should I apply to issues waiting for your review?
@@ -64,6 +83,7 @@ After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config
 ```json
 {
   "chisel": {
+    "mode": "connected",
     "team_id": "...",
     "project_id": "...",
     "review_label": "...",
@@ -71,6 +91,8 @@ After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config
   }
 }
 ```
+
+A config without a `mode` field is connected (backward compatibility).
 
 Confirm with a single line:
 
@@ -107,7 +129,7 @@ A good issue contains: a clear title, a description of what needs to be done
 and why, the acceptance criteria it covers, and any explicit dependencies on
 other issues in the batch.
 
-## Issue creation
+## Issue creation (connected mode)
 
 For each issue, call `mcp__linear-server__create_issue` with:
 - `title`: short, action-oriented (verb + noun, max 60 chars)
@@ -122,6 +144,54 @@ For each issue, call `mcp__linear-server__create_issue` with:
   states if needed
 
 Create issues one at a time. Do not batch them into a single call.
+
+## Issue creation (detached mode)
+
+Do not call any MCP tool. Write the full batch to
+`<vault>/projects/<project>/.squad/issues/batch-YYYYMMDD-HHMMSS.md`:
+
+```markdown
+# Batch YYYY-MM-DD
+Status: pending
+
+## Key mapping
+| Local | Tracker |
+|-------|---------|
+| SQ-1  | —       |
+| SQ-2  | —       |
+
+## SQ-1: <title>
+
+<description: context, what and why>
+
+### Acceptance criteria
+- ...
+
+## SQ-2: <title>
+Blocked by: [SQ-1] <title of blocking issue>
+...
+```
+
+Rules:
+- Assign local IDs sequentially using the configured prefix. Dependencies
+  use local IDs in the same `Blocked by:` first-line format.
+- Issue granularity rules are identical to connected mode.
+- The `Key mapping` table is for the user: after creating the issues in
+  their tracker (Jira, Bitbucket, anything), they may fill in the real
+  keys. Downstream reports use the tracker key when present, the local
+  ID otherwise. An empty mapping is valid; nothing depends on it.
+- Also write `batch-YYYYMMDD-HHMMSS.csv` alongside, with columns
+  `Summary,Description` (quoted multiline values), importable by Jira's
+  CSV importer for one-shot issue creation.
+
+Then print:
+
+  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
+  Create the issues in your tracker (CSV import available), optionally
+  fill the key mapping, then invoke Ralph.
+
+Nothing else after the summary. PRD archiving applies the same as in
+connected mode.
 
 ## Dependency format
 

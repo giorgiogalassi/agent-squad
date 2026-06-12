@@ -83,6 +83,7 @@ Vault layout:
       prd/archive/
       chisel-config.json
       progress.txt
+      issues/                    Detached-mode batch files and handoff checklists.
     status.md                      Resumption handoff. Written by Lore, checkpointed by Cody.
     decisions.md                   Key decisions log. Append-only.
   experiences/YYYY-MM/             Monthly session logs.
@@ -104,6 +105,33 @@ Line format: `[YYYY-MM-DD HH:MM] [component] event — details`
 Writers: lore, seed, forge, archy, chisel, ralph. Agents do not write to
 the session log. Cody checkpoints `status.md` at PR open instead, and
 Reven runs read-only by design.
+
+## Tracker modes
+
+Chisel, Ralph, and Cody support two tracker modes, selected by
+`chisel.mode` in `chisel-config.json` (missing field = `connected`):
+
+- **connected**: issues live in a tracker reached via MCP (Linear).
+  Agents create issues, update statuses, and open PRs directly.
+- **detached**: agents never touch the tracker or the forge. Chisel
+  writes a batch file with local issue IDs, Ralph executes from it and
+  accumulates a handoff checklist of tracker actions for the user to
+  replay manually, Cody commits locally and prints a paste-ready PR
+  description without pushing. Reven diffs the local branch.
+
+Detached mode exists for environments where agents must not hold write
+access to company tools (Jira, Bitbucket), and doubles as the fallback
+when the tracker MCP is unavailable. Forge, Archy, Seed, and Lore are
+identical in both modes.
+
+## Trust domains
+
+One vault per trust domain. Work and personal memory never share a
+vault: global files (INDEX.md, preferences/development.md) are written
+on every session and would leak one domain's context into the other's
+remote. Select the vault per context with `SECOND_BRAIN_PATH` (shell
+profile, direnv). A gitignored subdirectory inside a shared vault is
+not an acceptable substitute.
 
 ## Sentry note
 

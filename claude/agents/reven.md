@@ -59,6 +59,14 @@ git fetch origin
 git diff origin/main...origin/<branch-name>
 ```
 
+In detached mode (`chisel.mode` in
+`<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated
+in your prompt) the branch exists only locally and has not been pushed:
+
+```bash
+git diff main...<branch-name>
+```
+
 Read every changed file in full, not just the diff. Context matters.
 
 ## Review criteria

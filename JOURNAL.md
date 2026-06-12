@@ -383,6 +383,22 @@ A full consistency review of the repository against its own design surfaced one 
 
 ---
 
+### Iteration 16: Detached Tracker Mode and Trust Domains
+
+The first attempt to use the squad outside personal projects surfaced a constraint the MVP had silently baked in: the workflow assumed agents hold write access to the tracker (Linear MCP) and the forge (`gh`). In a work environment with Jira and Bitbucket, where agents must not hold write access to company tools and may have no API access at all, every integration point broke.
+
+The fix repeated the move that made the workflow Claude/Codex agnostic: the contract was already in files, so the tracker was demoted from a dependency to an adapter. The squad's value lives in the thinking layers (Forge's discovery, Archy's PRDs, Chisel's decomposition discipline, Cody's loop, Reven's review, Lore's memory), which never touched the tracker. Only three points did: issue creation, status updates, PR opening. All three degrade to "agent produces the artifact, human performs the write", which is the human-in-the-loop principle applied at a harder trust boundary.
+
+**Design:** `chisel.mode` in `chisel-config.json` selects `connected` (previous behavior, default for backward compatibility) or `detached`. In detached mode Chisel writes a batch file with sequential local IDs (`SQ-1`, ...), the same `Blocked by:` dependency format, an optional local-to-tracker key mapping table, and a Jira-importable CSV alongside. Ralph executes from the batch file as the source of truth and converts every tracker action into a checklist line in a handoff file the user replays manually; the tracker becomes a company-facing mirror, the vault stays the operational truth. Cody skips the claim step, commits locally without pushing, and prints a paste-ready PR description. Reven diffs the local branch. Forge, Archy, Seed, and Lore are byte-identical across modes.
+
+**Rejected alternative for the work vault:** a gitignored `work/` subdirectory inside the personal vault. Rejected for failing in both directions: the ignored side loses all the git protection Iteration 15 added, and the vault's global files defeat the isolation by construction, since `lore start` writes the active project name into INDEX.md and `lore prefer` writes into development.md, both committed and pushed to the personal remote. The adopted rule is one vault per trust domain, selected per context via `SECOND_BRAIN_PATH`, which existed since Iteration 13 precisely to make vault location an environment concern.
+
+> **Key decision:** external tools are adapters, never dependencies. Any integration the squad has must degrade to a file the agent writes and an action the human performs, because the trust boundary of the environment, not the capability of the agent, decides where writes happen.
+
+A side effect worth recording: detached mode also covers tracker MCP outages on personal projects, so the adapter built for the most restrictive environment improved resilience in the least restrictive one.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -433,6 +449,7 @@ A full consistency review of the repository against its own design surfaced one 
 | `<vault>/projects/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
 | `<vault>/projects/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
 | `<vault>/projects/<project>/.squad/progress.txt` | Ralph's per-issue batch memory. Appended by Ralph, read by Cody. |
+| `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files (local issue IDs, key mapping, Jira-importable CSV) and handoff checklists. |
 | `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
 | `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |

@@ -55,10 +55,36 @@ identifiers. The file nests its fields under a top-level `chisel` key
 on that issue. Otherwise fetch all open issues in the current project with
 status matching `default_status` from config.
 
+### Mode
+
+`chisel.mode` from the same config selects the tracker mode. Missing
+field means `connected`.
+
+**Connected:** fetch issues from Linear as described above.
+
+**Detached:** do not call any tracker tool, read or write. The source
+of truth is the most recent `batch-*.md` with `Status: pending` in
+`<vault>/projects/<project>/.squad/issues/`. Read it, including the key
+mapping table. If invoked with a specific issue ID, match it against
+local IDs and tracker keys in the batch file. All tracker-facing
+actions in this skill (status updates, comments) are replaced by
+checklist lines appended to
+`<vault>/projects/<project>/.squad/issues/handoff-<batch-timestamp>.md`
+(create on first append):
+
+  - [ ] Move <KEY> to In Progress
+  - [ ] Move <KEY> to In Review
+  - [ ] Move <KEY> to Blocked, comment: <last error, one line>
+
+Use the tracker key from the mapping when present, the local ID
+otherwise. The user replays this checklist into their tracker manually.
+
 ## Preflight checks
 
-Before doing any other work, verify that the `gh` CLI is available and
-authenticated. These checks run once at startup, before any issue is touched.
+Connected mode only; in detached mode no PRs are opened, skip this
+section entirely. Before doing any other work, verify that the `gh` CLI
+is available and authenticated. These checks run once at startup, before
+any issue is touched.
 
 1. Run `which gh`. If the command is not found:
    - Print: `ERROR: gh CLI not found on PATH. Install gh and authenticate before running Ralph.`
@@ -105,7 +131,11 @@ Spawn Cody as a subagent with:
 - Contents of `<vault>/projects/<project>/.squad/architecture.md` and `<vault>/projects/<project>/.squad/scout-cache.md`
 - Contents of `<vault>/projects/<project>/.squad/progress.txt` if present
 
-Cody's task: assign the issue, create a dedicated branch, implement,
+Also state the tracker mode explicitly in Cody's prompt
+(`mode: connected` or `mode: detached`).
+
+Cody's task: assign the issue (connected mode), create a dedicated
+branch, implement,
 run tests, and open a PR.
 
 ### 2b. Evaluate result
@@ -114,14 +144,18 @@ Classify Cody's result using these criteria. When in doubt, prefer
 escalation over a retry that cannot change the outcome.
 
 **Success** means all of the following:
-- PR opened, or branch pushed with printed manual PR instructions when
-  `gh` is unavailable (Cody's defined fallback counts as success)
+- Connected: PR opened, or branch pushed with printed manual PR
+  instructions when `gh` is unavailable (Cody's defined fallback counts
+  as success)
+- Detached: branch committed locally with a paste-ready PR description
+  printed (no push, no PR)
 - Tests passed, or skipped because the project has no tests
 
 On success:
-- Update issue status to 'In Review' via `update_issue`
+- Connected: update issue status to 'In Review' via `update_issue`
+- Detached: append `- [ ] Move <KEY> to In Review` to the handoff file
 - Append to `progress.txt`:
-  `[ISSUE-ID] resolved. PR: #N. Notes: <brief summary>`
+  `[ISSUE-ID] resolved. PR: #N (or Branch: <branch> in detached mode). Notes: <brief summary>`
 - Mark issue as unblocking for downstream issues
 - Move to next issue
 
@@ -152,14 +186,20 @@ appended to Cody's context. At 3: escalate (see 2c).
 ### 2c. Escalation
 
 When an issue fails 3 times:
-- Update issue status to 'Blocked' on Linear
-- Add a comment on the issue with the last error output
+- Connected: update issue status to 'Blocked' on Linear and add a
+  comment on the issue with the last error output
+- Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
+  to the handoff file
 - Print: `GG-12 failed after 3 attempts. Escalating to you.`
 - Continue with the next issue. Do not stop the entire batch.
 
 ## Phase 3: end of batch report
 
+In detached mode, first set `Status: executed` in the batch file, then
+include the handoff file in the report:
+
   Ralph complete.
+  Handoff:   <path to handoff file> (detached mode only — replay into your tracker)
   Resolved:  N issues
   In review: [GG-12, GG-14, ...]
   Escalated: [GG-13] -- <reason>

@@ -28,6 +28,12 @@ Resolve paths before reading any file:
 
 Project source files and git operations continue to be accessed via CWD.
 
+Tracker mode: use the mode stated in your prompt if present; otherwise
+read chisel.mode from
+`<vault>/projects/<display-name>/.squad/chisel-config.json`. Missing
+field means connected. In detached mode you never call tracker MCP
+tools and never push or open PRs; see steps 1 and 7.
+
 If your prompt already contains the contents of `architecture.md` and
 `scout-cache.md` (Ralph injects them), do not read them again. Otherwise
 read these files before writing code if they exist:
@@ -40,6 +46,8 @@ If a file does not exist, continue without it.
 Workflow:
 
 1. Claim the issue
+- Connected mode only. In detached mode skip this step entirely; Ralph
+  records the status change in the batch handoff file.
 - Call `mcp__linear__update_issue` to assign the issue to yourself and set its
   status to `In Progress`.
 - If the issue ID is not provided explicitly, extract it from the issue text.
@@ -75,17 +83,24 @@ Workflow:
 
 7. Open a PR
 - Commit with `[ISSUE-ID] brief description`
-- Push the branch
-- Open a PR with:
+- Connected mode: push the branch and open a PR with:
   - what was done
   - acceptance criteria checklist
   - notes for Reven
-- If `gh` is unavailable, push and print manual PR instructions.
+  If `gh` is unavailable, push and print manual PR instructions.
+- Detached mode: do not push, do not call `gh` or any forge API. Print
+  a paste-ready PR description (title `[ISSUE-ID] title` plus the same
+  body a connected PR would have). The user pushes and opens the PR in
+  their forge manually.
 
 After opening the PR, append one checkpoint line to
 `<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 [YYYY-MM-DD HH:MM] [codex] PR #N opened. Branch: <branch>. <one-line summary>
+
+In detached mode use instead:
+
+[YYYY-MM-DD HH:MM] [codex] Branch <branch> ready for manual push. <one-line summary>
 
 This is the only time Cody writes to second-brain/. It is a checkpoint
 only. Lore handles full status updates. If status.md does not exist,
@@ -101,7 +116,7 @@ Rules:
 
 Final output:
 Done.
-PR: #N -- [title]
+PR: #N -- [title]   (detached mode: "not opened -- paste-ready description above")
 Branch: <branch-name>
 Files changed: [list]
 Tests: passed / failed / skipped

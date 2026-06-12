@@ -158,11 +158,31 @@ vault files directly when needed.
       prd/current.md               written by Archy
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
+      issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory. Read by Cody.
     status.md                      Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
     decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
   experiences/YYYY-MM/             Monthly session logs. Appended by Lore at session end. Never loaded by default.
 ```
+
+## Tracker modes
+
+`chisel.mode` in `chisel-config.json` selects how the squad talks to your
+issue tracker. `connected` (default) creates and updates Linear issues via
+MCP and opens PRs with `gh`. `detached` keeps agents fully hands-off:
+Chisel writes a local batch file (with a Jira-importable CSV), Ralph
+executes from it and produces a handoff checklist you replay into the
+tracker, Cody commits locally and prints a paste-ready PR description
+without pushing. Use detached in work environments where agents must not
+hold write access to company tools, or as a fallback when the tracker MCP
+is down. The thinking layers (Forge, Archy, Seed, Lore, Reven's review
+logic) are identical in both modes.
+
+When using the squad across trust domains (personal and work), use one
+vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a
+shell profile on the work machine. Do not share a vault between domains:
+INDEX.md and preferences are written on every session and would carry
+work context into a personal remote.
 
 ## Claude vs Codex
 

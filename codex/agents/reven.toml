@@ -37,6 +37,11 @@ Gather the diff with the repository's normal Git workflow, for example:
 - `git fetch origin`
 - `git diff origin/main...origin/<branch-name>`
 
+In detached mode (chisel.mode in
+`<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated
+in your prompt) the branch exists only locally and has not been pushed:
+- `git diff main...<branch-name>`
+
 Read every changed file in full, not just the diff.
 
 Review criteria:
