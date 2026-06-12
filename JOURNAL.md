@@ -484,6 +484,8 @@ The definition of a failed attempt has not been fully specified. Does a test fai
 
 > **Action:** define explicit failure criteria before relying on Ralph heavily. Proposed: build failure = retry, test failure = retry, type error = retry, infinite loop detected = escalate immediately.
 
+> **Resolved (2026-06-12):** failure classification written into both Ralph skills (section 2b). Retryable: build/compile failure, test failure introduced by the changes, type errors, unresolvable lint errors, transient PR-creation errors. Immediate escalation: identical error across two consecutive attempts, ambiguity requiring a human decision, auth or environment failures, loop symptoms. Not counted as failures: absent test suite, pre-existing failures on main (noted in progress.txt and the PR body). Cody's manual-PR fallback when `gh` is unavailable counts as success.
+
 ### 5.5 decisions.md maintenance discipline
 
 `decisions.md` value depends entirely on keeping it updated. There is no automated mechanism to prompt updates after significant decisions.

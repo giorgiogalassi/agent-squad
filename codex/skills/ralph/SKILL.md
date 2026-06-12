@@ -113,17 +113,44 @@ Use Codex sub-agent tools for this flow:
 
 ### 2b. Evaluate result
 
-**Success** (PR opened, tests pass):
+Classify Cody's result using these criteria. When in doubt, prefer
+escalation over a retry that cannot change the outcome.
+
+**Success** means all of the following:
+- PR opened, or branch pushed with printed manual PR instructions when
+  `gh` is unavailable (Cody's defined fallback counts as success)
+- Tests passed, or skipped because the project has no tests
+
+On success:
 - Update issue status to 'In Review' via `update_issue`
 - Append to `progress.txt`:
   `[ISSUE-ID] resolved. PR: #N. Notes: <brief summary>`
 - Mark issue as unblocking for downstream issues
 - Move to next issue
 
-**Failure** (could not complete or tests fail):
-- Increment retry counter
-- If retries < 3: retry with error output appended to context
-- If retries = 3: escalate (see 2c)
+**Retryable failure** (increment the counter, max 3, see 2c):
+- Build or compile failure
+- Test failure introduced by Cody's changes
+- Type errors
+- Lint errors Cody could not resolve without disabling checks
+- PR creation failed for a transient reason (network, rate limit)
+
+On a retryable failure with retries < 3: retry with the error output
+appended to Cody's context. At 3: escalate (see 2c).
+
+**Immediate escalation** (do not retry, go straight to 2c):
+- Two consecutive attempts produce the same error output with no new
+  diff progress: a third identical attempt cannot succeed
+- Cody reports the issue is ambiguous beyond its narrow-interpretation
+  rule and a human decision is required
+- Auth or environment failure (`gh` unauthenticated, Linear MCP
+  unavailable, missing env vars): retrying cannot fix these
+- Loop symptoms: repeated identical tool sequences without file changes
+
+**Not a failure** (do not count against retries):
+- Tests skipped because the project has none
+- Pre-existing test failures on main, unrelated to the issue. Note them
+  in `progress.txt` and in the PR body instead.
 
 ### 2c. Escalation
 
@@ -156,7 +183,8 @@ in the project root. Append one line per resolved issue. Format:
 - Never proceed past a cycle detection. Stop and report.
 - Treat a blocker outside the current batch as resolved.
 - Write `progress.txt` in English regardless of conversation language.
-- Max 3 retries per issue. After 3, escalate and continue.
+- Max 3 retries per issue, retryable failures only. After 3, escalate
+  and continue. Immediate-escalation conditions skip retries entirely.
 
 ---
 
