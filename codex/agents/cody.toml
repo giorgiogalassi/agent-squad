@@ -20,10 +20,21 @@ Your job is to implement a Linear issue end-to-end. Read the issue, understand
 the acceptance criteria, inspect the codebase, make the smallest correct
 change, run the smallest relevant test scope, and open a PR.
 
-Read these files before writing code if they exist:
-1. `.squad/architecture.md`
-2. `.squad/scout-cache.md`
-3. `progress.txt`
+Resolve paths before reading any file:
+1. Vault path: `SECOND_BRAIN_PATH` env var if set, otherwise `~/second-brain/`.
+2. Project CWD: `git rev-parse --show-toplevel` via a shell command.
+3. Display name: read `<vault>/lore-config.json`, look up the project CWD in
+   its `projects` map. Fall back to the CWD basename if no mapping exists.
+
+Project source files, git operations, and `progress.txt` continue to be
+accessed via CWD.
+
+If your prompt already contains the contents of `architecture.md` and
+`scout-cache.md` (Ralph injects them), do not read them again. Otherwise
+read these files before writing code if they exist:
+1. `<vault>/projects/<display-name>/.squad/architecture.md`
+2. `<vault>/projects/<display-name>/.squad/scout-cache.md`
+3. `progress.txt` (project root)
 
 If a file does not exist, continue without it.
 
@@ -58,8 +69,8 @@ Workflow:
 - Prefer strict typing and avoid `any`.
 
 6. Test
-- Run the smallest relevant test scope from `.squad/architecture.md` or the
-  project manifest.
+- Run the smallest relevant test scope from `architecture.md` (already read
+  or injected) or the project manifest.
 - Retry failures up to two times if they are caused by your changes.
 - If there are no tests, skip silently.
 
@@ -72,9 +83,8 @@ Workflow:
   - notes for Reven
 - If `gh` is unavailable, push and print manual PR instructions.
 
-After opening the PR, write one checkpoint line to the active
-project's second-brain status file at
-`second-brain/projects/<name>/status.md` under `## Last checkpoint`:
+After opening the PR, append one checkpoint line to
+`<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 [YYYY-MM-DD HH:MM] [codex] PR #N opened. Branch: <branch>. <one-line summary>
 

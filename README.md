@@ -125,7 +125,7 @@ On the first `lore start`, Lore creates the vault automatically.
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
 - Per-project `.squad/` state lives inside the vault at
-  `<vault>/<project-name>/.squad/`, not in the host project directory.
+  `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
 files are written to the project itself.

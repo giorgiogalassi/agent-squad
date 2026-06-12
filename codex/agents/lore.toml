@@ -107,7 +107,7 @@ Never load the full vault. Follow this order:
         mapping and never prompt again.
 
 4. Reset session log:
-   Write <vault>/<project-name>/.squad/session.log with a single opening
+   Write <vault>/projects/<project-name>/.squad/session.log with a single opening
    entry (overwrite any existing):
    [YYYY-MM-DD HH:MM] [lore] start — session opened
    Each session gets a clean log. Skills append to it as they run.

@@ -319,7 +319,7 @@ After sustained use it became clear that the squad-in-project model had three co
 
 Squad agents and skills now install once globally — `~/.claude/agents/` and `~/.claude/skills/` for Claude Code, `~/.codex/agents/` and `~/.agents/skills/` for Codex — and are immediately available in every project directory with no project-level files required.
 
-All per-project operational state moves from `<project-root>/.squad/` to `<vault>/<project-name>/.squad/`. The vault becomes the single source of truth for all squad memory. Host projects have zero squad footprint.
+All per-project operational state moves from `<project-root>/.squad/` to `<vault>/projects/<project-name>/.squad/`. The vault becomes the single source of truth for all squad memory. Host projects have zero squad footprint.
 
 **`lore-config.json` redesign**
 
@@ -351,13 +351,13 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 1. Vault path from `SECOND_BRAIN_PATH` or `~/second-brain/`
 2. Project basename from `git rev-parse --show-toplevel`
 3. Display name lookup from `<vault>/lore-config.json`
-4. All `.squad/` paths resolve to `<vault>/<display-name>/.squad/`
+4. All `.squad/` paths resolve to `<vault>/projects/<display-name>/.squad/`
 
 `Bash` is required in `allowed-tools` for any Claude skill that runs `git rev-parse`.
 
 > **Key decision:** vault-first is absolute. No skill reads from `<project-root>/.squad/`. The vault is the only `.squad/` location, and the only path resolution that matters is the vault-relative one.
 
-> **Post-merge correction (GG-18):** Reven reviewing main against the PRD found that `codex/agents/lore.toml` still wrote `session.log` to the project root (step 0, before vault resolution). The Claude version had been fixed correctly in GG-13. The Codex version required a follow-up fix to mirror the same deferral — writing to `<vault>/<project-name>/.squad/session.log` after step 3 once the display name is resolved. This confirmed the value of running Reven against the full merged diff, not just individual PRs.
+> **Post-merge correction (GG-18):** Reven reviewing main against the PRD found that `codex/agents/lore.toml` still wrote `session.log` to the project root (step 0, before vault resolution). The Claude version had been fixed correctly in GG-13. The Codex version required a follow-up fix to mirror the same deferral — writing to `<vault>/projects/<project-name>/.squad/session.log` after step 3 once the display name is resolved. This confirmed the value of running Reven against the full merged diff, not just individual PRs.
 
 ---
 
@@ -368,7 +368,7 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 | Name | Type | Model | Role |
 |------|------|-------|------|
 | **Scout** | Skill | n/a | Project context snapshot, cached, invalidated on structural changes |
-| **Seed** | Skill | n/a | One-time project initialization. Produces `architecture.md` and `scout-cache.md` in `<vault>/<project>/.squad/`, ensures vault directories exist, and scaffolds second-brain project files. |
+| **Seed** | Skill | n/a | One-time project initialization. Produces `architecture.md` and `scout-cache.md` in `<vault>/projects/<project>/.squad/`, ensures vault directories exist, and scaffolds second-brain project files. |
 | **Forge** | Skill | n/a | Interactive brainstorming session, produces structured YAML with complexity field |
 | **Chisel** | Skill | n/a | Converts YAML or PRD to Linear issues. Single input format, single output format |
 | **Archy** | Skill | Opus or Sonnet | Architectural analysis, produces PRD from Forge YAML on HIGH complexity only |
@@ -403,13 +403,13 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 
 | File | Purpose |
 |------|---------|
-| `<vault>/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
-| `<vault>/<project>/.squad/architecture.md` | Stack, patterns, conventions. Written by Seed. Read by Forge, Archy, Cody, Reven. |
-| `<vault>/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
-| `<vault>/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
-| `<vault>/<project>/.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
-| `<vault>/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
-| `<vault>/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
+| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
+| `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions. Written by Seed. Read by Forge, Archy, Cody, Reven. |
+| `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
+| `<vault>/projects/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
+| `<vault>/projects/<project>/.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
+| `<vault>/projects/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
+| `<vault>/projects/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
 | `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
 | `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |

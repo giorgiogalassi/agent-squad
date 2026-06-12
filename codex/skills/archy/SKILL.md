@@ -23,7 +23,7 @@ Before reading any file, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -44,9 +44,9 @@ These are advisory guidelines that apply throughout this skill:
 ### Files to read
 
 Read these three files before asking any question:
-1. `<vault>/<project>/.squad/forge/output.yaml`  — what the user wants to build
-2. `<vault>/<project>/.squad/architecture.md`    — existing conventions and decisions
-3. `<vault>/<project>/.squad/scout-cache.md`     — current project snapshot
+1. `<vault>/projects/<project>/.squad/forge/output.yaml`  — what the user wants to build
+2. `<vault>/projects/<project>/.squad/architecture.md`    — existing conventions and decisions
+3. `<vault>/projects/<project>/.squad/scout-cache.md`     — current project snapshot
 
 If a file does not exist, continue without it. Do not ask the user to
 provide it. If the YAML references specific modules or files, read them
@@ -95,10 +95,10 @@ Do not close the session automatically. Always wait for explicit `done`.
 
 ## Output
 
-When the user types `done`, write the PRD to `<vault>/<project>/.squad/prd/current.md`
+When the user types `done`, write the PRD to `<vault>/projects/<project>/.squad/prd/current.md`
 and confirm with a single line:
 
-  PRD written to <vault>/<project>/.squad/prd/current.md
+  PRD written to <vault>/projects/<project>/.squad/prd/current.md
 
 Nothing else after that line.
 

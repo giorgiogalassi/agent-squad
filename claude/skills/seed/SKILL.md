@@ -18,6 +18,29 @@ the detail files the squad needs, and ensure all required vault directories
 exist. You do not write code, plan features, or make
 architectural decisions.
 
+## Path resolution protocol
+
+Before any other phase, resolve the vault path and the project display name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
+   to `~/second-brain/`.
+2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash and record
+   the absolute path.
+3. **Display name:** read `<vault>/lore-config.json` and look up the project
+   CWD in its `projects` map.
+4. If the vault does not exist, or `lore-config.json` has no entry for this
+   CWD, stop and print:
+
+     No vault mapping found for this project.
+     Run `lore start` first: Lore creates the vault, resolves the display
+     name, and records the CWD mapping that Seed depends on.
+
+   Never derive the display name yourself. Lore owns project naming and
+   conflict resolution. Seed only consumes the mapping.
+5. All `<project-name>` references in this skill resolve to the display name
+   from step 3, and all `.squad/` paths resolve to
+   `<vault>/projects/<project-name>/.squad/`.
+
 ## Phase 1: read the project
 
 Read the following files if they exist. Skip silently if missing:
@@ -39,25 +62,23 @@ references them.
 
 ## Phase 2: check existing context files
 
-Resolve the vault path first (see Phase 6 for resolution rules) and derive
-`<vault>/<project-name>/` so that Phase 2 can check the correct locations.
-
-Check if these files exist:
-- `<vault>/<project-name>/.squad/architecture.md`
-- `<vault>/<project-name>/.squad/scout-cache.md`
+Using the display name resolved by the path resolution protocol, check if
+these files exist:
+- `<vault>/projects/<project-name>/.squad/architecture.md`
+- `<vault>/projects/<project-name>/.squad/scout-cache.md`
 
 If both exist, show this message and wait for input:
 
   Seed has already run on this project.
-  - <vault>/<project-name>/.squad/architecture.md exists
-  - <vault>/<project-name>/.squad/scout-cache.md exists
+  - <vault>/projects/<project-name>/.squad/architecture.md exists
+  - <vault>/projects/<project-name>/.squad/scout-cache.md exists
   [U] Update both  [S] Skip  [A] architecture.md only  [C] scout-cache.md only
 
 If neither file exists, proceed directly to Phase 3 without asking.
 
 ## Phase 3: write architecture.md
 
-Write `<vault>/<project-name>/.squad/architecture.md` with this structure.
+Write `<vault>/projects/<project-name>/.squad/architecture.md` with this structure.
 Be specific and factual. Do not invent or assume anything not present in the
 files you read.
 
@@ -75,7 +96,7 @@ changed, update only what the current project state contradicts or extends.
 
 ## Phase 4: write scout-cache.md
 
-Write `<vault>/<project-name>/.squad/scout-cache.md` with this structure.
+Write `<vault>/projects/<project-name>/.squad/scout-cache.md` with this structure.
 Keep it dense and factual.
 
 ```markdown
@@ -95,7 +116,7 @@ not a history.
 Run:
 
 ```bash
-mkdir -p <vault>/<project-name>/.squad/forge <vault>/<project-name>/.squad/prd/archive
+mkdir -p <vault>/projects/<project-name>/.squad/forge <vault>/projects/<project-name>/.squad/prd/archive
 ```
 
 This ensures Forge can write `output.yaml` and Chisel can archive PRDs on
@@ -104,13 +125,9 @@ first run regardless of whether the vault project directory is new.
 
 ## Phase 6: scaffold second-brain project files
 
-Resolve vault path:
-1. Check `SECOND_BRAIN_PATH` environment variable
-2. Default: `~/second-brain/`
-
-If the vault path does not exist:
-  Ask: "Second-brain vault not found at <path>. Create it?"
-  Wait for confirmation before proceeding.
+The vault path and display name are already resolved by the path
+resolution protocol. The vault is guaranteed to exist at this point
+(`lore start` created it).
 
 Ensure these vault directories exist:
   <vault>/projects/
@@ -252,17 +269,17 @@ When all phases are complete, print this summary and nothing else:
 
   Seed complete.
   Written:
-    <vault>/<project-name>/.squad/architecture.md
-    <vault>/<project-name>/.squad/scout-cache.md
+    <vault>/projects/<project-name>/.squad/architecture.md
+    <vault>/projects/<project-name>/.squad/scout-cache.md
   Directories ensured:
-    <vault>/<project-name>/.squad/forge/
-    <vault>/<project-name>/.squad/prd/archive/
+    <vault>/projects/<project-name>/.squad/forge/
+    <vault>/projects/<project-name>/.squad/prd/archive/
   Second-brain (if new project):
     <vault>/projects/<name>/status.md
     <vault>/projects/<name>/decisions.md
     <vault>/INDEX.md (created or updated)
     <vault>/preferences/development.md (if new vault)
-  Run lore start before your next planning or coding task.
+  Continue with the planning step when ready.
 
 Adjust the Written list to reflect only what was actually changed.
 

@@ -28,9 +28,27 @@ for clarification.
 
 ## On start
 
+### Path resolution protocol
+
+Resolve the vault path and project display name before reading any file:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
+   to `~/second-brain/`.
+2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash, record the
+   absolute path.
+3. **Display name:** read `<vault>/lore-config.json` and look up the project
+   CWD in its `projects` map. Fall back to the CWD basename if no mapping
+   exists.
+
+Git operations and project source files continue to be accessed via CWD.
+
+### Context files
+
 Read these files before reviewing:
-1. `.squad/architecture.md`  — conventions and patterns to enforce
-2. `.squad/scout-cache.md`   — project context
+1. `<vault>/projects/<display-name>/.squad/architecture.md` (conventions and patterns to enforce)
+2. `<vault>/projects/<display-name>/.squad/scout-cache.md` (project context)
+
+If a file does not exist, continue without it.
 
 Then read the issue and the PR provided in your prompt.
 

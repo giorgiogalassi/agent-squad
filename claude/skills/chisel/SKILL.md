@@ -25,7 +25,7 @@ Before reading any file, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via Bash, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -45,7 +45,7 @@ These are advisory guidelines that apply throughout this skill:
 
 ### Configuration check
 
-Check if `<vault>/<project>/.squad/chisel-config.json` exists and contains
+Check if `<vault>/projects/<project>/.squad/chisel-config.json` exists and contains
 valid configuration. If it does, read it silently and proceed. If it does not
 exist or is missing required fields, run the configuration flow before doing
 anything else.
@@ -59,7 +59,7 @@ Ask these questions one at a time:
    (e.g. 'needs-review', or press enter to skip)"
 4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
 
-After collecting answers, write `<vault>/<project>/.squad/chisel-config.json`:
+After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config.json`:
 
 ```json
 {
@@ -74,16 +74,16 @@ After collecting answers, write `<vault>/<project>/.squad/chisel-config.json`:
 
 Confirm with a single line:
 
-  Configuration saved to <vault>/<project>/.squad/chisel-config.json
+  Configuration saved to <vault>/projects/<project>/.squad/chisel-config.json
 
 Then proceed immediately to issue creation.
 
 ## Input
 
 Read the correct input based on what is available:
-- If `<vault>/<project>/.squad/prd/current.md` exists and was produced in
+- If `<vault>/projects/<project>/.squad/prd/current.md` exists and was produced in
   this session (complexity: high): read it as input.
-- Otherwise: read `<vault>/<project>/.squad/forge/output.yaml`.
+- Otherwise: read `<vault>/projects/<project>/.squad/forge/output.yaml`.
 
 Do not ask the user which file to use. Infer from context.
 
@@ -155,8 +155,8 @@ Nothing else after the summary.
   ambiguity in the description. Do not ask the user to clarify.
 - If a PRD has open questions, include them in the relevant issue description
   so Cody is aware.
-- After creating issues, move `<vault>/<project>/.squad/prd/current.md` to
-  `<vault>/<project>/.squad/prd/archive/` with a timestamp suffix:
+- After creating issues, move `<vault>/projects/<project>/.squad/prd/current.md` to
+  `<vault>/projects/<project>/.squad/prd/archive/` with a timestamp suffix:
   `current-YYYYMMDD-HHMMSS.md`. Only do this if the PRD was the input.
 
 ---

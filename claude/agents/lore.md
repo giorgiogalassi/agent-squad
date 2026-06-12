@@ -123,7 +123,7 @@ Never load the full vault. Follow this order:
         mapping and never prompt again.
 
 4. Reset session log:
-   Write `<vault>/<project-name>/.squad/session.log` with a single opening
+   Write `<vault>/projects/<project-name>/.squad/session.log` with a single opening
    entry (overwrite any existing):
    `[YYYY-MM-DD HH:MM] [lore] start — session opened`
    Each session gets a clean log. Skills append to it as they run.
@@ -246,9 +246,9 @@ Never load the full vault. Follow this order:
 
    When writing the Context refs section: list only files that
    will be needed at the start of the next session. Typically:
-   - .squad/architecture.md if conventions are relevant
-   - .squad/forge/output.yaml if a Forge session is in progress
-   - second-brain/projects/<n>/decisions.md if decisions are active
+   - <vault>/projects/<n>/.squad/architecture.md if conventions are relevant
+   - <vault>/projects/<n>/.squad/forge/output.yaml if a Forge session is in progress
+   - <vault>/projects/<n>/decisions.md if decisions are active
    Remove files from a previous session that are no longer relevant.
    This list is loaded automatically on next lore start.
 

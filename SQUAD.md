@@ -6,7 +6,7 @@ It runs on Claude Code and Codex. Skills are installed globally in
 
 All runtime state lives in the vault (`~/second-brain/` or
 `$SECOND_BRAIN_PATH`). Per-project `.squad/` directories live inside the
-vault at `<vault>/<project-name>/.squad/`, not in the host project.
+vault at `<vault>/projects/<project-name>/.squad/`, not in the host project.
 
 ## Principles
 
@@ -55,6 +55,11 @@ no MCP required.
 | high | New patterns, new deps, cross-module | Forge → Archy → Chisel → Ralph |
 
 ## Second-brain contract
+
+Canonical path schema: all per-project Squad state resolves to
+`<vault>/projects/<display-name>/.squad/`, where the display name comes
+from the `projects` map in `<vault>/lore-config.json`. Any skill, agent,
+or document that references a different `.squad/` location is a bug.
 
 The vault is tool-agnostic. Both Claude Code and Codex read and write it.
 Lore is the only agent that writes to the vault. No other agent writes

@@ -83,7 +83,7 @@ because Claude Code has native auto-memory and Codex does not.
 - lore prefer writes to both development.md and decisions.md
 
 **Shared behavior (identical across both):**
-- Vault location: .squad/lore-config.json → ~/second-brain/ default
+- Vault location: SECOND_BRAIN_PATH env var → ~/second-brain/ default; lore-config.json lives at the vault root
 - lore start deduces project from git, always overwrites INDEX.md
 - Timestamp mismatch detection and inline recovery offer
 - 7-day staleness check with git branch status

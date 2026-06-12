@@ -22,7 +22,7 @@ Before doing anything else, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via Bash, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -47,7 +47,7 @@ You conduct a conversational session, not an interrogation. Ask one question
 at a time. Listen to the answer before asking the next. Adapt your questions
 based on what the user has already told you.
 
-Before starting, read `<vault>/<project>/.squad/architecture.md` if it exists.
+Before starting, read `<vault>/projects/<project>/.squad/architecture.md` if it exists.
 Use it to ground your questions in the actual project context. Do not ask about
 things already established there.
 
@@ -116,10 +116,10 @@ The routing is a recommendation, not a gate. The user always decides.
 
 ## Output
 
-When the user types `done`, write the YAML to `<vault>/<project>/.squad/forge/output.yaml`
+When the user types `done`, write the YAML to `<vault>/projects/<project>/.squad/forge/output.yaml`
 and print a single confirmation line:
 
-  Output written to <vault>/<project>/.squad/forge/output.yaml
+  Output written to <vault>/projects/<project>/.squad/forge/output.yaml
 
 Nothing else after the confirmation line.
 
@@ -152,7 +152,7 @@ notes: ""
 
 ## Session log
 
-At session start, append to `<vault>/<project>/.squad/session.log` (read
+At session start, append to `<vault>/projects/<project>/.squad/session.log` (read
 existing content first, then write with new line appended; create the file if
 it does not exist):
 

@@ -30,10 +30,29 @@ for clarification.
 
 ## On start
 
-Read these files before writing any code:
-1. `.squad/architecture.md`  — stack, patterns, conventions
-2. `.squad/scout-cache.md`   — project snapshot
-3. `progress.txt` if present — what has been done in this batch
+### Path resolution protocol
+
+Resolve the vault path and project display name before reading any file:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
+   to `~/second-brain/`.
+2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash, record the
+   absolute path.
+3. **Display name:** read `<vault>/lore-config.json` and look up the project
+   CWD in its `projects` map. Fall back to the CWD basename if no mapping
+   exists.
+
+Project source files, git operations, and `progress.txt` continue to be
+accessed via CWD.
+
+### Context files
+
+If your prompt already contains the contents of `architecture.md` and
+`scout-cache.md` (Ralph injects them), do not read them again. Otherwise
+read these files before writing any code:
+1. `<vault>/projects/<display-name>/.squad/architecture.md` (stack, patterns, conventions)
+2. `<vault>/projects/<display-name>/.squad/scout-cache.md` (project snapshot)
+3. `progress.txt` in the project root if present (what has been done in this batch)
 
 If any file does not exist, continue without it.
 
@@ -106,7 +125,7 @@ Do not proceed to implementation without this plan.
 
 ### 5. Test
 
-Run the test commands from `.squad/architecture.md` or `package.json`.
+Run the test commands from `architecture.md` (already read or injected) or `package.json`.
 Run only tests related to changed files, not the full suite.
 If tests fail: fix the root cause, not the symptom. Retry twice.
 If still failing after two attempts: document the failure and proceed
@@ -126,9 +145,8 @@ PR body must include: what was done, acceptance criteria checklist,
 and any notes for Reven.
 If `gh` is unavailable, push the branch and print instructions.
 
-After the PR is created, write one checkpoint line to
-`.squad/` — wait, write it to the active project's
-`second-brain/projects/<name>/status.md` under `## Last checkpoint`:
+After the PR is created, append one checkpoint line to
+`<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 ```
 [YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>
