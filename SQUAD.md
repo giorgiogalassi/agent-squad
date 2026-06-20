@@ -42,9 +42,11 @@ no MCP required.
 
 ## Invocation conventions
 
-- Claude Code: `/seed`, `/forge`, `/archy`, `/chisel`, `/ralph`
+- Claude Code: `/seed`, `/forge`, `/archy`, `/chisel`, `/ralph`, `/lore`
 - Codex: use the named skill directly
-- Lore: `lore start`, `lore end`, `lore prefer "<decision>"`
+- Lore: `/lore start`, `/lore end`, `/lore prefer "<decision>"` in Claude
+  Code (the `/lore` skill wraps the Lore agent so the subcommands work as
+  slash-commands); in Codex, invoke the lore agent with `lore start` etc.
 
 ## Severity model
 
@@ -53,6 +55,30 @@ no MCP required.
 | low | Isolated, single module, no new deps | Forge → Chisel → Ralph |
 | medium | New components, existing patterns | Forge → Chisel → Ralph |
 | high | New patterns, new deps, cross-module | Forge → Archy → Chisel → Ralph |
+
+## Confirmation tiers
+
+This is a chat interface, not a CLI. There is no "press enter", and a
+sentinel word like `done` is friction. All skills and agents follow a
+two-tier confirmation model:
+
+**Tier 1, default-and-announce.** For reversible, low-stakes, or
+easily-redone operations: state what you are about to do (show the
+content if it is a write), then proceed in the same turn. The user
+redirects by replying; they never have to approve. Use this for closing
+a discovery session once required slots are filled, writing or
+overwriting routine vault files (status.md, experiences, INDEX.md,
+output.yaml, PRDs, batch files), and optional skips.
+
+**Tier 2, wait-for-explicit-yes.** Only for destructive or
+hard-to-reverse operations: creating the vault on first run, resolving a
+project-name conflict (`<candidate>-2`), and overwriting a status.md the
+timestamp check flagged as possibly stale. Here, stop and wait.
+
+The failure the tiers fix is not "too much confirmation", it is that
+low-stakes and high-stakes confirmations used to look identical, so the
+user could not tell which were safe to wave through. Tier 1 is the
+default; Tier 2 is the explicit exception.
 
 ## Second-brain contract
 

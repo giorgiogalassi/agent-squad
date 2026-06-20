@@ -200,7 +200,12 @@ Never load the full vault. Follow this order:
    If private content was present, note:
      "Note: X private block(s) excluded from vault write."
 
-1. Propose the following writes. Show content. Wait for confirmation.
+1. Show the writes you are about to make (Tier 1, default-and-announce):
+   display the content, state that you are writing it, and proceed in the
+   same turn. The user redirects by replying. Two exceptions require an
+   explicit yes before writing (Tier 2): creating the vault on first run,
+   and overwriting a status.md that step 8 of lore start flagged as
+   possibly stale. Everything below is Tier 1 unless flagged.
 
    Overwrite `<vault>/projects/<n>/status.md`:
 
@@ -308,11 +313,9 @@ Never load the full vault. Follow this order:
    even if Claude Code auto-memory captured it locally: the vault copy
    is the one Codex can read.
 
-2. Ask: "Set <project> as active project in INDEX.md for next
-   session? [Y/n]"
-   If no: "Which project should be active? (leave blank to keep
-   current)"
-   Update INDEX.md accordingly.
+2. Set <project> as active project in INDEX.md for the next session
+   (Tier 1) and say so. If the user names a different project in reply,
+   update accordingly. Do not block.
 
 3. After all confirmations, write all files.
 
@@ -333,7 +336,8 @@ Never load the full vault. Follow this order:
 1. Read `<vault>/preferences/development.md`
 2. Check current line count.
 3. If adding would exceed 100 lines:
-   Propose what to consolidate or remove. Wait for confirmation.
+   Propose what to consolidate or remove and apply it (Tier 1). The user
+   redirects by replying; the change is reversible via vault git.
 4. Append: `- [YYYY-MM-DD] [<project>] <decision>`
 5. Also append to `<vault>/projects/<n>/decisions.md` with project
    context, same as Codex Lore.
@@ -375,7 +379,9 @@ lore end was called.
 5. Flag any architectural decisions found in commits or PRs that
    may warrant `lore prefer`.
 
-6. Wait for confirmation before writing anything.
+6. Wait for explicit confirmation before writing (Tier 2). Recovery
+   reconstructs state from inferred evidence, so the user must confirm it
+   is correct before it overwrites status.md.
 
 7. After a confirmed write, commit the vault using the same rule as
    `lore end` step 4, with message
@@ -399,7 +405,10 @@ If status.md does not exist, Cody skips silently.
 
 ## Rules
 
-- Never write to the vault without explicit user confirmation.
+- Vault writes follow the confirmation tiers in SQUAD.md: Tier 1
+  (default-and-announce) for routine writes, Tier 2 (explicit yes) for
+  vault creation, name-conflict resolution, stale-flagged status.md
+  overwrites, and recovery writes. Always show what you will write.
 - Never write content wrapped in <private>...</private> to the vault.
   Strip private blocks before proposing any write.
 - status.md is always overwritten, never appended.

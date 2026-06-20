@@ -399,6 +399,23 @@ A side effect worth recording: detached mode also covers tracker MCP outages on 
 
 ---
 
+### Iteration 17: Chat-Native Interaction Model
+
+Real use surfaced that several interaction patterns were borrowed from a CLI mental model that does not fit a chat interface.
+
+**The `lore start` naming collision.** `lore start` reads like a slash-command, but Lore is a subagent, and subagents are delegated to, not typed. A new session would fail to recognize `lore start` and report that lore is not a skill. The fix is a thin `/lore` skill wrapper (mirroring Ralph's relationship to Cody) whose only job is to delegate to the Lore agent with the subcommand. `/lore start`, `/lore end`, `/lore prefer`, `/lore recover` now resolve unambiguously. The wrapper does no work and owns no behavior; all logic stays in the agent. Codex needs no slash-command mechanic but gets a parallel skill for discovery.
+
+**The "type done / press enter" friction.** Forge and Archy asked the user to type `done` to close a session, and Lore peppered the flow with `[Y/n]` prompts. In a chat there is no enter key, and a sentinel word costs a round-trip for no information. The deeper problem was that every confirmation looked identical, so the user could not tell a reversible write from a destructive one.
+
+The fix is a two-tier confirmation convention, stated once in SQUAD.md and applied everywhere:
+
+- **Tier 1, default-and-announce:** for reversible or low-stakes operations, state the action (show the content for a write) and proceed in the same turn; the user redirects by replying. Forge and Archy now close by default once required slots are filled, reopening only if the next message corrects or adds rather than accepts. Routine vault writes (status.md, experiences, INDEX.md, output.yaml, PRDs) are Tier 1, made safe to default by the vault-git history from Iteration 15.
+- **Tier 2, wait-for-explicit-yes:** reserved for destructive or hard-to-verify operations: vault creation, project-name conflict resolution, overwriting a status.md the timestamp check flagged as stale, and recovery writes reconstructed from inferred evidence.
+
+> **Key decision:** confirmation weight should track reversibility, not uniformity. The old model treated "is this YAML right?" and "create the vault?" identically; the tiers make low-stakes the silent default and reserve the interrupt for writes the user genuinely cannot undo or easily verify. Vault git is what makes most writes safely reversible, so Tier 1 is the rule and Tier 2 the exception.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview

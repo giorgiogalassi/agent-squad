@@ -56,7 +56,7 @@ Ask these questions one at a time:
    yourself)?"
 
 If **detached**, ask only:
-1. "Issue ID prefix for local issues? (press enter for 'SQ')"
+1. "Issue ID prefix for local issues? (reply 'SQ' or your own; defaults to SQ)"
 
 and write:
 
@@ -73,7 +73,7 @@ If **connected**, continue:
 1. "What is your Linear team name or ID?"
 2. "What is your Linear project name or ID for this work?"
 3. "What label should I apply to issues waiting for your review?
-   (e.g. 'needs-review', or press enter to skip)"
+   (e.g. 'needs-review'; reply 'none' for no label)"
 4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
 
 After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config.json`:

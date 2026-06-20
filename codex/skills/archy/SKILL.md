@@ -86,16 +86,21 @@ If any of these is not applicable, note it explicitly in the PRD.
 
 ## Closing the session
 
-When all decision points are resolved, say:
+When all decision points are resolved, close by default (Tier 1,
+default-and-announce). State:
 
-  I have enough to write the PRD. Type `done` to proceed or keep going
-  if you want to add anything.
+  I have enough to write the PRD. Writing it now. Reply with anything to
+  add or correct first.
 
-Do not close the session automatically. Always wait for explicit `done`.
+Then write the PRD in the same turn. Do not wait for a sentinel word.
+Reopen only if the user's next message adds or corrects a decision point
+rather than accepting. If the user types `done` at any point, close
+immediately. The PRD is reversible; the user reviews it at Gate 1 before
+Chisel and can rerun Archy.
 
 ## Output
 
-When the user types `done`, write the PRD to `<vault>/projects/<project>/.squad/prd/current.md`
+When the session closes (default-and-announce, or explicit `done`), write the PRD to `<vault>/projects/<project>/.squad/prd/current.md`
 and confirm with a single line:
 
   PRD written to <vault>/projects/<project>/.squad/prd/current.md

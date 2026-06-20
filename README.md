@@ -8,7 +8,7 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 ## MVP Flow
 
 ```text
-lore start      Read second-brain, orient companion. Run at start of squad sessions.
+/lore start     Read second-brain, orient companion. Run at start of squad sessions.
 /seed           Initialize .squad/ AND scaffold second-brain project files.
 /clear          Reset session context.
 /forge          Interactive discovery, writes output.yaml.
@@ -17,7 +17,7 @@ lore start      Read second-brain, orient companion. Run at start of squad sessi
 /ralph          Execute issues in dependency order (invokes Cody).
 Cody            Implement issue and open PR.
 Reven           Review PR.
-lore end        Propose status.md + session log writes. Confirm before writing.
+/lore end       Announce status.md + session log writes, then write (Tier 1). Confirm only destructive cases.
 ```
 
 ```mermaid
@@ -58,6 +58,7 @@ agent-squad/
       chisel/       YAML/PRD -> Linear issues
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
+      lore/         Slash-command wrapper delegating to the Lore agent
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
@@ -69,6 +70,7 @@ agent-squad/
       chisel/
       seed/
       ralph/
+      lore/         Wrapper delegating to the Lore agent
     agents/
       cody.toml     Codex custom agent
       reven.toml    Codex custom agent
@@ -103,7 +105,7 @@ Once installed, open any project and run:
 
 ```bash
 # Claude Code
-lore start
+/lore start
 /seed
 /clear
 /forge <your idea>
@@ -111,13 +113,13 @@ lore start
 
 ```text
 # Codex
-Run `lore start`, then use the `seed` skill, then start a fresh session
-if desired, then use the `forge` skill.
+Invoke the lore agent with `lore start`, then use the `seed` skill, then
+start a fresh session if desired, then use the `forge` skill.
 ```
 
 ## Vault setup
 
-On the first `lore start`, Lore creates the vault automatically.
+On the first `/lore start` (Claude Code) or `lore start` (Codex), Lore creates the vault automatically.
 
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
