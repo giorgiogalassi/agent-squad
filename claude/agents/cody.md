@@ -84,20 +84,29 @@ Before doing anything else:
 - If the update fails, log the error in your plan comment and continue.
   Do not stop.
 
-### 1. Create a branch
+### 1. Check out the branch
 
-Create a dedicated branch for this issue before touching any files:
+Ralph supplies `branch`, `base`, and `branch action` in your prompt. When
+invoked directly without them, default to `branch action: create`,
+`base: main`, and a branch named `<issue-id>-<short-description>`.
 
-```bash
-git checkout -b <issue-id>-<short-description>
-```
+- **`branch action: create`** (first issue on a new branch): cut it from
+  the base.
+  ```bash
+  git checkout <base>
+  git checkout -b <branch>
+  ```
+- **`branch action: continue`** (a later issue on a chain's existing
+  branch): check it out and add your commit on top. Do not create a new
+  branch, do not branch off main.
+  ```bash
+  git checkout <branch>
+  ```
 
-Branch naming convention:
-- Use the issue ID as prefix (e.g. `GG-12`)
-- Follow with a short kebab-case description of the work
-- Example: `GG-12-add-reservation-table`
-
-If the branch already exists, check it out. Do not create a new one.
+Branch naming (when you choose it): issue ID prefix, then a short
+kebab-case description, e.g. `GG-12-add-reservation-table`. For a chain
+branch Ralph names it after the lead issue. If a branch you were told to
+create already exists, check it out instead of failing.
 
 ### 2. Explore
 
@@ -140,36 +149,45 @@ If still failing after two attempts: document the failure and proceed
 to PR with a note.
 If the project has no tests, skip silently.
 
-### 6. Open a PR
+### 6. Commit, and open a PR only when told to
 
-**Connected mode:**
+Always commit your work:
 
 ```bash
 git add -A
 git commit -m "[ISSUE-ID] brief description"
+```
+
+Then act on the `open pr` flag from your prompt (default `yes` when
+invoked directly):
+
+**`open pr: no`** (you are a non-last issue in a chain): stop after the
+commit. Do not push, do not open a PR. Report the commit and that the
+branch is not yet up for review. The chain's PR opens when its last issue
+runs.
+
+**`open pr: yes`, connected mode:**
+
+```bash
 git push origin HEAD
-gh pr create --title "[ISSUE-ID] title" --body "..."
+gh pr create --title "[CHAIN] title" --body "..." --base <base>
 ```
 
-PR body must include: what was done, acceptance criteria checklist,
-and any notes for Reven.
-If `gh` is unavailable, push the branch and print instructions.
+The PR covers every issue committed on this branch. Its body lists each
+issue with a per-issue acceptance-criteria checklist, plus notes for
+Reven. Always pass `--base <base>` so a stacked branch does not target
+main by accident. If `gh` is unavailable, push and print instructions.
 
-**Detached mode:** commit locally, do not push, do not call `gh` or any
-forge API:
+**`open pr: yes`, detached mode:** the commit is already made above. Do
+not push or call any forge API. Print a paste-ready PR description: the
+title line `[CHAIN] title`, the base branch to target, and a body
+covering every issue on the branch (per-issue checklist, notes for
+Reven). The user pushes and opens the PR manually. Under `open pr: no`
+in detached mode, stop after the commit as above.
 
-```bash
-git add -A
-git commit -m "[ISSUE-ID] brief description"
-```
-
-Then print a paste-ready PR description: the title line
-`[ISSUE-ID] title` followed by the same body a connected PR would have
-(what was done, acceptance criteria checklist, notes for Reven). The
-user pushes the branch and opens the PR in their forge manually.
-
-**Both modes:** after the PR is created (connected) or the branch is
-committed (detached), append one checkpoint line to
+**Checkpoint:** only when a branch closes (`open pr: yes`), after the PR
+is created (connected) or the paste-ready description is printed
+(detached), append one checkpoint line to
 `<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 ```

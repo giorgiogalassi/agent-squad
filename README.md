@@ -14,8 +14,8 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
 /chisel         Create Linear issues.
-/ralph          Execute issues in dependency order (invokes Cody).
-Cody            Implement issue and open PR.
+/ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
 /lore end       Announce status.md + session log writes, then write (Tier 1). Confirm only destructive cases.
 ```

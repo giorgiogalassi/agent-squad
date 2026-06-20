@@ -416,6 +416,20 @@ The fix is a two-tier confirmation convention, stated once in SQUAD.md and appli
 
 ---
 
+### Iteration 18: Dependency-Aware Branching
+
+The MVP gave every issue its own branch off main and opened a PR per issue. Real use, especially in detached mode, exposed this as wrong for decomposed features. When Chisel breaks one feature into an ordered `Blocked by:` chain, branch-per-issue produces N independent PRs against main for code that only makes sense together, and in detached mode the user, who opens the PRs manually, would have to re-derive the very ordering the dependency graph already encodes.
+
+**Design:** Ralph already builds the `Blocked by:` graph to resolve execution order. A new Phase 1b reuses it to group issues by connected component. Each dependency chain becomes one feature branch named after its lead issue, with each issue committed sequentially as its own commit, and a single PR opened after the chain's last issue. Independent issues (no edges to other in-batch issues) keep their own branch and PR, because they genuinely are independent and stacking them would invent an ordering that does not exist.
+
+Ralph passes each Cody invocation a `branch`, `base`, `branch action` (create vs continue), and `open pr` (yes only for the last issue on a branch). Cody checks out rather than recreates a continuing branch, commits every issue, and opens a PR only when told, with `--base` always set so a stacked branch never targets main by accident. Ralph's success handling now distinguishes a committed-only issue (non-last in a chain, left In Progress) from one that closes a branch (moves every issue on that branch to In Review, since one PR covers them all). The change is mode-independent: connected mode opens the PR, detached mode prints one paste-ready description covering the whole chain.
+
+**Deferred:** splitting a large chain into a stack of dependent PRs (PR2 based on PR1, re-targeting each PR's base after the prior merges). This is a deliberate per-batch decision, not a default, and was deferred until Chisel's issue granularity is validated (open point 5.3). Building the stacking machinery before knowing whether chains grow large enough to need it would be the speculative work this project avoids elsewhere. The `--base` plumbing is in place so the mechanic can be added later without reworking Cody.
+
+> **Key decision:** branch topology should mirror the dependency graph, not the issue count. One chain is one feature is one branch is one PR; independence on the graph is the only thing that justifies a separate branch. This keeps the human's manual steps in detached mode proportional to features, not to issues.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -432,7 +446,7 @@ The fix is a two-tier confirmation convention, stated once in SQUAD.md and appli
 | **Reven** | Agent | Sonnet | Code review, runs in parallel with Qugh via Agent Teams |
 | **Lore** | Agent | Sonnet / gpt-5.4 | Second-brain memory: session orientation, status handoff, preference recording, git-based recovery. Filesystem only, no MCP. |
 | **Oak** | Agent | Sonnet | Documentation, daily job reading full git log |
-| **Ralph** | Loop | Sonnet | Agentic loop invoking Cody, max 3 retries, escalates on persistent failure |
+| **Ralph** | Loop | Sonnet | Agentic loop invoking Cody, max 3 retries, escalates on persistent failure. Groups issues into one branch per dependency chain. |
 | **Sentry** | Orchestrator | Sonnet | Reads complexity from YAML, routes to correct flow, reconciles feedback |
 
 ---

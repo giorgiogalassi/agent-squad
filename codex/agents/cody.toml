@@ -53,8 +53,15 @@ Workflow:
 - If the issue ID is not provided explicitly, extract it from the issue text.
 - If the update fails, note the error and continue.
 
-2. Create a branch
-- Create or checkout a branch named `<issue-id>-<short-description>`.
+2. Check out the branch
+- Ralph supplies `branch`, `base`, and `branch action`. Invoked directly
+  without them, default to `branch action: create`, `base: main`, branch
+  `<issue-id>-<short-description>`.
+- `branch action: create`: `git checkout <base>` then
+  `git checkout -b <branch>`.
+- `branch action: continue`: `git checkout <branch>` and commit on top.
+  Do not create a new branch or branch off main.
+- If a branch you were told to create already exists, check it out.
 
 3. Explore
 - Read only the relevant files.
@@ -81,19 +88,22 @@ Workflow:
 - Retry failures up to two times if they are caused by your changes.
 - If there are no tests, skip silently.
 
-7. Open a PR
-- Commit with `[ISSUE-ID] brief description`
-- Connected mode: push the branch and open a PR with:
-  - what was done
-  - acceptance criteria checklist
-  - notes for Reven
-  If `gh` is unavailable, push and print manual PR instructions.
-- Detached mode: do not push, do not call `gh` or any forge API. Print
-  a paste-ready PR description (title `[ISSUE-ID] title` plus the same
-  body a connected PR would have). The user pushes and opens the PR in
-  their forge manually.
+7. Commit, and open a PR only when told to
+- Always commit with `[ISSUE-ID] brief description`.
+- Then act on the `open pr` flag (default `yes` when invoked directly):
+- `open pr: no` (non-last issue in a chain): stop after the commit. Do
+  not push or open a PR. The chain's PR opens at its last issue.
+- `open pr: yes`, connected: `git push origin HEAD` then open a PR with
+  `--base <base>`, covering every issue on the branch (per-issue
+  acceptance-criteria checklist, notes for Reven). If `gh` is
+  unavailable, push and print manual instructions.
+- `open pr: yes`, detached: do not push or call any forge API. Print a
+  paste-ready PR description (title, base branch, per-issue body). The
+  user pushes and opens the PR manually.
 
-After opening the PR, append one checkpoint line to
+Only when a branch closes (`open pr: yes`), after the PR is opened
+(connected) or the paste-ready description is printed (detached), append
+one checkpoint line to
 `<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 [YYYY-MM-DD HH:MM] [codex] PR #N opened. Branch: <branch>. <one-line summary>

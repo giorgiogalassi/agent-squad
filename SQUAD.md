@@ -150,6 +150,17 @@ access to company tools (Jira, Bitbucket), and doubles as the fallback
 when the tracker MCP is unavailable. Forge, Archy, Seed, and Lore are
 identical in both modes.
 
+## Branching
+
+Ralph groups issues by their `Blocked by:` graph. A dependency chain
+becomes one feature branch with sequential commits, one per issue, and a
+single PR opened after the chain's last issue. Independent issues each
+get their own branch and PR. This holds in both tracker modes; only how
+the PR is created differs (Cody opens it in connected mode, prints a
+paste-ready description in detached mode). Splitting a large chain into
+stacked dependent PRs is a deliberate per-batch choice, deferred by
+default until issue granularity is validated.
+
 ## Trust domains
 
 One vault per trust domain. Work and personal memory never share a

@@ -119,6 +119,37 @@ Do not proceed.
 If a blocker references an issue outside the current batch (already merged
 or from a different project), treat it as resolved and proceed.
 
+## Phase 1b: group issues into branches
+
+After the execution order is resolved, group issues into branches by
+their `Blocked by:` graph. A **chain** is a connected component of that
+graph: issues linked directly or transitively by `Blocked by:` edges
+belong to the same chain. Issues with no edges to any other in-batch
+issue are singletons.
+
+- **One branch per chain.** All issues in a chain share a single feature
+  branch. They are committed onto it in execution order, each issue its
+  own commit. The branch is named `<lead-issue-id>-<short-feature-desc>`,
+  where the lead is the first issue in the chain's execution order.
+- **One branch per singleton.** Each independent issue gets its own
+  branch named `<issue-id>-<short-description>`, exactly as before.
+
+Rationale: a chain is one feature decomposed into ordered steps. Cutting
+a branch per issue off main would produce N independent PRs for code that
+only makes sense together, forcing the user to re-derive the order this
+graph already encodes. Independent issues stay independent because they
+genuinely are; stacking them would invent an ordering that does not exist.
+
+For each branch, the **PR opens once**, after the last issue in the chain
+is committed. Earlier issues in the chain commit only. A singleton's one
+issue is also its last, so its PR opens normally.
+
+Large chains: if a chain is big enough that a single PR would be hard to
+review, splitting it into a stack of dependent PRs (PR2 based on PR1, and
+so on) is a deliberate per-batch decision, not the default. It is
+deferred until Chisel's issue granularity is validated (Journal open
+point 5.3); until then, one PR per chain.
+
 ## Phase 2: execute in order
 
 Work through the execution order one issue at a time.
@@ -131,12 +162,18 @@ Spawn Cody as a subagent with:
 - Contents of `<vault>/projects/<project>/.squad/architecture.md` and `<vault>/projects/<project>/.squad/scout-cache.md`
 - Contents of `<vault>/projects/<project>/.squad/progress.txt` if present
 
-Also state the tracker mode explicitly in Cody's prompt
-(`mode: connected` or `mode: detached`).
+Also state in Cody's prompt:
+- the tracker mode (`mode: connected` or `mode: detached`)
+- `branch: <branch-name>` for this issue's chain or singleton
+- `base: <base-branch>` (main, unless stacking is in use)
+- `branch action: create` for the first issue on a branch,
+  `branch action: continue` for any later issue on an existing branch
+- `open pr: yes` only for the last issue on the branch; `open pr: no`
+  otherwise
 
-Cody's task: assign the issue (connected mode), create a dedicated
-branch, implement,
-run tests, and open a PR.
+Cody's task: assign the issue (connected mode), check out the branch
+(creating it from base on the first issue, reusing it after), implement,
+run tests, commit, and open a PR only when told to.
 
 ### 2b. Evaluate result
 
@@ -151,13 +188,23 @@ escalation over a retry that cannot change the outcome.
   printed (no push, no PR)
 - Tests passed, or skipped because the project has no tests
 
-On success:
-- Connected: update issue status to 'In Review' via `update_issue`
-- Detached: append `- [ ] Move <KEY> to In Review` to the handoff file
-- Append to `progress.txt`:
-  `[ISSUE-ID] resolved. PR: #N (or Branch: <branch> in detached mode). Notes: <brief summary>`
-- Mark issue as unblocking for downstream issues
-- Move to next issue
+On success, distinguish a committed-only issue from one that closed a branch:
+
+- **Issue committed, PR not yet opened** (a non-last issue in a chain):
+  - Connected: leave the issue 'In Progress'; it is done but its branch
+    is not yet up for review.
+  - Detached: append `- [ ] (committed on <branch>) <KEY>` to the handoff.
+  - Append to `progress.txt`:
+    `[ISSUE-ID] committed on <branch>. Notes: <brief summary>`
+- **Issue committed and PR opened** (the last issue on a branch, or a singleton):
+  - Connected: move every issue on that branch to 'In Review' via
+    `update_issue` (the PR covers all of them).
+  - Detached: append `- [ ] Move <KEY> to In Review` for each issue on
+    the branch to the handoff file.
+  - Append to `progress.txt`:
+    `[ISSUE-ID] resolved. PR: #N (or Branch: <branch> in detached mode). Notes: <brief summary>`
+- In both cases: mark the issue as unblocking for downstream issues and
+  move to the next issue.
 
 **Retryable failure** (increment the counter, max 3, see 2c):
 - Build or compile failure
@@ -211,8 +258,9 @@ Each Cody invocation is a fresh context. Persist knowledge in
 `<vault>/projects/<project>/.squad/progress.txt`. Append one line per
 resolved issue. Format:
 
-  [GG-12] 2026-04-08 resolved. Added reservations table.
-           Migration in db/migrations/20260408_reservations.sql
+  [GG-12] 2026-04-08 committed on GG-12-reservations. Added table.
+  [GG-13] 2026-04-08 resolved. PR: #41 (chain GG-12-reservations).
+           Covers GG-12, GG-13. Migration in db/migrations/.
 
 ## Rules
 
