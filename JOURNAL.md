@@ -155,8 +155,8 @@ The repository originally treated Claude Code as the canonical source and docume
 
 The repo was split into two first-class distributions:
 
-- `claude/` for Claude Code skills, agents, and example entrypoint files
-- `codex/` for Codex skills, agents, and example entrypoint files
+- `claude/` for Claude Code skills and agents
+- `codex/` for Codex skills and agents
 
 Both trees preserve the same workflow semantics and write to the same `.squad/` runtime files, but they differ in definition format, install paths, and orchestration mechanics. Those differences are documented explicitly in `PLATFORM_DIFFERENCES.md`.
 
@@ -272,7 +272,7 @@ Two simulation rounds identified five issues, all resolved:
 **Community patterns incorporated**
 
 - 100-line cap with periodic curation (file-based memory research)
-- Filesystem-as-RAM mental model encoded in SQUAD.md
+- Filesystem-as-RAM mental model (context window = RAM, filesystem = disk)
 - Promotion rule: local → global only when pattern appears across
   2+ projects
 - Type taxonomy on experience entries (session/decision/feature/
@@ -365,13 +365,13 @@ All vault-aware skills (Forge, Archy, Chisel, Seed, Ralph) now share a common fo
 
 A full consistency review of the repository against its own design surfaced one architectural hole and several contract-level repairs.
 
-**The decisions layer was structurally incomplete.** Claude Lore deferred project decisions to Claude Code auto-memory, which writes to `~/.claude/`, a location Codex cannot read. The consequence: decisions made during Claude Code sessions, the primary tool, never reached the vault's `decisions.md`. The file SQUAD.md called the cross-tool decisions log was in practice Codex-only. The fix reframes the relationship: auto-memory is a Claude-local cache, never the system of record. Both Lore variants now write vault `decisions.md` identically. The duplication cost is a few lines per session; the previous cost was a vault missing most of its decisions.
+**The decisions layer was structurally incomplete.** Claude Lore deferred project decisions to Claude Code auto-memory, which writes to `~/.claude/`, a location Codex cannot read. The consequence: decisions made during Claude Code sessions, the primary tool, never reached the vault's `decisions.md`. What was described as the cross-tool decisions log was in practice Codex-only. The fix reframes the relationship: auto-memory is a Claude-local cache, never the system of record. Both Lore variants now write vault `decisions.md` identically. The duplication cost is a few lines per session; the previous cost was a vault missing most of its decisions.
 
 > **Key decision:** the vault is the system of record for anything that must survive a tool switch, even when a tool-native memory layer also captured it locally. Native memory is a cache.
 
 **Contract hardening, in the same pass:**
 
-- The vault path schema was unified to `<vault>/projects/<display-name>/.squad/` everywhere; half the definitions used a layout without the `projects/` segment, so files were written to one tree and read from another. SQUAD.md now states the canonical schema in one place so Reven can review path references against a single source.
+- The vault path schema was unified to `<vault>/projects/<display-name>/.squad/` everywhere; half the definitions used a layout without the `projects/` segment, so files were written to one tree and read from another. the canonical schema is `<vault>/projects/<display-name>/.squad/`, restated inline in each self-contained definition (no single file is loaded at runtime to hold it).
 - Cody and Reven received the path resolution protocol; both still read project-relative `.squad/` paths that stopped existing in Iteration 14.
 - Seed no longer derives project names. It requires the `lore start` mapping in `lore-config.json` and stops if absent. Lore owns naming and conflict resolution; Seed consumes the mapping.
 - Ralph's failure criteria were specified (open point 5.4): retryable vs immediate escalation vs not-a-failure, with identical consecutive errors escalating without burning remaining retries.
@@ -407,7 +407,7 @@ Real use surfaced that several interaction patterns were borrowed from a CLI men
 
 **The "type done / press enter" friction.** Forge and Archy asked the user to type `done` to close a session, and Lore peppered the flow with `[Y/n]` prompts. In a chat there is no enter key, and a sentinel word costs a round-trip for no information. The deeper problem was that every confirmation looked identical, so the user could not tell a reversible write from a destructive one.
 
-The fix is a two-tier confirmation convention, stated once in SQUAD.md and applied everywhere:
+The fix is a two-tier confirmation convention, described inline in each affected definition since no shared file is loaded at runtime:
 
 - **Tier 1, default-and-announce:** for reversible or low-stakes operations, state the action (show the content for a write) and proceed in the same turn; the user redirects by replying. Forge and Archy now close by default once required slots are filled, reopening only if the next message corrects or adds rather than accepts. Routine vault writes (status.md, experiences, INDEX.md, output.yaml, PRDs) are Tier 1, made safe to default by the vault-git history from Iteration 15.
 - **Tier 2, wait-for-explicit-yes:** reserved for destructive or hard-to-verify operations: vault creation, project-name conflict resolution, overwriting a status.md the timestamp check flagged as stale, and recovery writes reconstructed from inferred evidence.
@@ -427,6 +427,16 @@ Ralph passes each Cody invocation a `branch`, `base`, `branch action` (create vs
 **Deferred:** splitting a large chain into a stack of dependent PRs (PR2 based on PR1, re-targeting each PR's base after the prior merges). This is a deliberate per-batch decision, not a default, and was deferred until Chisel's issue granularity is validated (open point 5.3). Building the stacking machinery before knowing whether chains grow large enough to need it would be the speculative work this project avoids elsewhere. The `--base` plumbing is in place so the mechanic can be added later without reworking Cody.
 
 > **Key decision:** branch topology should mirror the dependency graph, not the issue count. One chain is one feature is one branch is one PR; independence on the graph is the only thing that justifies a separate branch. This keeps the human's manual steps in detached mode proportional to features, not to issues.
+
+---
+
+### Iteration 19: Removing the Unused Entrypoint and Reference Files
+
+A review of the prompt surface asked what `claude/CLAUDE.md.example`, `codex/AGENTS.md.example`, and `SQUAD.md` were actually for. The answer was nothing, at runtime. Skills and agents are self-contained: each resolves its own paths and reads only the vault files it needs, and the README already states the workflow does not modify `CLAUDE.md` or `AGENTS.md`. The two example files existed only to inject "read SQUAD.md before acting" into a project entrypoint, a dependency the system does not have and a pattern Iteration 11 and 14 had already moved away from (CLAUDE.md stays minimal, carries no workflow logic). SQUAD.md itself was never loaded at runtime by any agent; it had drifted into being a second copy of material already in this journal and the README, and earlier patches had wrongly framed its canonical statements as an agent-facing contract when no agent reads them.
+
+All three were removed. The canonical statements they carried (path schema, confirmation tiers, session-log contract, tracker modes, branching) live where they are actually enforced: inline in each self-contained definition, with their rationale in this journal. Nothing in the runtime depended on the deleted files; the only edits required were removing three dangling pointers (two example files, one "see SQUAD.md" note in Lore's rules, now stated inline).
+
+> **Key decision:** documentation that claims to be loaded but is not is worse than no documentation, because it invites changes that have no effect and frames duplication as a single source of truth. The design history (this journal) and onboarding (README) are the two documents the project keeps; the definitions are self-describing, which is the property that let the files go.
 
 ---
 
@@ -482,10 +492,8 @@ Ralph passes each Cody invocation a `branch`, `base`, `branch action` (create vs
 | `<vault>/projects/<project>/.squad/progress.txt` | Ralph's per-issue batch memory. Appended by Ralph, read by Cody. |
 | `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files (local issue IDs, key mapping, Jira-importable CSV) and handoff checklists. |
 | `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
-| `claude/CLAUDE.md.example` | Example Claude project entrypoint. Optional; not required by the workflow. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
 | `claude/agents/` | Claude-specific agent definitions to copy into `~/.claude/agents/`. |
-| `codex/AGENTS.md.example` | Example Codex project entrypoint. Optional; not required by the workflow. |
 | `codex/skills/` | Codex-specific skill definitions to copy into `~/.agents/skills/`. |
 | `codex/agents/` | Codex-specific custom agent definitions to copy into `~/.codex/agents/`. |
 

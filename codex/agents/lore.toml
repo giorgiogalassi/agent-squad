@@ -365,8 +365,9 @@ If status.md does not exist, Cody skips silently.
 
 ## Rules
 
-- Vault writes follow the confirmation tiers in SQUAD.md: Tier 1
-  (default-and-announce) for routine writes, Tier 2 (explicit yes) for
+- Vault writes follow two confirmation tiers. Tier 1
+  (default-and-announce): show the content, state you are writing it, and
+  proceed; the user redirects by replying. Tier 2 (explicit yes, wait):
   vault creation, name-conflict resolution, stale-flagged status.md
   overwrites, and recovery writes. Always show what you will write.
 - Never write content wrapped in <private>...</private> to the vault.

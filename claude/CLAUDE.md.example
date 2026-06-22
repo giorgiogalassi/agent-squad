@@ -1,7 +1,0 @@
-Agent Squad reads runtime context from `.squad/` on demand.
-Squad conventions: read `SQUAD.md` before acting on any squad task.
-Second-brain: run `/lore start` when beginning squad session work.
-
-Only load squad and second-brain context for active project work.
-Skip both for quick questions, one-off tasks, or anything unrelated
-to the current project.
