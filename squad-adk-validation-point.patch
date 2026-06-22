@@ -1,0 +1,24 @@
+diff --git a/JOURNAL.md b/JOURNAL.md
+index 51180ac..aeb8b55 100644
+--- a/JOURNAL.md
++++ b/JOURNAL.md
+@@ -590,6 +590,19 @@ The assumption breaks if branch protection rules require review from someone oth
+ 
+ > **Action:** if branch protection with required external reviewers is added, evaluate whether a bot account for Cody is worth the overhead.
+ 
++### 5.10 ADK and the framework-substrate question
++
++Open question: does adopting an agent framework (Google ADK, or a comparable runtime) give upside over the current textual-agent model, where an agent is a prompt definition interpreted by Claude Code or Codex and orchestration is itself a prompt?
++
++Findings so far, from evaluation rather than implementation:
++
++- ADK is a code-first framework. Agents are code objects, orchestration is a compiled graph-based workflow runtime (deterministic routing, fan-out/fan-in, retry, loops, human-in-the-loop), state is structured sessions, observability and eval are first-class, and agents deploy to cloud infrastructure. It is model-agnostic through adapters, though it leans toward Gemini and Google Cloud.
++- The squad already implements most of what a framework provides, as prompt-discipline rather than code. Ralph is a workflow runtime (dependency graph, retry, escalate, loop). The vault is sessions plus memory. session.log is tracing. The confirmation tiers are human-in-the-loop. Adopting a framework would mostly reimplement this discipline on a third runtime that is neither Claude Code nor Codex, breaking the tool-agnosticism of Iteration 12 and reintroducing the dependency class rejected for MCP.
++- The decision boundary for choosing a framework over textual agents: deterministic guaranteed orchestration over probabilistic, unattended production scale over interactive solo, first-class observability and eval over hand-rolled, structural concurrency over occasional independence. The current use case sits on the textual side of all four.
++- For a Claude-primary developer the apples-to-apples comparison is not ADK but Anthropic's Claude Agent SDK, which keeps the model family and avoids Gemini and Vertex gravity. ADK is the cross-vendor reference point, not the natural adoption target.
++
++> **Action:** do not adopt a framework before Sentry exists. The framework question is really the Sentry build-vs-adopt decision: when Sentry needs real parallel orchestration, eval, and observability instead of hand-rolled prompt logic, evaluate implementing it on the Claude Agent SDK (primary candidate) or ADK (cross-vendor option) against continuing in prompts. Until then a framework is premature. If a spike is wanted sooner, prototype one read-only role such as Reven on the Claude Agent SDK as an isolated experiment, never on the hot path, to gather evidence without committing the substrate.
++
+ ---
+ 
+ ## 6. When to Add the Next Agent Layer
