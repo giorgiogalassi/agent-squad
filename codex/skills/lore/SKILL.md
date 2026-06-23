@@ -2,7 +2,7 @@
 name: lore
 description: >
   Slash-command entrypoint for the Lore second-brain agent. Triggers:
-  /lore start, /lore end, /lore prefer "<decision>", /lore recover.
+  /lore start, /lore prefer "<decision>", /lore recover.
   This skill exists so Lore's subcommands work as slash-commands; it
   delegates immediately to the Lore agent and does no work itself.
   Do NOT use for planning, implementation, architecture, or code review.
@@ -19,7 +19,6 @@ When invoked, delegate to the `lore` agent immediately, passing the
 subcommand and any arguments exactly as received:
 
 - lore start            -> invoke the lore agent with: lore start
-- lore end [logfile]    -> invoke the lore agent with: lore end [logfile]
 - lore prefer "<text>"  -> invoke the lore agent with: lore prefer "<text>"
 - lore recover          -> invoke the lore agent with: lore recover
 

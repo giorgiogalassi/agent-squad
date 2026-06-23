@@ -409,7 +409,7 @@ Real use surfaced that several interaction patterns were borrowed from a CLI men
 
 The fix is a two-tier confirmation convention, described inline in each affected definition since no shared file is loaded at runtime:
 
-- **Tier 1, default-and-announce:** for reversible or low-stakes operations, state the action (show the content for a write) and proceed in the same turn; the user redirects by replying. Forge and Archy now close by default once required slots are filled, reopening only if the next message corrects or adds rather than accepts. Routine vault writes (status.md, experiences, INDEX.md, output.yaml, PRDs) are Tier 1, made safe to default by the vault-git history from Iteration 15.
+- **Tier 1, default-and-announce:** for reversible or low-stakes operations, state the action (show the content for a write) and proceed in the same turn; the user redirects by replying. Forge and Archy now close by default once required slots are filled, reopening only if the next message corrects or adds rather than accepts. Routine vault writes (status.md, INDEX.md, output.yaml, PRDs) are Tier 1, made safe to default by the vault-git history from Iteration 15.
 - **Tier 2, wait-for-explicit-yes:** reserved for destructive or hard-to-verify operations: vault creation, project-name conflict resolution, overwriting a status.md the timestamp check flagged as stale, and recovery writes reconstructed from inferred evidence.
 
 > **Key decision:** confirmation weight should track reversibility, not uniformity. The old model treated "is this YAML right?" and "create the vault?" identically; the tiers make low-stakes the silent default and reserve the interrupt for writes the user genuinely cannot undo or easily verify. Vault git is what makes most writes safely reversible, so Tier 1 is the rule and Tier 2 the exception.
@@ -451,6 +451,20 @@ This deliberately automates only the read half of Lore. `lore start` remains the
 The script injecting status.md alongside fresh git evidence is the read half of a reconstruction-first model. Because the durable evidence (commits, branches, progress.txt, session.log, Cody's checkpoints) is already on disk during the session, orientation survives a session that ended without `lore end`: the model reconciles a possibly-stale status.md against the evidence, and `lore recover` rebuilds it on demand. This is the groundwork for demoting `lore end` from a required ritual to optional polish, with the one residue that evidence cannot reconstruct being the substance of pure planning or decision sessions that leave no git trace.
 
 > **Key decision:** automate the read path, keep the write path manual. Hooks make orientation deterministic and free, which is pure upside for a read-only inject. Writes stay behind explicit invocation because they need confirmation (Tier 2) and synthesis (a model), neither of which a SessionEnd hook provides.
+
+---
+
+### Iteration 21: Reconstruction-First Memory, Removing lore end
+
+`lore end` was the one squad step that depended on memory rather than habit: it had to be run, and it required confirmation, and skipping it (which happened) left the vault stale. The question was whether anything it did could not be obtained another way. Working through it: status.md is reconstructable from durable evidence, decisions.md is already written by `lore prefer` at merge, the INDEX active-project update already happens on `lore start`, and every skill already persists its own artifact (Forge writes output.yaml, Archy the PRD). The only output unique to `lore end` was the `experiences/` narrative log, which by its Iteration 13 design is never loaded by default and has no retrieval path. Against the agent-memory literature, an episodic log earns its place only when it is queried; a write-only archive with no recall loop is storage without the mechanism that creates episodic value, and the recall-worthy substance already lives in commits, PRs, decisions.md, the Forge YAML, PRD alternatives sections, and this journal.
+
+So `lore end` was removed entirely, and status.md became reconstruction-first. `lore start` now rebuilds status.md from evidence (git log, branch, progress.txt, session.log tails, Cody's checkpoint) when it is missing or stale, instead of trusting a possibly-old body, preserving the human-stated `## Blocked` section across the rebuild since it is not derivable from git. `lore recover` is retained as the explicit, careful form of the same reconstruction, folding in PR descriptions and confirming before writing. The status.md schema, previously owned by `lore end`, moved to a shared section both paths reference. A shared "Vault commit" rule replaced the per-section commit blocks, so `lore start`, `lore prefer`, and `lore recover` all commit after writing. The `experiences/` mechanism was deleted, including Seed's scaffolding of the directory.
+
+What this costs: a session that produces no commit, no decision, and no artifact, the pure-discovery case, now leaves no trace. For a solo developer that residue is acceptable, and `lore prefer` or a one-line decisions.md note captures it when it matters. What it buys: the vault stays current with zero end-of-session ritual. Combined with Iteration 20's SessionStart hook, the full loop now keeps memory live through durable artifacts written during work and reconstruction at the next start, with no command to forget.
+
+> **Key decision:** a memory step that depends on being remembered is a bug. Move the synthesis to where it is needed (session start, by reconstruction) rather than where it is easily skipped (session end, by ritual). Persist durable evidence continuously; rebuild the summary cache on demand. Delete the archival log that nothing reads rather than automate writing it.
+
+The user-facing command surface is now `lore start`, `lore prefer`, `lore recover`. The `/lore` wrapper and both agent definitions were updated to match.
 
 ---
 
@@ -526,7 +540,7 @@ The script injecting status.md alongside fresh git evidence is the read half of 
 | **Reven** | Reviews every PR. You invoke Reven manually after Cody opens the PR. |
 | **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
 | **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
-| **Lore** | Manages second-brain vault. Invoke manually at session start/end and via `lore prefer` after HIGH-complexity merges. |
+| **Lore** | Manages second-brain vault. `lore start` orients and reconstructs status; `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
 
 ### What is out of the MVP
 

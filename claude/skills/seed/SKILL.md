@@ -158,7 +158,6 @@ resolution protocol. The vault is guaranteed to exist at this point
 Ensure these vault directories exist:
   <vault>/projects/
   <vault>/preferences/
-  <vault>/experiences/
   <vault>/docs
 
 Check if `<vault>/projects/<project-name>/` exists.
@@ -274,7 +273,7 @@ using file tools. No MCP required.
 
 Optional: initialize the vault as a private git repository for
 history, backup, and multi-machine sync. When <vault>/.git exists,
-lore end and lore recover commit after their confirmed writes
+lore start, lore prefer, and lore recover commit after their writes
 (commit only, never push). Without a repo, Lore skips this silently.
 
 ## Obsidian

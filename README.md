@@ -17,7 +17,7 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 /ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
 Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
-/lore end       Announce status.md + session log writes, then write (Tier 1). Confirm only destructive cases.
+(no session-end command) status.md reconstructs from evidence on the next /lore start; run /lore recover to rebuild it explicitly.
 ```
 
 ```mermaid
@@ -165,9 +165,9 @@ On the first `/lore start` (Claude Code) or `lore start` (Codex), Lore creates t
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore end` and `lore recover` commit after their confirmed writes
-  (commit only, never push); pulling and pushing stay manual. Pull before
-  starting work when using multiple machines.
+  `lore start`, `lore prefer`, and `lore recover` commit after their
+  writes (commit only, never push); pulling and pushing stay manual. Pull
+  before starting work when using multiple machines.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
 files are written to the project itself.
@@ -196,9 +196,8 @@ vault files directly when needed.
       chisel-config.json           written on first Chisel run
       issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory. Read by Cody.
-    status.md                      Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
+    status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
     decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
-  experiences/YYYY-MM/             Monthly session logs. Appended by Lore at session end. Never loaded by default.
 ```
 
 ## Tracker modes
