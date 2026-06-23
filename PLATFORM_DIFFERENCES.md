@@ -87,7 +87,7 @@ them, because the vault copy is the only one Codex can read.
 - 7-day staleness check with git branch status
 - status.md schema and overwrite behavior
 - Experience log schema with type field and 5 type definitions
-- lore end confirms active project for next session
+- lore start reconstructs status.md from evidence when stale; no session-end command
 - lore recover reconstructs from git evidence
 - 100-line cap on development.md with curation step
 - Confirmation required before any write
