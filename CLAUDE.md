@@ -1,6 +1,13 @@
-Agent Squad reads runtime context from `.squad/` on demand.
-Squad conventions: read `SQUAD.md` before acting on any squad task.
-Second-brain: invoke `lore start` when beginning squad session work.
+Agent Squad runtime state lives in the vault at
+`<vault>/projects/<name>/.squad/`, read on demand. Skills and agents are
+self-contained and resolve their own paths; there is no shared runtime
+context file to preload.
+
+Second-brain: a SessionStart hook auto-orients (read-only); run
+`/lore start` when beginning real squad work to handle naming,
+migration, and session-log reset. Command surface: `lore start`,
+`lore prefer`, `lore recover` (no session-end command — status
+reconstructs on the next start).
 
 Only load squad and second-brain context for active project work.
 Skip both for quick questions, one-off tasks, or anything unrelated
