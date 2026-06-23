@@ -154,6 +154,18 @@ and a live Codex run on this machine, which attempted to load user skills from
 |---------|--------|-------|
 | Linear prefix | `mcp__linear-server__` | `mcp__linear__` |
 
+### SessionStart hook
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| Config location | `~/.claude/settings.json` | `~/.codex/config.toml` (or `hooks.json`) |
+| Event | `SessionStart` | `SessionStart` (thread scope) |
+| Handler | `type: command`, stdout injected as context | `type = "command"`, stdout injected as context |
+| Script | `~/.claude/hooks/lore-orient.sh` | `~/.codex/hooks/lore-orient.sh` |
+
+Same script content, same read-only orientation behavior. Only the
+config mechanism differs. Both inject stdout as session context.
+
 ---
 
 ## Verification Status

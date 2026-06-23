@@ -440,6 +440,20 @@ All three were removed. The canonical statements they carried (path schema, conf
 
 ---
 
+### Iteration 20: SessionStart Auto-Orientation
+
+Iteration 13 concluded that automatic session triggers add complexity without proportionate value and kept Lore invocation manual, with the lone exception of Cody's PR checkpoint for crash recovery. Hooks change that calculus for the read path specifically. Both Claude Code and Codex now expose a SessionStart hook whose stdout is injected into the session as context, which is a cheaper and more reliable way to orient than asking the model to remember to read the vault.
+
+A read-only orientation script (`hooks/lore-orient.sh`, installed globally per tool) runs at session start. It resolves the vault and display name, prints the active project's status.md, and appends local evidence: current branch, recent commits, and the tails of progress.txt and session.log. It never writes, never blocks, and always exits zero, so a missing vault or a non-git directory degrades to silence rather than an error. The config mechanism differs by tool (Claude `settings.json`, Codex `config.toml`), documented in PLATFORM_DIFFERENCES; the script and its behavior are identical.
+
+This deliberately automates only the read half of Lore. `lore start` remains the write and setup path: first-time naming, conflict resolution, migration, session-log reset, and the INDEX active-project update, none of which a read-only hook can or should do. The write path stays manual for the same reason `lore end` does not move to SessionEnd: SessionEnd cannot pause to confirm, which collides with the Tier 2 confirmation that vault overwrites require, and a script cannot do the synthesis a handoff needs.
+
+The script injecting status.md alongside fresh git evidence is the read half of a reconstruction-first model. Because the durable evidence (commits, branches, progress.txt, session.log, Cody's checkpoints) is already on disk during the session, orientation survives a session that ended without `lore end`: the model reconciles a possibly-stale status.md against the evidence, and `lore recover` rebuilds it on demand. This is the groundwork for demoting `lore end` from a required ritual to optional polish, with the one residue that evidence cannot reconstruct being the substance of pure planning or decision sessions that leave no git trace.
+
+> **Key decision:** automate the read path, keep the write path manual. Hooks make orientation deterministic and free, which is pure upside for a read-only inject. Writes stay behind explicit invocation because they need confirmation (Tier 2) and synthesis (a model), neither of which a SessionEnd hook provides.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview

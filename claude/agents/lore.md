@@ -90,6 +90,12 @@ Never load the full vault. Follow this order:
 
 ### `lore start`
 
+> An optional SessionStart hook (`~/.claude/hooks/lore-orient.sh`) injects
+> read-only orientation automatically at session start: status.md plus
+> local git/progress/session-log evidence. It never writes. `lore start`
+> remains the write and setup path below (naming, migration, session-log
+> reset, INDEX update), and is what you run when beginning real squad work.
+
 1. Resolve vault path:
    a. Check `SECOND_BRAIN_PATH` environment variable. If set and non-empty,
       use it as the vault path.

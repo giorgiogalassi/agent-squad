@@ -63,6 +63,8 @@ agent-squad/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
+    hooks/
+      lore-orient.sh  SessionStart read-only orientation script
   codex/
     skills/
       forge/        Codex skill variants
@@ -75,6 +77,8 @@ agent-squad/
       cody.toml     Codex custom agent
       reven.toml    Codex custom agent
       lore.toml     Codex custom agent for second-brain
+    hooks/
+      lore-orient.sh  SessionStart read-only orientation script
 ```
 
 ## Installation
@@ -98,6 +102,36 @@ cp -r claude/skills/* ~/.claude/skills/
 cp -r codex/agents/* ~/.codex/agents/
 cp -r codex/skills/* ~/.agents/skills/
 ```
+
+### Optional: SessionStart auto-orientation
+
+A read-only hook can inject "where you left off" at the start of every
+session, so you do not have to ask. It never writes and never blocks.
+
+```bash
+# Claude Code
+cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-orient.sh
+```
+Then add to `~/.claude/settings.json`:
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
+```
+
+```bash
+# Codex
+cp codex/hooks/lore-orient.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/lore-orient.sh
+```
+Then add to `~/.codex/config.toml`:
+```toml
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '"$HOME/.codex/hooks/lore-orient.sh"'
+```
+
+The hook orients (read-only); `/lore start` still handles the write and
+setup path (first-time naming, migration, session-log reset).
 
 ## Quick start
 
