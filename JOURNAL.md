@@ -231,6 +231,28 @@ zero manifest overhead. MCP servers for Obsidian preload tool
 manifests of 7 to 1,212 tools on every request — cost without
 benefit for Lore's access patterns.
 
+**On "no dependencies" as a principle**
+
+This is a heuristic, not a vow. The project already depends on Claude
+Code, Codex, Linear, GitHub, git, gh, and jq. What it refuses is
+dependencies whose cost exceeds their benefit for the current use
+case: MCP (manifest overhead, no search problem to solve), agent
+frameworks (a third runtime, tool-agnosticism lost), a daemon
+(operational weight). Each was a specific cost-benefit call, re-run as
+the inputs change, not a standing ban. The constraint also serves the
+project's study purpose: building memory, orchestration, and recovery
+from filesystem primitives is what produced the understanding the
+constraint exists to teach. That value has a shelf life. As the
+project's other purpose (shipping faster) starts to be taxed by
+reimplementing infrastructure, the calculation tips. The honest
+re-evaluation point is the same boundary as the framework question
+(open point 5.10): at Sentry, with the harness need (5.11) as another
+input. Stated as a rule: prefer primitives until a dependency's
+benefit clearly exceeds its cost, re-evaluated at each major layer.
+The failure mode to guard against is not impurity but substrate-churn:
+swapping foundations before confirming the current one holds. Do not
+adopt during validation.
+
 **INDEX.md as output not input**
 
 Early design treated INDEX.md as a file you maintain. Simulation
@@ -638,6 +660,18 @@ Findings so far, from evaluation rather than implementation:
 - For a Claude-primary developer the apples-to-apples comparison is not ADK but Anthropic's Claude Agent SDK, which keeps the model family and avoids Gemini and Vertex gravity. ADK is the cross-vendor reference point, not the natural adoption target.
 
 > **Action:** do not adopt a framework before Sentry exists. The framework question is really the Sentry build-vs-adopt decision: when Sentry needs real parallel orchestration, eval, and observability instead of hand-rolled prompt logic, evaluate implementing it on the Claude Agent SDK (primary candidate) or ADK (cross-vendor option) against continuing in prompts. Until then a framework is premature. If a spike is wanted sooner, prototype one read-only role such as Reven on the Claude Agent SDK as an isolated experiment, never on the hot path, to gather evidence without committing the substrate.
+
+### 5.11 Test harness
+
+Open question: how should the squad be validated, given a growing set of patches none of which has been confirmed by a real run? A harness is the scaffolding that lets the squad run against known cases and tells you mechanically whether it behaved, as opposed to noticing in a live session that something feels off (which is how the GG-18 path bug slipped through).
+
+The harness spectrum, cheapest first:
+
+- **Observability (already built).** session.log, progress.txt, and the vault git history are a manual harness: after a batch you can read retries per issue, Reven's first-pass verdict, and whether reconstruction produced an accurate status.md. The only cheap enhancement worth making is a read-only script that summarizes a session from these artifacts so review is fast.
+- **Fixtures.** One or two throwaway repos (connected and detached) with a deliberately designed issue set: a dependency chain, a cycle that must halt, an issue that must fail and escalate. Re-running the squad against the same fixture after each patch surfaces behavior drift. No scorer needed; the result is read by eye. This is the layer most likely to earn its place.
+- **Assertions.** Encoding invariants as automated checks ("escalate after 3 retries", "a cycle halts", "reconstruction preserves ## Blocked"). This is the real harness and where cost and dependency-creep live (golden-file comparison is brittle; LLM-as-judge adds a model on every run). Gate it behind evidence that manual fixture-running is too slow or error-prone.
+
+> **Action:** build nothing up front. The first real batch after merge is the first harness run, manual. If reading logs by hand suffices, do nothing. If you re-run the same scenarios and squint at output, build the fixtures. If you repeat correctness mistakes a check could catch, add assertions for those specific cases. The harness grows from observed pain, not design. Note: a framework's eval and observability tooling (open point 5.10) overlaps this; if the harness need grows past the observability layer, fold it into the Sentry-time build-vs-adopt decision rather than building both.
 
 ---
 
