@@ -8,12 +8,12 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 ## MVP Flow
 
 ```text
-/lore start     Read second-brain, orient companion. Run at start of squad sessions.
+/lore start     Orient companion (auto-injected by the SessionStart hook if installed; run manually for setup).
 /seed           Initialize .squad/ AND scaffold second-brain project files.
 /clear          Reset session context.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
-/chisel         Create Linear issues.
+/chisel         Create tracker issues (Linear in connected mode, a local batch file in detached mode).
 /ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
 Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
@@ -22,15 +22,16 @@ Reven           Review PR.
 
 ```mermaid
 graph LR
-    A["/seed<br/>Initialize .squad context"] --> B["/clear<br/>Reset session context"]
+    S["/lore start<br/>Orient (hook auto-injects)"] --> A["/seed<br/>Initialize .squad context"]
+    A --> B["/clear<br/>Reset session context"]
     B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
     C --> D{"Complexity<br/>confirmed"}
     D -->|HIGH| E["/archy<br/>Create PRD"]
 
-    F["/chisel<br/>Create Linear issues"] --> G["Review issues in Linear"]
-    G --> H["/ralph<br/>Execute in dependency order"]
-    H --> I["Cody<br/>Implement issue and open PR"]
-    I --> J["Reven<br/>Review PR"]
+    F["/chisel<br/>Create tracker issues"] --> G["Review issues"]
+    G --> H["/ralph<br/>Execute in dependency order<br/>one branch per chain"]
+    H --> I["Cody<br/>Implement, commit to chain branch"]
+    I --> J["Reven<br/>Review one PR per chain"]
     J -->|Approved| K["Merge"]
     J -->|Changes requested| I
 
@@ -40,7 +41,8 @@ graph LR
 
 The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
 structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
-creates Linear issues, `Ralph` drives execution through `Cody`, and `Reven`
+creates tracker issues (Linear or a local batch file), `Ralph` drives
+execution through `Cody` one branch per dependency chain, and `Reven`
 reviews before merge.
 
 ## What's in this repo
@@ -139,7 +141,7 @@ Once installed, open any project and run:
 
 ```bash
 # Claude Code
-/lore start
+/lore start          # or skip if the SessionStart hook is installed (it auto-orients)
 /seed
 /clear
 /forge <your idea>
