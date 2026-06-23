@@ -23,7 +23,7 @@ Before reading any file, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -44,9 +44,9 @@ These are advisory guidelines that apply throughout this skill:
 ### Files to read
 
 Read these three files before asking any question:
-1. `<vault>/<project>/.squad/forge/output.yaml`  — what the user wants to build
-2. `<vault>/<project>/.squad/architecture.md`    — existing conventions and decisions
-3. `<vault>/<project>/.squad/scout-cache.md`     — current project snapshot
+1. `<vault>/projects/<project>/.squad/forge/output.yaml`  — what the user wants to build
+2. `<vault>/projects/<project>/.squad/architecture.md`    — existing conventions and decisions
+3. `<vault>/projects/<project>/.squad/scout-cache.md`     — current project snapshot
 
 If a file does not exist, continue without it. Do not ask the user to
 provide it. If the YAML references specific modules or files, read them
@@ -86,19 +86,24 @@ If any of these is not applicable, note it explicitly in the PRD.
 
 ## Closing the session
 
-When all decision points are resolved, say:
+When all decision points are resolved, close by default (Tier 1,
+default-and-announce). State:
 
-  I have enough to write the PRD. Type `done` to proceed or keep going
-  if you want to add anything.
+  I have enough to write the PRD. Writing it now. Reply with anything to
+  add or correct first.
 
-Do not close the session automatically. Always wait for explicit `done`.
+Then write the PRD in the same turn. Do not wait for a sentinel word.
+Reopen only if the user's next message adds or corrects a decision point
+rather than accepting. If the user types `done` at any point, close
+immediately. The PRD is reversible; the user reviews it at Gate 1 before
+Chisel and can rerun Archy.
 
 ## Output
 
-When the user types `done`, write the PRD to `<vault>/<project>/.squad/prd/current.md`
+When the session closes (default-and-announce, or explicit `done`), write the PRD to `<vault>/projects/<project>/.squad/prd/current.md`
 and confirm with a single line:
 
-  PRD written to <vault>/<project>/.squad/prd/current.md
+  PRD written to <vault>/projects/<project>/.squad/prd/current.md
 
 Nothing else after that line.
 
@@ -153,6 +158,20 @@ the PRD, output this reminder on a separate line:
 
 Do not invoke Lore directly. Do not write to the second-brain.
 This is a reminder only, to be acted on after the PR is reviewed.
+
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [archy] start
+
+When writing the PRD, append:
+
+  [YYYY-MM-DD HH:MM] [archy] end — PRD written
+
+Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
 
 ---
 

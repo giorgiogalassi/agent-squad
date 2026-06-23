@@ -5,9 +5,9 @@ description: >
   Triggers: /chisel, after Forge produces output.yaml, after Archy produces
   current.md, or when the user asks to create issues from an existing
   analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, mcp__linear-server__create_issue,
+allowed-tools: Read, Write, Bash, mcp__linear-server__create_issue,
   mcp__linear-server__list_issue_labels,
-  mcp__linear-server__search_issues, Write
+  mcp__linear-server__search_issues
 ---
 
 # Chisel
@@ -25,7 +25,7 @@ Before reading any file, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via Bash, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -45,7 +45,7 @@ These are advisory guidelines that apply throughout this skill:
 
 ### Configuration check
 
-Check if `<vault>/<project>/.squad/chisel-config.json` exists and contains
+Check if `<vault>/projects/<project>/.squad/chisel-config.json` exists and contains
 valid configuration. If it does, read it silently and proceed. If it does not
 exist or is missing required fields, run the configuration flow before doing
 anything else.
@@ -53,17 +53,37 @@ anything else.
 ## Configuration flow
 
 Ask these questions one at a time:
-1. "What is your Linear team name or ID?"
-2. "What is your Linear project name or ID for this work?"
-3. "What label should I apply to issues waiting for your review?
-   (e.g. 'needs-review', or press enter to skip)"
-4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
+0. "Connected mode (issues created in a tracker via MCP) or detached mode
+   (issues written to a local batch file, you create them in the tracker
+   yourself)?"
 
-After collecting answers, write `<vault>/<project>/.squad/chisel-config.json`:
+If **detached**, ask only:
+1. "Issue ID prefix for local issues? (reply 'SQ' or your own; defaults to SQ)"
+
+and write:
 
 ```json
 {
   "chisel": {
+    "mode": "detached",
+    "issue_prefix": "SQ"
+  }
+}
+```
+
+If **connected**, continue:
+1. "What is your Linear team name or ID?"
+2. "What is your Linear project name or ID for this work?"
+3. "What label should I apply to issues waiting for your review?
+   (e.g. 'needs-review'; reply 'none' for no label)"
+4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
+
+After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config.json`:
+
+```json
+{
+  "chisel": {
+    "mode": "connected",
     "team_id": "...",
     "project_id": "...",
     "review_label": "...",
@@ -72,20 +92,24 @@ After collecting answers, write `<vault>/<project>/.squad/chisel-config.json`:
 }
 ```
 
+A config without a `mode` field is connected (backward compatibility).
+
 Confirm with a single line:
 
-  Configuration saved to <vault>/<project>/.squad/chisel-config.json
+  Configuration saved to <vault>/projects/<project>/.squad/chisel-config.json
 
 Then proceed immediately to issue creation.
 
 ## Input
 
 Read the correct input based on what is available:
-- If `<vault>/<project>/.squad/prd/current.md` exists and was produced in
-  this session (complexity: high): read it as input.
-- Otherwise: read `<vault>/<project>/.squad/forge/output.yaml`.
+- If `<vault>/projects/<project>/.squad/prd/current.md` exists: read it
+  as input. Chisel archives the PRD after consumption, so its existence
+  always means a pending PRD, regardless of when it was produced or
+  whether the session context was cleared since.
+- Otherwise: read `<vault>/projects/<project>/.squad/forge/output.yaml`.
 
-Do not ask the user which file to use. Infer from context.
+Do not ask the user which file to use. Existence decides.
 
 ## Issue granularity
 
@@ -105,7 +129,7 @@ A good issue contains: a clear title, a description of what needs to be done
 and why, the acceptance criteria it covers, and any explicit dependencies on
 other issues in the batch.
 
-## Issue creation
+## Issue creation (connected mode)
 
 For each issue, call `mcp__linear-server__create_issue` with:
 - `title`: short, action-oriented (verb + noun, max 60 chars)
@@ -120,6 +144,54 @@ For each issue, call `mcp__linear-server__create_issue` with:
   states if needed
 
 Create issues one at a time. Do not batch them into a single call.
+
+## Issue creation (detached mode)
+
+Do not call any MCP tool. Write the full batch to
+`<vault>/projects/<project>/.squad/issues/batch-YYYYMMDD-HHMMSS.md`:
+
+```markdown
+# Batch YYYY-MM-DD
+Status: pending
+
+## Key mapping
+| Local | Tracker |
+|-------|---------|
+| SQ-1  | —       |
+| SQ-2  | —       |
+
+## SQ-1: <title>
+
+<description: context, what and why>
+
+### Acceptance criteria
+- ...
+
+## SQ-2: <title>
+Blocked by: [SQ-1] <title of blocking issue>
+...
+```
+
+Rules:
+- Assign local IDs sequentially using the configured prefix. Dependencies
+  use local IDs in the same `Blocked by:` first-line format.
+- Issue granularity rules are identical to connected mode.
+- The `Key mapping` table is for the user: after creating the issues in
+  their tracker (Jira, Bitbucket, anything), they may fill in the real
+  keys. Downstream reports use the tracker key when present, the local
+  ID otherwise. An empty mapping is valid; nothing depends on it.
+- Also write `batch-YYYYMMDD-HHMMSS.csv` alongside, with columns
+  `Summary,Description` (quoted multiline values), importable by Jira's
+  CSV importer for one-shot issue creation.
+
+Then print:
+
+  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
+  Create the issues in your tracker (CSV import available), optionally
+  fill the key mapping, then invoke Ralph.
+
+Nothing else after the summary. PRD archiving applies the same as in
+connected mode.
 
 ## Dependency format
 
@@ -155,9 +227,23 @@ Nothing else after the summary.
   ambiguity in the description. Do not ask the user to clarify.
 - If a PRD has open questions, include them in the relevant issue description
   so Cody is aware.
-- After creating issues, move `<vault>/<project>/.squad/prd/current.md` to
-  `<vault>/<project>/.squad/prd/archive/` with a timestamp suffix:
+- After creating issues, move `<vault>/projects/<project>/.squad/prd/current.md` to
+  `<vault>/projects/<project>/.squad/prd/archive/` with a timestamp suffix:
   `current-YYYYMMDD-HHMMSS.md`. Only do this if the PRD was the input.
+
+## Session log
+
+At session start, append to `<vault>/projects/<project>/.squad/session.log`
+(read existing content first, then write with the new line appended; create
+the file if it does not exist):
+
+  [YYYY-MM-DD HH:MM] [chisel] start
+
+After all issues are created, append:
+
+  [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
+
+Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
 
 ---
 

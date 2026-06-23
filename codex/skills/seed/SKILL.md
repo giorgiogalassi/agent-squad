@@ -17,6 +17,29 @@ directly, builds the detail files the squad needs, and ensures all required
 vault directories exist. You do not write code, plan features, or make
 architectural decisions.
 
+## Path resolution protocol
+
+Before any other phase, resolve the vault path and the project display name:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
+   to `~/second-brain/`.
+2. **Project CWD:** run `git rev-parse --show-toplevel` via a shell command
+   and record the absolute path.
+3. **Display name:** read `<vault>/lore-config.json` and look up the project
+   CWD in its `projects` map.
+4. If the vault does not exist, or `lore-config.json` has no entry for this
+   CWD, stop and print:
+
+     No vault mapping found for this project.
+     Run `lore start` first: Lore creates the vault, resolves the display
+     name, and records the CWD mapping that Seed depends on.
+
+   Never derive the display name yourself. Lore owns project naming and
+   conflict resolution. Seed only consumes the mapping.
+5. All `<project-name>` references in this skill resolve to the display name
+   from step 3, and all `.squad/` paths resolve to
+   `<vault>/projects/<project-name>/.squad/`.
+
 ## Phase 1: read the project
 
 Read the following files if they exist. Skip silently if missing:
@@ -38,25 +61,23 @@ references them.
 
 ## Phase 2: check existing context files
 
-Resolve the vault path first (see Phase 6 for resolution rules) and derive
-`<vault>/<project-name>/` so that Phase 2 can check the correct locations.
-
-Check if these files exist:
-- `<vault>/<project-name>/.squad/architecture.md`
-- `<vault>/<project-name>/.squad/scout-cache.md`
+Using the display name resolved by the path resolution protocol, check if
+these files exist:
+- `<vault>/projects/<project-name>/.squad/architecture.md`
+- `<vault>/projects/<project-name>/.squad/scout-cache.md`
 
 If both exist, show this message and wait for input:
 
   Seed has already run on this project.
-  - <vault>/<project-name>/.squad/architecture.md exists
-  - <vault>/<project-name>/.squad/scout-cache.md exists
+  - <vault>/projects/<project-name>/.squad/architecture.md exists
+  - <vault>/projects/<project-name>/.squad/scout-cache.md exists
   [U] Update both  [S] Skip  [A] architecture.md only  [C] scout-cache.md only
 
 If neither file exists, proceed directly to Phase 3 without asking.
 
 ## Phase 3: write architecture.md
 
-Write `<vault>/<project-name>/.squad/architecture.md` with this structure.
+Write `<vault>/projects/<project-name>/.squad/architecture.md` with this structure.
 Be specific and factual. Do not invent or assume anything not present in the
 files you read.
 
@@ -67,14 +88,40 @@ files you read.
 ## Project structure
 ## Patterns and conventions
 ## Build and test commands
+## Data flow
 ```
+
+Structure the `## Data flow` section as:
+
+```markdown
+## Data flow
+### Collected data
+### Storage and third parties
+### Tracking and cookies
+### Retention
+```
+
+Populate it only with what the files you read provide evidence for.
+Dependency and config inspection can reveal candidates: an analytics key
+in a config file, an SDK in the manifest (supabase, stripe, posthog,
+google-analytics), an SMTP or form provider. List each candidate as one
+line marked `[unverified]`, naming the evidence:
+
+  - [unverified] `@supabase/supabase-js` in package.json: user data
+    likely stored in Supabase
+
+Leave subsections with no evidence as `—` placeholders. Never assert a
+data flow you cannot point to evidence for. The user completes and
+verifies this section manually. Consumers today: Archy and Reven. A
+future Lex agent will read this section as its primary input for
+compliance audits.
 
 If updating an existing file, merge: preserve sections you cannot verify have
 changed, update only what the current project state contradicts or extends.
 
 ## Phase 4: write scout-cache.md
 
-Write `<vault>/<project-name>/.squad/scout-cache.md` with this structure.
+Write `<vault>/projects/<project-name>/.squad/scout-cache.md` with this structure.
 Keep it dense and factual.
 
 ```markdown
@@ -94,7 +141,7 @@ not a history.
 Run:
 
 ```bash
-mkdir -p <vault>/<project-name>/.squad/forge <vault>/<project-name>/.squad/prd/archive
+mkdir -p <vault>/projects/<project-name>/.squad/forge <vault>/projects/<project-name>/.squad/prd/archive
 ```
 
 This ensures Forge can write `output.yaml` and Chisel can archive PRDs on
@@ -103,18 +150,13 @@ first run regardless of whether the vault project directory is new.
 
 ## Phase 6: scaffold second-brain project files
 
-Resolve vault path:
-1. Check `SECOND_BRAIN_PATH` environment variable
-2. Default: `~/second-brain/`
-
-If the vault path does not exist:
-  Ask: "Second-brain vault not found at <path>. Create it?"
-  Wait for confirmation before proceeding.
+The vault path and display name are already resolved by the path
+resolution protocol. The vault is guaranteed to exist at this point
+(`lore start` created it).
 
 Ensure these vault directories exist:
   <vault>/projects/
   <vault>/preferences/
-  <vault>/experiences/
   <vault>/docs
 
 Check if `<vault>/projects/<project-name>/` exists.
@@ -225,6 +267,11 @@ Configured in: <vault>/lore-config.json
 Filesystem only. Lore reads and writes <vault> directly
 using file tools. No MCP required.
 
+Optional: initialize the vault as a private git repository for
+history, backup, and multi-machine sync. When <vault>/.git exists,
+lore start, lore prefer, and lore recover commit after their writes
+(commit only, never push). Without a repo, Lore skips this silently.
+
 ## Obsidian
 
 Open <vault> in Obsidian to visualize the note graph.
@@ -251,17 +298,17 @@ When all phases are complete, print this summary and nothing else:
 
   Seed complete.
   Written:
-    <vault>/<project-name>/.squad/architecture.md
-    <vault>/<project-name>/.squad/scout-cache.md
+    <vault>/projects/<project-name>/.squad/architecture.md
+    <vault>/projects/<project-name>/.squad/scout-cache.md
   Directories ensured:
-    <vault>/<project-name>/.squad/forge/
-    <vault>/<project-name>/.squad/prd/archive/
+    <vault>/projects/<project-name>/.squad/forge/
+    <vault>/projects/<project-name>/.squad/prd/archive/
   Second-brain (if new project):
     <vault>/projects/<name>/status.md
     <vault>/projects/<name>/decisions.md
     <vault>/INDEX.md (created or updated)
     <vault>/preferences/development.md (if new vault)
-  Run lore start before your next planning or coding task.
+  Continue with the planning step when ready.
 
 Adjust the Written list to reflect only what was actually changed.
 
@@ -270,6 +317,17 @@ Adjust the Written list to reflect only what was actually changed.
 - Never invent stack details not present in the files you read.
 - Never read source files unless explicitly referenced by a config file.
 - Write in English regardless of project language or conversation language.
+
+## Session log
+
+When all phases are complete, append to
+`<vault>/projects/<project-name>/.squad/session.log` (read existing content
+first, then write with the new line appended; the file exists because
+`lore start` created it):
+
+  [YYYY-MM-DD HH:MM] [seed] end — context files written
+
+Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
 
 ---
 

@@ -21,7 +21,7 @@ Before doing anything else, resolve the vault path and derive the project name:
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
 2. **Project name:** run `git rev-parse --show-toplevel` via a shell command, take the basename of the result.
 3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/<display-name>/.squad/`.
+4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 
@@ -46,7 +46,7 @@ You conduct a conversational session, not an interrogation. Ask one question
 at a time. Listen to the answer before asking the next. Adapt your questions
 based on what the user has already told you.
 
-Before starting, read `<vault>/<project>/.squad/architecture.md` if it exists.
+Before starting, read `<vault>/projects/<project>/.squad/architecture.md` if it exists.
 Use it to ground your questions in the actual project context. Do not ask about
 things already established there.
 
@@ -75,15 +75,19 @@ repeat what they have already covered.
 
 ## Closing the session
 
-When all required slots are filled and you have no critical open questions, say:
+When all required slots are filled and you have no critical open questions,
+close the session by default (Tier 1, default-and-announce). State:
 
   I have enough to produce the analysis. Complexity: [low / medium / high].
   change_type: [code / docs / mixed]. Recommended path: [implement directly /
   chisel pipeline (or /chisel for tracking if docs)].
-  Type `done` to proceed or keep going if you want to add anything.
+  Writing the analysis now. Reply with anything to add or correct first.
 
-The user can also type `done` at any time to close early. Do not close the
-session automatically. Always wait for explicit `done`.
+Then proceed to write the YAML in the same turn. Do not wait for a
+sentinel word. Reopen the session only if the user's next message adds
+scope, corrects a slot, or asks a question rather than accepting. If the
+user types `done` at any point, close immediately. Never block on
+confirmation here; the YAML is reversible and the user can rerun Forge.
 
 ## Complexity classification
 
@@ -115,10 +119,10 @@ The routing is a recommendation, not a gate. The user always decides.
 
 ## Output
 
-When the user types `done`, write the YAML to `<vault>/<project>/.squad/forge/output.yaml`
+When the session closes (default-and-announce, or explicit `done`), write the YAML to `<vault>/projects/<project>/.squad/forge/output.yaml`
 and print a single confirmation line:
 
-  Output written to <vault>/<project>/.squad/forge/output.yaml
+  Output written to <vault>/projects/<project>/.squad/forge/output.yaml
 
 Nothing else after the confirmation line.
 
@@ -151,7 +155,7 @@ notes: ""
 
 ## Session log
 
-At session start, append to `<vault>/<project>/.squad/session.log` (read
+At session start, append to `<vault>/projects/<project>/.squad/session.log` (read
 existing content first, then write with new line appended; create the file if
 it does not exist):
 

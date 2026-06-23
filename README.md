@@ -8,16 +8,16 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 ## MVP Flow
 
 ```text
-lore start      Read second-brain, orient companion. Run at start of squad sessions.
+/lore start     Read second-brain, orient companion. Run at start of squad sessions.
 /seed           Initialize .squad/ AND scaffold second-brain project files.
 /clear          Reset session context.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
 /chisel         Create Linear issues.
-/ralph          Execute issues in dependency order (invokes Cody).
-Cody            Implement issue and open PR.
+/ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
-lore end        Propose status.md + session log writes. Confirm before writing.
+(no session-end command) status.md reconstructs from evidence on the next /lore start; run /lore recover to rebuild it explicitly.
 ```
 
 ```mermaid
@@ -58,10 +58,13 @@ agent-squad/
       chisel/       YAML/PRD -> Linear issues
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
+      lore/         Slash-command wrapper delegating to the Lore agent
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
+    hooks/
+      lore-orient.sh  SessionStart read-only orientation script
   codex/
     skills/
       forge/        Codex skill variants
@@ -69,10 +72,13 @@ agent-squad/
       chisel/
       seed/
       ralph/
+      lore/         Wrapper delegating to the Lore agent
     agents/
       cody.toml     Codex custom agent
       reven.toml    Codex custom agent
       lore.toml     Codex custom agent for second-brain
+    hooks/
+      lore-orient.sh  SessionStart read-only orientation script
 ```
 
 ## Installation
@@ -97,13 +103,43 @@ cp -r codex/agents/* ~/.codex/agents/
 cp -r codex/skills/* ~/.agents/skills/
 ```
 
+### Optional: SessionStart auto-orientation
+
+A read-only hook can inject "where you left off" at the start of every
+session, so you do not have to ask. It never writes and never blocks.
+
+```bash
+# Claude Code
+cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-orient.sh
+```
+Then add to `~/.claude/settings.json`:
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
+```
+
+```bash
+# Codex
+cp codex/hooks/lore-orient.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/lore-orient.sh
+```
+Then add to `~/.codex/config.toml`:
+```toml
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '"$HOME/.codex/hooks/lore-orient.sh"'
+```
+
+The hook orients (read-only); `/lore start` still handles the write and
+setup path (first-time naming, migration, session-log reset).
+
 ## Quick start
 
 Once installed, open any project and run:
 
 ```bash
 # Claude Code
-lore start
+/lore start
 /seed
 /clear
 /forge <your idea>
@@ -111,13 +147,13 @@ lore start
 
 ```text
 # Codex
-Run `lore start`, then use the `seed` skill, then start a fresh session
-if desired, then use the `forge` skill.
+Invoke the lore agent with `lore start`, then use the `seed` skill, then
+start a fresh session if desired, then use the `forge` skill.
 ```
 
 ## Vault setup
 
-On the first `lore start`, Lore creates the vault automatically.
+On the first `/lore start` (Claude Code) or `lore start` (Codex), Lore creates the vault automatically.
 
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
@@ -125,7 +161,13 @@ On the first `lore start`, Lore creates the vault automatically.
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
 - Per-project `.squad/` state lives inside the vault at
-  `<vault>/<project-name>/.squad/`, not in the host project directory.
+  `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
+- Recommended: initialize the vault as a private git repository. It is the
+  single source of truth for all squad memory; a repo gives it history,
+  backup, and multi-machine sync at zero cost. When the repo exists,
+  `lore start`, `lore prefer`, and `lore recover` commit after their
+  writes (commit only, never push); pulling and pushing stay manual. Pull
+  before starting work when using multiple machines.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
 files are written to the project itself.
@@ -152,10 +194,30 @@ vault files directly when needed.
       prd/current.md               written by Archy
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
-    status.md                      Resumption handoff. Overwritten by Lore at session end. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Append-only. Written by Lore (Codex) or auto-memory (Claude Code).
-  experiences/YYYY-MM/             Monthly session logs. Appended by Lore at session end. Never loaded by default.
+      issues/                      detached-mode batch files and handoffs
+      progress.txt                 Ralph's per-issue batch memory. Read by Cody.
+    status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
+    decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
 ```
+
+## Tracker modes
+
+`chisel.mode` in `chisel-config.json` selects how the squad talks to your
+issue tracker. `connected` (default) creates and updates Linear issues via
+MCP and opens PRs with `gh`. `detached` keeps agents fully hands-off:
+Chisel writes a local batch file (with a Jira-importable CSV), Ralph
+executes from it and produces a handoff checklist you replay into the
+tracker, Cody commits locally and prints a paste-ready PR description
+without pushing. Use detached in work environments where agents must not
+hold write access to company tools, or as a fallback when the tracker MCP
+is down. The thinking layers (Forge, Archy, Seed, Lore, Reven's review
+logic) are identical in both modes.
+
+When using the squad across trust domains (personal and work), use one
+vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a
+shell profile on the work machine. Do not share a vault between domains:
+INDEX.md and preferences are written on every session and would carry
+work context into a personal remote.
 
 ## Claude vs Codex
 

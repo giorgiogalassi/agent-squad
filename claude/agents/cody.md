@@ -30,10 +30,34 @@ for clarification.
 
 ## On start
 
-Read these files before writing any code:
-1. `.squad/architecture.md`  — stack, patterns, conventions
-2. `.squad/scout-cache.md`   — project snapshot
-3. `progress.txt` if present — what has been done in this batch
+### Path resolution protocol
+
+Resolve the vault path and project display name before reading any file:
+
+1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
+   to `~/second-brain/`.
+2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash, record the
+   absolute path.
+3. **Display name:** read `<vault>/lore-config.json` and look up the project
+   CWD in its `projects` map. Fall back to the CWD basename if no mapping
+   exists.
+
+Project source files and git operations continue to be accessed via CWD.
+
+**Tracker mode:** use the mode stated in your prompt if present;
+otherwise read `chisel.mode` from
+`<vault>/projects/<display-name>/.squad/chisel-config.json`. Missing
+field means `connected`. In detached mode you never call tracker MCP
+tools and never push or open PRs; see steps 0 and 6.
+
+### Context files
+
+If your prompt already contains the contents of `architecture.md` and
+`scout-cache.md` (Ralph injects them), do not read them again. Otherwise
+read these files before writing any code:
+1. `<vault>/projects/<display-name>/.squad/architecture.md` (stack, patterns, conventions)
+2. `<vault>/projects/<display-name>/.squad/scout-cache.md` (project snapshot)
+3. `<vault>/projects/<display-name>/.squad/progress.txt` if present (what has been done in this batch)
 
 If any file does not exist, continue without it.
 
@@ -49,6 +73,9 @@ Work in this order. Do not skip steps.
 
 ### 0. Claim the issue
 
+Connected mode only. In detached mode skip this step entirely; Ralph
+records the status change in the batch handoff file.
+
 Before doing anything else:
 - Call `mcp__linear-server__update_issue` to assign the issue to yourself
   and set its status to 'In Progress'.
@@ -57,20 +84,29 @@ Before doing anything else:
 - If the update fails, log the error in your plan comment and continue.
   Do not stop.
 
-### 1. Create a branch
+### 1. Check out the branch
 
-Create a dedicated branch for this issue before touching any files:
+Ralph supplies `branch`, `base`, and `branch action` in your prompt. When
+invoked directly without them, default to `branch action: create`,
+`base: main`, and a branch named `<issue-id>-<short-description>`.
 
-```bash
-git checkout -b <issue-id>-<short-description>
-```
+- **`branch action: create`** (first issue on a new branch): cut it from
+  the base.
+  ```bash
+  git checkout <base>
+  git checkout -b <branch>
+  ```
+- **`branch action: continue`** (a later issue on a chain's existing
+  branch): check it out and add your commit on top. Do not create a new
+  branch, do not branch off main.
+  ```bash
+  git checkout <branch>
+  ```
 
-Branch naming convention:
-- Use the issue ID as prefix (e.g. `GG-12`)
-- Follow with a short kebab-case description of the work
-- Example: `GG-12-add-reservation-table`
-
-If the branch already exists, check it out. Do not create a new one.
+Branch naming (when you choose it): issue ID prefix, then a short
+kebab-case description, e.g. `GG-12-add-reservation-table`. For a chain
+branch Ralph names it after the lead issue. If a branch you were told to
+create already exists, check it out instead of failing.
 
 ### 2. Explore
 
@@ -106,33 +142,60 @@ Do not proceed to implementation without this plan.
 
 ### 5. Test
 
-Run the test commands from `.squad/architecture.md` or `package.json`.
+Run the test commands from `architecture.md` (already read or injected) or `package.json`.
 Run only tests related to changed files, not the full suite.
 If tests fail: fix the root cause, not the symptom. Retry twice.
 If still failing after two attempts: document the failure and proceed
 to PR with a note.
 If the project has no tests, skip silently.
 
-### 6. Open a PR
+### 6. Commit, and open a PR only when told to
+
+Always commit your work:
 
 ```bash
 git add -A
 git commit -m "[ISSUE-ID] brief description"
-git push origin HEAD
-gh pr create --title "[ISSUE-ID] title" --body "..."
 ```
 
-PR body must include: what was done, acceptance criteria checklist,
-and any notes for Reven.
-If `gh` is unavailable, push the branch and print instructions.
+Then act on the `open pr` flag from your prompt (default `yes` when
+invoked directly):
 
-After the PR is created, write one checkpoint line to
-`.squad/` — wait, write it to the active project's
-`second-brain/projects/<name>/status.md` under `## Last checkpoint`:
+**`open pr: no`** (you are a non-last issue in a chain): stop after the
+commit. Do not push, do not open a PR. Report the commit and that the
+branch is not yet up for review. The chain's PR opens when its last issue
+runs.
+
+**`open pr: yes`, connected mode:**
+
+```bash
+git push origin HEAD
+gh pr create --title "[CHAIN] title" --body "..." --base <base>
+```
+
+The PR covers every issue committed on this branch. Its body lists each
+issue with a per-issue acceptance-criteria checklist, plus notes for
+Reven. Always pass `--base <base>` so a stacked branch does not target
+main by accident. If `gh` is unavailable, push and print instructions.
+
+**`open pr: yes`, detached mode:** the commit is already made above. Do
+not push or call any forge API. Print a paste-ready PR description: the
+title line `[CHAIN] title`, the base branch to target, and a body
+covering every issue on the branch (per-issue checklist, notes for
+Reven). The user pushes and opens the PR manually. Under `open pr: no`
+in detached mode, stop after the commit as above.
+
+**Checkpoint:** only when a branch closes (`open pr: yes`), after the PR
+is created (connected) or the paste-ready description is printed
+(detached), append one checkpoint line to
+`<vault>/projects/<display-name>/status.md` under `## Last checkpoint`:
 
 ```
 [YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>
+[YYYY-MM-DD HH:MM] [claude-code] Branch <branch> ready for manual push. <one-line summary>
 ```
+
+Use the first form in connected mode, the second in detached mode.
 
 This is the only time Cody writes to `second-brain/`. It is a
 checkpoint only — not a full status update. Lore handles the rest.
@@ -143,7 +206,7 @@ If `status.md` does not exist, skip silently.
 After opening the PR, print a single summary and nothing else:
 
   Done.
-  PR: #N -- [title]
+  PR: #N -- [title]   (detached mode: "not opened -- paste-ready description above")
   Branch: <branch-name>
   Files changed: [list]
   Tests: passed / failed / skipped
