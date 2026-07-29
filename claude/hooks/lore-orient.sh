@@ -6,18 +6,19 @@
 #
 # Install (Claude Code): copy to ~/.claude/hooks/lore-orient.sh, chmod +x,
 # and add to ~/.claude/settings.json:
-#   { "hooks": { "SessionStart": [ { "hooks": [
-#     { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
+#   { "hooks": { "SessionStart": [ { "matcher": "*", "hooks": [
+#     { "type": "command", "command": "bash /Users/ggadmin/.claude/hooks/lore-orient.sh" } ] } ] } }
 
 VAULT="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
 if [ ! -d "$VAULT" ]; then
-  echo "Lore: no vault at $VAULT. Run /lore start to initialize."
+  echo "{\"systemMessage\": \"Lore: no vault at $VAULT. Run /lore start to initialize.\"}"
   exit 0
 fi
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 if [ -z "$ROOT" ]; then
-  exit 0   # not a git repo; nothing to orient on, stay silent
+  echo "{}"
+  exit 0
 fi
 NAME="$(basename "$ROOT")"
 
@@ -32,30 +33,37 @@ fi
 PROJ="$VAULT/projects/$DISPLAY"
 STATUS="$PROJ/status.md"
 
-echo "## Lore orientation — $DISPLAY (read-only, auto-injected)"
-echo
+NL=$'\n'
+
+# Accumulate all text output into a variable
+OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
+
 if [ -f "$STATUS" ]; then
-  echo "### Last recorded status"
-  cat "$STATUS"
+  OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS" | sed 's/"/\\"/g')${NL}"
 else
-  echo "No status.md for this project yet. Reconstruct from the evidence below,"
-  echo "or run /lore start to initialize."
+  OUTPUT="${OUTPUT}No status.md for this project yet. Reconstruct from the evidence below,${NL}or run /lore start to initialize.${NL}"
 fi
 
 # Local evidence: cheap, offline, lets the model reconcile a stale status.md
-echo
-echo "### Evidence (reconcile against the status above; it may be stale)"
-echo "Branch: $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-echo "Recent commits:"
-git -C "$ROOT" log --oneline -5 2>/dev/null
+OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may be stale)${NL}"
+OUTPUT="${OUTPUT}Branch: $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
+OUTPUT="${OUTPUT}Recent commits:${NL}$(git -C "$ROOT" log --oneline -5 2>/dev/null | sed 's/"/\\"/g')${NL}"
+
 if [ -f "$PROJ/.squad/progress.txt" ]; then
-  echo "progress.txt (tail):"; tail -n 5 "$PROJ/.squad/progress.txt"
-fi
-if [ -f "$PROJ/.squad/session.log" ]; then
-  echo "session.log (tail):"; tail -n 5 "$PROJ/.squad/session.log"
+  OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$PROJ/.squad/progress.txt" | sed 's/"/\\"/g')${NL}"
 fi
 
-echo
-echo "If the status looks stale next to the evidence, run /lore recover to rebuild it."
-echo "Run /lore start for setup (first-time naming, migration, session-log reset)."
+if [ -f "$PROJ/.squad/session.log" ]; then
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$PROJ/.squad/session.log" | sed 's/"/\\"/g')${NL}"
+fi
+
+OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
+OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log reset)."
+
+# Export final JSON — systemMessage shows in UI, additionalContext is injected as prompt context
+jq -n --arg msg "$OUTPUT" '{
+  systemMessage: $msg,
+  additionalContext: $msg
+}'
+
 exit 0
