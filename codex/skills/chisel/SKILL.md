@@ -148,6 +148,11 @@ Create issues one at a time. Do not batch them into a single call.
 Do not call any MCP tool. Write the full batch to
 `<vault>/projects/<project>/.squad/issues/batch-YYYYMMDD-HHMMSS.md`:
 
+For input that decomposes into 2+ sub-issues, mirror connected mode's
+parent + sub-issue structure: reserve the first local ID for a parent
+entry, then give every sub-issue entry a `Parent: [LOCAL-ID]` first-line
+reference to it.
+
 ```markdown
 # Batch YYYY-MM-DD
 Status: pending
@@ -157,36 +162,62 @@ Status: pending
 |-------|---------|
 | SQ-1  | —       |
 | SQ-2  | —       |
+| SQ-3  | —       |
 
-## SQ-1: <title>
+## SQ-1: <parent title> (parent)
+
+<parent description: overall context, what and why, derived from the
+input as a whole>
+
+## SQ-2: <title>
+Parent: [SQ-1]
 
 <description: context, what and why>
 
 ### Acceptance criteria
 - ...
 
-## SQ-2: <title>
-Blocked by: [SQ-1] <title of blocking issue>
+## SQ-3: <title>
+Parent: [SQ-1]
+Blocked by: [SQ-2] <title of blocking issue>
 ...
 ```
+
+For input that decomposes into exactly 1 issue, omit the parent entirely
+and write a single flat entry (no `Parent:` line), matching connected
+mode's single-issue behavior.
 
 Rules:
 - Assign local IDs sequentially using the configured prefix. Dependencies
   use local IDs in the same `Blocked by:` first-line format.
 - Issue granularity rules are identical to connected mode.
+- Parent entries: only for batches of 2+ sub-issues. The parent's title
+  and description summarize the whole unit of work (no `Acceptance
+  criteria` section of its own — that lives on the sub-issues). Every
+  sub-issue gets a `Parent: [LOCAL-ID]` line referencing it; when a
+  sub-issue also has a `Blocked by:` line, `Parent:` comes first, both
+  before any other content. The parent is informational only, same as
+  the rest of this file — it is never created via a tracker API call,
+  and it is not itself an executable unit: it exists so the hierarchy
+  survives the copy into whatever tracker the user creates issues in.
 - The `Key mapping` table is for the user: after creating the issues in
   their tracker (Jira, Bitbucket, anything), they may fill in the real
   keys. Downstream reports use the tracker key when present, the local
-  ID otherwise. An empty mapping is valid; nothing depends on it.
+  ID otherwise. An empty mapping is valid; nothing depends on it. Parent
+  entries get a row like any other local ID.
 - Also write `batch-YYYYMMDD-HHMMSS.csv` alongside, with columns
   `Summary,Description` (quoted multiline values), importable by Jira's
-  CSV importer for one-shot issue creation.
+  CSV importer for one-shot issue creation. Parent and sub-issue rows are
+  included the same way, `Parent:`/`Blocked by:` lines folded into the
+  quoted `Description` value.
 
 Then print:
 
   Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
   Create the issues in your tracker (CSV import available), optionally
-  fill the key mapping, then invoke Ralph.
+  fill the key mapping, then invoke Ralph. If your tracker supports
+  parent/sub-issue links, create the parent entry first so sub-issues can
+  reference its real key.
 
 Nothing else after the summary. PRD archiving applies the same as in
 connected mode.
