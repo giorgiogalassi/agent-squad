@@ -70,11 +70,46 @@ and write:
 ```
 
 If **connected**, continue:
-1. "What is your Linear team name or ID?"
-2. "What is your Linear project name or ID for this work?"
-3. "What label should I apply to issues waiting for your review?
+1. "Which issue tracker: GitHub or Linear? (defaults to GitHub)"
+
+If tracker is **GitHub** (the default — proceed here if the user does not
+answer, or explicitly picks GitHub):
+2. "What label should I apply to issues waiting for your review?
    (e.g. 'needs-review'; reply 'none' for no label)"
-4. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
+
+Write `<vault>/projects/<project>/.squad/chisel-config.json`:
+
+```json
+{
+  "chisel": {
+    "mode": "connected",
+    "tracker": "github",
+    "review_label": "...",
+    "state_labels": {
+      "in_progress": "in-progress",
+      "in_review": "in-review",
+      "blocked": "blocked"
+    }
+  }
+}
+```
+
+`state_labels` is populated with the defaults shown above without asking
+the user — they are editable by hand afterward, the same way
+`review_label` already is.
+
+If tracker is **Linear**:
+2. Confirm before continuing: "Chisel creates and updates Linear issues
+   via MCP (`mcp__linear__*` on Codex). Confirm your Linear MCP server is
+   already set up and connected — reply 'yes' to continue or 'no' to
+   stop here and set it up first." Do not assume the MCP tools are
+   available; if the user does not confirm, stop the configuration flow
+   without writing a config file.
+3. "What is your Linear team name or ID?"
+4. "What is your Linear project name or ID for this work?"
+5. "What label should I apply to issues waiting for your review?
+   (e.g. 'needs-review'; reply 'none' for no label)"
+6. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
 
 After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config.json`:
 
@@ -82,6 +117,7 @@ After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config
 {
   "chisel": {
     "mode": "connected",
+    "tracker": "linear",
     "team_id": "...",
     "project_id": "...",
     "review_label": "...",
@@ -90,7 +126,10 @@ After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config
 }
 ```
 
-A config without a `mode` field is connected (backward compatibility).
+A config without a `mode` field is connected (backward compatibility). A
+config without a `tracker` field is treated as `tracker: linear` when
+`team_id`/`project_id` are present — every config written before this
+field existed keeps working with zero behavior change.
 
 Confirm with a single line:
 
@@ -129,7 +168,11 @@ other issues in the batch.
 
 ## Issue creation (connected mode)
 
-For each issue, call `mcp__linear__create_issue` with:
+This section covers `tracker: linear`. GitHub issue creation is handled
+by a separate tracker-specific flow (see the `tracker` field in
+`chisel-config.json`); it is not implemented by this skill yet.
+
+For `tracker: linear`, call `mcp__linear__create_issue` with:
 - `title`: short, action-oriented (verb + noun, max 60 chars)
 - `description`: markdown body. If the issue has a hard dependency,
   the FIRST line must be the dependency declaration (see below).
@@ -245,4 +288,6 @@ Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
 
 ---
 
-> **Note:** In the Codex set, use the Linear MCP prefix `mcp__linear__`.
+> **Note:** This applies only when `tracker: linear` is selected in
+> `chisel-config.json` — it is not a baseline assumption. In the Codex
+> set, use the Linear MCP prefix `mcp__linear__`.
