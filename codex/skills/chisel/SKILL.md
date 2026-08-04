@@ -168,11 +168,58 @@ other issues in the batch.
 
 ## Issue creation (connected mode)
 
-This section covers `tracker: linear`. GitHub issue creation is handled
-by a separate tracker-specific flow (see the `tracker` field in
-`chisel-config.json`); it is not implemented by this skill yet.
+Branch on `tracker` from `chisel-config.json`.
 
-For `tracker: linear`, call `mcp__linear__create_issue` with:
+### `tracker: github`
+
+Use the `gh` CLI via a shell command. Titles are short and
+action-oriented (verb + noun, max 60 chars). Bodies are markdown:
+context, acceptance criteria, notes — no `Blocked by:` line (see
+"Dependency format" below for why).
+
+1. **Decompose first, then decide on a parent.** If the batch decomposes
+   into exactly one issue, skip straight to step 3 and create it as a
+   single flat issue — no parent, matching today's single-issue
+   behavior.
+2. **2+ sub-issues: create the parent container first.**
+   ```bash
+   gh issue create --title "<batch title>" --body "<summary derived from the Forge/Archy input>"
+   ```
+   Capture the returned issue number (parse it from the printed URL).
+   The parent is never executed by Ralph and never claimed by Cody — it
+   exists to group the sub-issues. Apply the review label to it too
+   (step 4).
+3. **Create each sub-issue**, one at a time, in topological order
+   (blockers before the issues they block — a sub-issue cannot be
+   marked `--blocked-by` an issue number that doesn't exist yet):
+   ```bash
+   gh issue create --title "<title>" --body "<description>" \
+     --parent <parent-number> \
+     --blocked-by <blocker-number>[,<blocker-number>...]
+   ```
+   Omit `--parent` entirely for the single-issue case (step 1). Omit
+   `--blocked-by` if the sub-issue has no dependency in this batch. If a
+   dependency needs to be recorded on the blocker's side too (rare —
+   `--blocked-by` on the dependent issue is normally sufficient), use
+   `gh issue edit <blocker-number> --add-blocking <dependent-number>`
+   after creating the dependent issue.
+4. **Apply the review label** to every issue created (parent and
+   sub-issues) at creation time:
+   ```bash
+   gh issue create ... --label "<review_label>"
+   ```
+   If an issue was already created without it (e.g. the label didn't
+   exist yet), apply it after the fact with
+   `gh issue edit <number> --add-label "<review_label>"`. Skip this step
+   entirely if `review_label` is `none`. The label must already exist in
+   the target repo — Chisel does not create labels.
+
+Dependencies are native GitHub state (queryable via
+`gh issue view --json parent,blockedBy,blocking`), not text in the body.
+
+### `tracker: linear`
+
+Call `mcp__linear__create_issue` with:
 - `title`: short, action-oriented (verb + noun, max 60 chars)
 - `description`: markdown body. If the issue has a hard dependency,
   the FIRST line must be the dependency declaration (see below).
@@ -236,6 +283,11 @@ connected mode.
 
 ## Dependency format
 
+This section covers `tracker: linear` and detached mode. For
+`tracker: github`, dependencies are wired natively at creation time (see
+"Issue creation (connected mode)" above) — never write a `Blocked by:`
+line into a GitHub issue body.
+
 If an issue has a hard dependency on another issue in the same batch,
 write this as the FIRST line of the description:
 
@@ -251,12 +303,21 @@ Rules:
 Ralph reads this format to build the execution order. Any other format
 will be ignored.
 
-After all issues are created, print a summary:
+After all issues are created, print a summary. For `tracker: linear` and
+detached mode:
 
   Created N issues:
   - [ISSUE-ID] Title
   - [ISSUE-ID] Title
   Review them on Linear before invoking Ralph.
+
+For `tracker: github`, include the parent when one was created:
+
+  Created N issues:
+  - #<parent-number> <parent title> (parent)
+  - #<issue-number> <title>
+  - #<issue-number> <title>
+  Review them on GitHub before invoking Ralph.
 
 Nothing else after the summary.
 
