@@ -99,12 +99,46 @@ Only continue to Phase 1 after both checks pass.
 
 ## Phase 1: build the execution order
 
-Read every issue in the batch. For each issue, check the first line of its
-description for the pattern:
+Branch on `chisel.tracker` from `chisel-config.json`.
+
+### `tracker: github`
+
+Fetch the batch from the parent/container issue's sub-issues — this
+excludes the parent by construction, so it never becomes a node in the
+graph:
+
+```bash
+gh issue view <parent-number> --json subIssues
+```
+
+If invoked with a specific issue ID, work only on that issue instead.
+
+For each sub-issue in the batch, read its native dependency fields
+rather than parsing the issue body:
+
+```bash
+gh issue view <issue-number> --json blockedBy,blocking
+```
+
+Build the dependency graph from `blockedBy` (edges into the issue) and
+`blocking` (edges out of it).
+
+The parent/container issue is never entered into the graph as a node: it
+is never claimed, retried, or escalated, its open/closed state is never
+changed, and no rollup comment is ever posted on it (see Rules).
+
+### `tracker: linear` and detached mode
+
+Read every issue in the batch. For each issue, check the first line of
+its description for the pattern:
 
   Blocked by: [ISSUE-ID] ...
 
-Build a dependency graph and resolve execution order:
+Build the dependency graph from these declarations.
+
+### Resolve execution order (all trackers)
+
+Once the dependency graph is built (from either source above):
 1. Find issues with no blockers (in-degree = 0). These run first.
 2. Mark them queued. Remove their edges from the graph.
 3. Repeat until all issues are queued or a cycle is detected.
@@ -112,20 +146,23 @@ Build a dependency graph and resolve execution order:
 If a cycle is detected:
 
   Cycle detected: GG-12 -> GG-14 -> GG-12
-  Cannot resolve. Fix the dependency manually on Linear. Stop.
+  Cannot resolve. Fix the dependency manually on Linear (or on GitHub,
+  for tracker: github). Stop.
 
 Do not proceed.
 
 If a blocker references an issue outside the current batch (already merged
-or from a different project), treat it as resolved and proceed.
+or from a different project/repo), treat it as resolved and proceed.
 
 ## Phase 1b: group issues into branches
 
-After the execution order is resolved, group issues into branches by
-their `Blocked by:` graph. A **chain** is a connected component of that
-graph: issues linked directly or transitively by `Blocked by:` edges
-belong to the same chain. Issues with no edges to any other in-batch
-issue are singletons.
+After the execution order is resolved, group issues into branches by the
+dependency graph built in Phase 1 (from `Blocked by:` text for
+`tracker: linear` and detached mode, or from `blockedBy`/`blocking` for
+`tracker: github`). A **chain** is a connected component of that graph:
+issues linked directly or transitively by a dependency edge belong to
+the same chain. Issues with no edges to any other in-batch issue are
+singletons.
 
 - **One branch per chain.** All issues in a chain share a single feature
   branch. They are committed onto it in execution order, each issue its
@@ -268,6 +305,10 @@ resolved issue. Format:
 - Never skip an issue without logging the reason.
 - Never proceed past a cycle detection. Stop and report.
 - Treat a blocker outside the current batch as resolved.
+- Never treat the parent/container issue as a node in the execution
+  graph, for any tracker: never claim it, retry it, or escalate it, and
+  never change its open/closed state or post a rollup comment on it. It
+  exists only to group sub-issues.
 - Write `progress.txt` in English regardless of conversation language.
 - Max 3 retries per issue, retryable failures only. After 3, escalate
   and continue. Immediate-escalation conditions skip retries entirely.
