@@ -268,17 +268,17 @@ issue's tracker:
 - the tracker mode (`mode: connected` or `mode: detached`)
 - `branch: <branch-name>` (this issue's own branch under
   `tracker: github`; its chain's or singleton's branch under
-  `tracker: linear`/detached)
+  detached)
 - `base: <base-branch>` — under `tracker: github`, `main` if the issue
   is unblocked in-batch, otherwise the blocker's branch chosen in Phase
   1b (deepest in the stack when there are multiple blockers); under
-  `tracker: linear`/detached, `main` unless stacking is in use
+  detached, `main` unless stacking is in use
 - `branch action: create` — under `tracker: github`, always (every
-  issue is its own branch); under `tracker: linear`/detached, `create`
+  issue is its own branch); under detached, `create`
   for the first issue on a branch and `continue` for any later issue on
   an existing branch
 - `open pr: yes` — under `tracker: github`, always (every sub-issue
-  opens its own PR); under `tracker: linear`/detached, only for the last
+  opens its own PR); under detached, only for the last
   issue on the branch, `open pr: no` otherwise
 
 Cody's task: assign the issue (connected mode), check out the branch
@@ -301,7 +301,7 @@ escalation over a retry that cannot change the outcome.
 On success, distinguish a committed-only issue from one that closed a branch:
 
 - **Issue committed, PR not yet opened** (a non-last issue in a chain —
-  `tracker: linear`/detached only; under `tracker: github` every
+  detached only; under `tracker: github` every
   sub-issue opens its own PR, so this case never occurs there, see Phase
   1b):
   - Connected: leave the issue 'In Progress'; it is done but its branch
@@ -391,7 +391,7 @@ gh stack init <branch-1> <branch-2> ... <branch-N>
   the batch. No retry, no escalation. This is purely additive — it has no
   effect on any issue's or chain's success/failure status already
   recorded in 2b/2c.
-- `tracker: linear` and detached mode: skip this step entirely.
+- Detached mode: skip this step entirely.
 
 This does not change how branches or PRs are created in 2a — Cody's
 `--base <blocker's branch>` mechanism from #29 is unchanged. This step
