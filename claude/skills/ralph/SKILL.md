@@ -156,13 +156,49 @@ or from a different project/repo), treat it as resolved and proceed.
 
 ## Phase 1b: group issues into branches
 
+Branch assignment differs by tracker: `tracker: github` gets a stacked
+per-issue model (this issue); `tracker: linear` and detached mode keep
+the pre-existing chain-bundling model unchanged.
+
+### `tracker: github`: one branch and one PR per sub-issue (stacked)
+
+Do not bundle issues into shared chain branches. Every sub-issue gets its
+own branch and its own PR, using the `blockedBy`/`blocking` graph built
+in Phase 1 directly (no chain/singleton grouping step):
+
+- **Branch name:** `<issue-id>-<short-description>`, for every issue,
+  including issues that would have been non-lead members of a chain
+  under the old model.
+- **Base branch:**
+  - An issue with no in-batch blocker (in-degree 0) branches from
+    `main`.
+  - An issue with one or more in-batch blockers branches from a
+    blocker's branch, not `main`. If it has exactly one blocker, base on
+    that blocker's branch. If it has multiple blockers, base on the
+    blocker whose branch is deepest in the stack — i.e. whichever
+    blocker's branch already transitively contains the other blockers'
+    changes. Phase 1's topological sort already establishes this
+    ordering: among the issue's in-batch blockers, pick the one that was
+    queued latest in the resolved execution order.
+- **Branch action:** always `create`. Each issue is its own branch with
+  its own single commit; there is no `continue` case in this model.
+- **PR:** every sub-issue opens its own PR (`open pr: yes`, always — not
+  just the last in a chain), with `--base <that issue's base branch>` so
+  the PR shows only its own diff, stacked on its blocker's PR.
+
+Rationale: this reuses Cody's existing `--base` mechanism (already used
+for Sidecar worktrees) with no new plumbing on Cody's side — only
+Ralph's branch/PR assignment changes. Stacking lets each sub-issue be
+reviewed and merged independently instead of bundled into one PR per
+chain.
+
+### `tracker: linear` and detached mode: one branch per chain (unchanged)
+
 After the execution order is resolved, group issues into branches by the
-dependency graph built in Phase 1 (from `Blocked by:` text for
-`tracker: linear` and detached mode, or from `blockedBy`/`blocking` for
-`tracker: github`). A **chain** is a connected component of that graph:
-issues linked directly or transitively by a dependency edge belong to
-the same chain. Issues with no edges to any other in-batch issue are
-singletons.
+dependency graph built in Phase 1 (from `Blocked by:` text). A **chain**
+is a connected component of that graph: issues linked directly or
+transitively by a dependency edge belong to the same chain. Issues with
+no edges to any other in-batch issue are singletons.
 
 - **One branch per chain.** All issues in a chain share a single feature
   branch. They are committed onto it in execution order, each issue its
@@ -199,14 +235,23 @@ Spawn Cody as a subagent with:
 - Contents of `<vault>/projects/<project>/.squad/architecture.md` and `<vault>/projects/<project>/.squad/scout-cache.md`
 - Contents of `<vault>/projects/<project>/.squad/progress.txt` if present
 
-Also state in Cody's prompt:
+Also state in Cody's prompt, per the Phase 1b assignment for this
+issue's tracker:
 - the tracker mode (`mode: connected` or `mode: detached`)
-- `branch: <branch-name>` for this issue's chain or singleton
-- `base: <base-branch>` (main, unless stacking is in use)
-- `branch action: create` for the first issue on a branch,
-  `branch action: continue` for any later issue on an existing branch
-- `open pr: yes` only for the last issue on the branch; `open pr: no`
-  otherwise
+- `branch: <branch-name>` (this issue's own branch under
+  `tracker: github`; its chain's or singleton's branch under
+  `tracker: linear`/detached)
+- `base: <base-branch>` — under `tracker: github`, `main` if the issue
+  is unblocked in-batch, otherwise the blocker's branch chosen in Phase
+  1b (deepest in the stack when there are multiple blockers); under
+  `tracker: linear`/detached, `main` unless stacking is in use
+- `branch action: create` — under `tracker: github`, always (every
+  issue is its own branch); under `tracker: linear`/detached, `create`
+  for the first issue on a branch and `continue` for any later issue on
+  an existing branch
+- `open pr: yes` — under `tracker: github`, always (every sub-issue
+  opens its own PR); under `tracker: linear`/detached, only for the last
+  issue on the branch, `open pr: no` otherwise
 
 Cody's task: assign the issue (connected mode), check out the branch
 (creating it from base on the first issue, reusing it after), implement,
