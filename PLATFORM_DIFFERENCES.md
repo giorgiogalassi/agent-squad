@@ -18,7 +18,7 @@ These behaviors are intentionally the same in both trees:
 
 - `Forge` runs discovery and writes `.squad/forge/output.yaml`
 - `Archy` turns high-complexity work into `.squad/prd/current.md`
-- `Chisel` decomposes YAML or PRD input into Linear issues
+- `Chisel` decomposes YAML or PRD input into issues
 - `Ralph` runs issues in dependency order using `Blocked by:` metadata
 - `Cody` implements issues and opens PRs
 - `Reven` reviews PRs against acceptance criteria and project conventions
@@ -147,18 +147,6 @@ and a live Codex run on this machine, which attempted to load user skills from
 |---------|--------|-------|
 | Default implementation/review model | `sonnet` | `gpt-5.4` |
 | High-complexity analysis model | `opus` | `gpt-5.4` |
-
-### Linear MCP Prefix
-
-This applies only when a project's `chisel-config.json` has
-`tracker: linear` explicitly selected — it is not a baseline assumption.
-Newly initialized configs default to `tracker: github` and never require
-a Linear MCP server; Chisel's config flow confirms the Linear MCP server
-is already set up before writing a `tracker: linear` config.
-
-| Concern | Claude | Codex |
-|---------|--------|-------|
-| Linear prefix | `mcp__linear-server__` | `mcp__linear__` |
 
 ### SessionStart hook
 
