@@ -76,29 +76,18 @@ Work in this order. Do not skip steps.
 Connected mode only. In detached mode skip this step entirely; Ralph
 records the status change in the batch handoff file.
 
-Before doing anything else, branch on the tracker stated in your prompt
-(or `chisel.tracker` from config; missing field means `linear`):
+Before doing anything else, read the configured `in_progress` label from
+`state_labels` in `chisel-config.json` (do not hardcode the label name).
+Claim the sub-issue by adding yourself as assignee and applying that
+label:
 
-**`tracker: linear`:**
-- Call `mcp__linear-server__update_issue` to assign the issue to yourself
-  and set its status to 'In Progress'.
-- If the issue ID is not provided in your prompt, extract it from the
-  issue description (format: GG-12 or similar).
-- If the update fails, log the error in your plan comment and continue.
-  Do not stop.
+```bash
+gh issue edit <issue-number> -R <owner>/<repo> --add-assignee @me --add-label <in_progress>
+```
 
-**`tracker: github`:**
-- Read the configured `in_progress` label from `state_labels` in
-  `chisel-config.json` (do not hardcode the label name).
-- Claim the sub-issue by adding yourself as assignee and applying that
-  label:
-  ```bash
-  gh issue edit <issue-number> -R <owner>/<repo> --add-assignee @me --add-label <in_progress>
-  ```
-- If the issue number is not provided in your prompt, extract it from
-  the issue description (format: `#30` or similar).
-- If the command fails, log the error in your plan comment and continue.
-  Do not stop.
+If the issue number is not provided in your prompt, extract it from the
+issue description (format: `#30` or similar). If the command fails, log
+the error in your plan comment and continue. Do not stop.
 
 ### 1. Check out the branch
 
@@ -194,19 +183,14 @@ issue with a per-issue acceptance-criteria checklist, plus notes for
 Reven. Always pass `--base <base>` so a stacked branch does not target
 main by accident. If `gh` is unavailable, push and print instructions.
 
-For `tracker: github`, immediately after `gh pr create` succeeds, swap
-the label on every issue covered by this PR from the configured
-`in_progress` label to the configured `in_review` label (both read from
-`state_labels` in `chisel-config.json`, not hardcoded):
+Immediately after `gh pr create` succeeds, swap the label on every issue
+covered by this PR from the configured `in_progress` label to the
+configured `in_review` label (both read from `state_labels` in
+`chisel-config.json`, not hardcoded):
 
 ```bash
 gh issue edit <issue-number> -R <owner>/<repo> --remove-label <in_progress> --add-label <in_review>
 ```
-
-For `tracker: linear`, this transition is Ralph's responsibility, not
-Cody's — Ralph moves every issue on the branch to 'In Review' via
-`update_issue` after evaluating your reported result (Phase 2b). Do not
-call `update_issue` here.
 
 **`open pr: yes`, detached mode:** the commit is already made above. Do
 not push or call any forge API. Print a paste-ready PR description: the
