@@ -48,10 +48,18 @@ Workflow:
 1. Claim the issue
 - Connected mode only. In detached mode skip this step entirely; Ralph
   records the status change in the batch handoff file.
-- Call `mcp__linear__update_issue` to assign the issue to yourself and set its
-  status to `In Progress`.
-- If the issue ID is not provided explicitly, extract it from the issue text.
-- If the update fails, note the error and continue.
+- Branch on the tracker stated in your prompt (or chisel.tracker from
+  config; missing field means linear):
+- tracker: linear — call `mcp__linear__update_issue` to assign the issue
+  to yourself and set its status to `In Progress`. If the issue ID is not
+  provided explicitly, extract it from the issue text. If the update
+  fails, note the error and continue.
+- tracker: github — read the configured `in_progress` label from
+  `state_labels` in chisel-config.json (do not hardcode the label name)
+  and claim the sub-issue with
+  `gh issue edit <issue-number> -R <owner>/<repo> --add-assignee @me --add-label <in_progress>`.
+  If the issue number is not provided explicitly, extract it from the
+  issue text. If the command fails, note the error and continue.
 
 2. Check out the branch
 - Ralph supplies `branch`, `base`, and `branch action`. Invoked directly
@@ -97,6 +105,13 @@ Workflow:
   `--base <base>`, covering every issue on the branch (per-issue
   acceptance-criteria checklist, notes for Reven). If `gh` is
   unavailable, push and print manual instructions.
+- `open pr: yes`, connected, tracker: github: immediately after the PR is
+  created, swap the label on every issue covered by this PR from the
+  configured `in_progress` label to the configured `in_review` label
+  (both read from `state_labels` in chisel-config.json, not hardcoded):
+  `gh issue edit <issue-number> -R <owner>/<repo> --remove-label <in_progress> --add-label <in_review>`.
+  For tracker: linear this transition is Ralph's responsibility instead
+  (Phase 2b); do not call `mcp__linear__update_issue` here.
 - `open pr: yes`, detached: do not push or call any forge API. Print a
   paste-ready PR description (title, base branch, per-issue body). The
   user pushes and opens the PR manually.

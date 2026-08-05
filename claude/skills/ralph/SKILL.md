@@ -95,7 +95,14 @@ any issue is touched.
    - Print: `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
    - Surface the issue to the user immediately and stop. Do not proceed.
 
-Only continue to Phase 1 after both checks pass.
+3. For `tracker: github` only (skip for `tracker: linear`): run
+   `gh --version` and parse the version number. If it is older than
+   `2.95.0` — the version verified to support `--parent`/`--blocked-by`/
+   `--blocking`/`--add-sub-issue`:
+   - Print: `ERROR: gh CLI version <found version> is older than the required 2.95.0 for tracker: github. Upgrade gh and retry.`
+   - Surface the issue to the user immediately and stop. Do not proceed.
+
+Only continue to Phase 1 after all applicable checks pass.
 
 ## Phase 1: build the execution order
 
@@ -272,15 +279,23 @@ escalation over a retry that cannot change the outcome.
 
 On success, distinguish a committed-only issue from one that closed a branch:
 
-- **Issue committed, PR not yet opened** (a non-last issue in a chain):
+- **Issue committed, PR not yet opened** (a non-last issue in a chain —
+  `tracker: linear`/detached only; under `tracker: github` every
+  sub-issue opens its own PR, so this case never occurs there, see Phase
+  1b):
   - Connected: leave the issue 'In Progress'; it is done but its branch
     is not yet up for review.
   - Detached: append `- [ ] (committed on <branch>) <KEY>` to the handoff.
   - Append to `progress.txt`:
     `[ISSUE-ID] committed on <branch>. Notes: <brief summary>`
 - **Issue committed and PR opened** (the last issue on a branch, or a singleton):
-  - Connected: move every issue on that branch to 'In Review' via
-    `update_issue` (the PR covers all of them).
+  - Connected, `tracker: linear`: move every issue on that branch to 'In
+    Review' via `update_issue` (the PR covers all of them).
+  - Connected, `tracker: github`: no further action here — Cody already
+    swapped the sub-issue's label from the configured `in_progress`
+    label to the configured `in_review` label (both read from
+    `state_labels` in `chisel-config.json`) as part of opening its PR
+    (see cody.md step 6). Ralph does not duplicate the label call.
   - Detached: append `- [ ] Move <KEY> to In Review` for each issue on
     the branch to the handoff file.
   - Append to `progress.txt`:
@@ -315,8 +330,15 @@ appended to Cody's context. At 3: escalate (see 2c).
 ### 2c. Escalation
 
 When an issue fails 3 times:
-- Connected: update issue status to 'Blocked' on Linear and add a
-  comment on the issue with the last error output
+- Connected, `tracker: linear`: update issue status to 'Blocked' on
+  Linear and add a comment on the issue with the last error output.
+- Connected, `tracker: github`: apply the configured `blocked` label
+  (read from `state_labels` in `chisel-config.json`, not hardcoded) and
+  comment the last error output on the sub-issue:
+  ```bash
+  gh issue edit <issue-number> -R <owner>/<repo> --add-label <blocked>
+  gh issue comment <issue-number> -R <owner>/<repo> --body "<last error output>"
+  ```
 - Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
   to the handoff file
 - Print: `GG-12 failed after 3 attempts. Escalating to you.`
