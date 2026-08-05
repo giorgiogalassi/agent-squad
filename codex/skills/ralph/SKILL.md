@@ -93,11 +93,10 @@ any issue is touched.
    - Print: `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
    - Surface the issue to the user immediately and stop. Do not proceed.
 
-3. For `tracker: github` only (skip for `tracker: linear`): run
-   `gh --version` and parse the version number. If it is older than
+3. Run `gh --version` and parse the version number. If it is older than
    `2.95.0` — the version verified to support `--parent`/`--blocked-by`/
    `--blocking`/`--add-sub-issue`:
-   - Print: `ERROR: gh CLI version <found version> is older than the required 2.95.0 for tracker: github. Upgrade gh and retry.`
+   - Print: `ERROR: gh CLI version <found version> is older than the required 2.95.0. Upgrade gh and retry.`
    - Surface the issue to the user immediately and stop. Do not proceed.
 
 Only continue to Phase 1 after all applicable checks pass.
@@ -183,9 +182,9 @@ or from a different project/repo), treat it as resolved and proceed.
 
 ## Phase 1b: group issues into branches
 
-Branch assignment differs by tracker: `tracker: github` gets a stacked
-per-issue model (this issue); `tracker: linear` and detached mode keep
-the pre-existing chain-bundling model unchanged.
+Branch assignment differs by mode: connected mode gets a stacked
+per-issue model (this issue); detached mode keeps today's chain-bundling
+behavior unchanged.
 
 ### `tracker: github`: one branch and one PR per sub-issue (stacked)
 
@@ -219,7 +218,7 @@ Ralph's branch/PR assignment changes. Stacking lets each sub-issue be
 reviewed and merged independently instead of bundled into one PR per
 chain.
 
-### `tracker: linear` and detached mode: one branch per chain (unchanged)
+### Detached mode: one branch per chain (unchanged)
 
 After the execution order is resolved, group issues into branches by the
 dependency graph built in Phase 1 (from `Blocked by:` text). A **chain**
@@ -315,13 +314,11 @@ On success, distinguish a committed-only issue from one that closed a branch:
   - Append to `progress.txt`:
     `[ISSUE-ID] committed on <branch>. Notes: <brief summary>`
 - **Issue committed and PR opened** (the last issue on a branch, or a singleton):
-  - Connected, `tracker: linear`: move every issue on that branch to 'In
-    Review' via `update_issue` (the PR covers all of them).
-  - Connected, `tracker: github`: no further action here — Cody already
-    swapped the sub-issue's label from the configured `in_progress`
-    label to the configured `in_review` label (both read from
-    `state_labels` in `chisel-config.json`) as part of opening its PR
-    (see cody.toml step 7). Ralph does not duplicate the label call.
+  - Connected: no further action here — Cody already swapped the
+    sub-issue's label from the configured `in_progress` label to the
+    configured `in_review` label (both read from `state_labels` in
+    `chisel-config.json`) as part of opening its PR (see cody.toml step
+    7). Ralph does not duplicate the label call.
   - Detached: append `- [ ] Move <KEY> to In Review` for each issue on
     the branch to the handoff file.
   - Append to `progress.txt`:
@@ -356,11 +353,9 @@ appended to Cody's context. At 3: escalate (see 2c).
 ### 2c. Escalation
 
 When an issue fails 3 times:
-- Connected, `tracker: linear`: update issue status to 'Blocked' on
-  Linear and add a comment on the issue with the last error output.
-- Connected, `tracker: github`: apply the configured `blocked` label
-  (read from `state_labels` in `chisel-config.json`, not hardcoded) and
-  comment the last error output on the sub-issue:
+- Connected: apply the configured `blocked` label (read from
+  `state_labels` in `chisel-config.json`, not hardcoded) and comment the
+  last error output on the sub-issue:
   ```bash
   gh issue edit <issue-number> -R <owner>/<repo> --add-label <blocked>
   gh issue comment <issue-number> -R <owner>/<repo> --body "<last error output>"
