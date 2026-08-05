@@ -150,6 +150,12 @@ and a live Codex run on this machine, which attempted to load user skills from
 
 ### Linear MCP Prefix
 
+This applies only when a project's `chisel-config.json` has
+`tracker: linear` explicitly selected — it is not a baseline assumption.
+Newly initialized configs default to `tracker: github` and never require
+a Linear MCP server; Chisel's config flow confirms the Linear MCP server
+is already set up before writing a `tracker: linear` config.
+
 | Concern | Claude | Codex |
 |---------|--------|-------|
 | Linear prefix | `mcp__linear-server__` | `mcp__linear__` |
