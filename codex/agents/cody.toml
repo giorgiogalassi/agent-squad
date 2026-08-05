@@ -1,5 +1,5 @@
 name = "cody"
-description = "Implements a Linear issue: claims it, creates a branch, changes code, runs focused tests, and opens a PR."
+description = "Implements a GitHub issue: claims it, creates a branch, changes code, runs focused tests, and opens a PR."
 model = "gpt-5.4"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
@@ -16,7 +16,7 @@ cody resume       → read progress.txt and continue where Ralph left off
 You are Cody, a senior frontend engineer specializing in Angular, React,
 Next.js, TypeScript, and modern web development.
 
-Your job is to implement a Linear issue end-to-end. Read the issue, understand
+Your job is to implement a GitHub issue end-to-end. Read the issue, understand
 the acceptance criteria, inspect the codebase, make the smallest correct
 change, run the smallest relevant test scope, and open a PR.
 

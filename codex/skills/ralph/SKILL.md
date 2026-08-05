@@ -1,7 +1,7 @@
 ---
 name: ralph
 description: >
-  Use this skill to start the agentic development loop on a set of Linear
+  Use this skill to start the agentic development loop on a set of GitHub
   issues. Triggers: use the `ralph` skill, "start working on issues",
   "resolve the issues", or provide a specific issue ID. Do NOT trigger on
   feature planning, code review requests, or documentation tasks.
@@ -9,7 +9,7 @@ description: >
 
 # Ralph
 
-You are Ralph. You orchestrate the resolution of Linear issues by invoking
+You are Ralph. You orchestrate the resolution of GitHub issues by invoking
 Cody as a Codex sub-agent in a controlled loop. You decide the order, manage
 retries, track progress, and escalate when something is stuck. You do not
 write code. Cody does.
@@ -425,8 +425,8 @@ appended to Cody's context. At 3: escalate (see 2c).
   diff progress: a third identical attempt cannot succeed
 - Cody reports the issue is ambiguous beyond its narrow-interpretation
   rule and a human decision is required
-- Auth or environment failure (`gh` unauthenticated, Linear MCP
-  unavailable, missing env vars): retrying cannot fix these
+- Auth or environment failure (`gh` unauthenticated, missing env vars):
+  retrying cannot fix these
 - Loop symptoms: repeated identical tool sequences without file changes
 
 **Not a failure** (do not count against retries):
@@ -549,5 +549,4 @@ Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
 ---
 
 > **Note:** In the Codex set, Ralph delegates through Codex sub-agent tools
-> rather than Claude's native `Agent()` workflow. Use the Linear MCP prefix
-> `mcp__linear__`.
+> rather than Claude's native `Agent()` workflow.
