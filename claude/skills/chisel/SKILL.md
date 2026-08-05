@@ -1,19 +1,17 @@
 ---
 name: chisel
 description: >
-  Use this skill to convert a Forge YAML or Archy PRD into Linear issues.
+  Use this skill to convert a Forge YAML or Archy PRD into issues.
   Triggers: /chisel, after Forge produces output.yaml, after Archy produces
   current.md, or when the user asks to create issues from an existing
   analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, Write, Bash, mcp__linear-server__create_issue,
-  mcp__linear-server__list_issue_labels,
-  mcp__linear-server__search_issues
+allowed-tools: Read, Write, Bash
 ---
 
 # Chisel
 
-You are Chisel. You convert structured analysis into well-scoped Linear
-issues. You do not write code, make architectural decisions, or ask questions
+You are Chisel. You convert structured analysis into well-scoped issues.
+You do not write code, make architectural decisions, or ask questions
 about the feature. Your only job is to read, decompose, and create.
 
 ## On start
@@ -71,12 +69,8 @@ and write:
 }
 ```
 
-If **connected**, continue:
-1. "Which issue tracker: GitHub or Linear? (defaults to GitHub)"
-
-If tracker is **GitHub** (the default — proceed here if the user does not
-answer, or explicitly picks GitHub):
-2. "What label should I apply to issues waiting for your review?
+If **connected**, ask only:
+1. "What label should I apply to issues waiting for your review?
    (e.g. 'needs-review'; reply 'none' for no label)"
 
 Write `<vault>/projects/<project>/.squad/chisel-config.json`:
@@ -85,7 +79,6 @@ Write `<vault>/projects/<project>/.squad/chisel-config.json`:
 {
   "chisel": {
     "mode": "connected",
-    "tracker": "github",
     "review_label": "...",
     "state_labels": {
       "in_progress": "in-progress",
@@ -100,38 +93,10 @@ Write `<vault>/projects/<project>/.squad/chisel-config.json`:
 the user — they are editable by hand afterward, the same way
 `review_label` already is.
 
-If tracker is **Linear**:
-2. Confirm before continuing: "Chisel creates and updates Linear issues
-   via MCP (`mcp__linear-server__*` on Claude Code). Confirm your Linear
-   MCP server is already set up and connected — reply 'yes' to continue
-   or 'no' to stop here and set it up first." Do not assume the MCP
-   tools are available; if the user does not confirm, stop the
-   configuration flow without writing a config file.
-3. "What is your Linear team name or ID?"
-4. "What is your Linear project name or ID for this work?"
-5. "What label should I apply to issues waiting for your review?
-   (e.g. 'needs-review'; reply 'none' for no label)"
-6. "What status should new issues have? (e.g. 'Backlog', 'Todo')"
+GitHub is the only connected-mode tracker; there is nothing left to
+select between, so the config carries no `tracker` field.
 
-After collecting answers, write `<vault>/projects/<project>/.squad/chisel-config.json`:
-
-```json
-{
-  "chisel": {
-    "mode": "connected",
-    "tracker": "linear",
-    "team_id": "...",
-    "project_id": "...",
-    "review_label": "...",
-    "default_status": "..."
-  }
-}
-```
-
-A config without a `mode` field is connected (backward compatibility). A
-config without a `tracker` field is treated as `tracker: linear` when
-`team_id`/`project_id` are present — every config written before this
-field existed keeps working with zero behavior change.
+A config without a `mode` field is connected (backward compatibility).
 
 Confirm with a single line:
 
@@ -169,10 +134,6 @@ and why, the acceptance criteria it covers, and any explicit dependencies on
 other issues in the batch.
 
 ## Issue creation (connected mode)
-
-Branch on `tracker` from `chisel-config.json`.
-
-### `tracker: github`
 
 Use the `gh` CLI via Bash. Titles are short and action-oriented (verb +
 noun, max 60 chars). Bodies are markdown: context, acceptance criteria,
@@ -218,26 +179,15 @@ notes — no `Blocked by:` line (see "Dependency format" below for why).
 Dependencies are native GitHub state (queryable via
 `gh issue view --json parent,blockedBy,blocking`), not text in the body.
 
-### `tracker: linear`
-
-Call `mcp__linear-server__create_issue` with:
-- `title`: short, action-oriented (verb + noun, max 60 chars)
-- `description`: markdown body. If the issue has a hard dependency,
-  the FIRST line must be the dependency declaration (see below).
-  Then: context, acceptance criteria, and any notes.
-- `teamId`: from config
-- `projectId`: from config
-- `labelIds`: include review label from config if set
-- `stateId`: map `default_status` from config to the correct state ID
-  by calling `mcp__linear-server__search_issues` to infer available
-  states if needed
-
-Create issues one at a time. Do not batch them into a single call.
-
 ## Issue creation (detached mode)
 
 Do not call any MCP tool. Write the full batch to
 `<vault>/projects/<project>/.squad/issues/batch-YYYYMMDD-HHMMSS.md`:
+
+For input that decomposes into 2+ sub-issues, mirror connected mode's
+parent + sub-issue structure: reserve the first local ID for a parent
+entry, then give every sub-issue entry a `Parent: [LOCAL-ID]` reference
+to it.
 
 ```markdown
 # Batch YYYY-MM-DD
@@ -248,46 +198,76 @@ Status: pending
 |-------|---------|
 | SQ-1  | —       |
 | SQ-2  | —       |
+| SQ-3  | —       |
 
-## SQ-1: <title>
+## SQ-1: <parent title> (parent)
+
+<parent description: overall context, what and why, derived from the
+input as a whole>
+
+## SQ-2: <title>
+Parent: [SQ-1]
 
 <description: context, what and why>
 
 ### Acceptance criteria
 - ...
 
-## SQ-2: <title>
-Blocked by: [SQ-1] <title of blocking issue>
+## SQ-3: <title>
+Blocked by: [SQ-2] <title of blocking issue>
+Parent: [SQ-1]
 ...
 ```
+
+For input that decomposes into exactly 1 issue, omit the parent entirely
+and write a single flat entry (no `Parent:` line), matching connected
+mode's single-issue behavior.
 
 Rules:
 - Assign local IDs sequentially using the configured prefix. Dependencies
   use local IDs in the same `Blocked by:` first-line format.
 - Issue granularity rules are identical to connected mode.
+- Parent entries: only for batches of 2+ sub-issues. The parent's title
+  and description summarize the whole unit of work (no `Acceptance
+  criteria` section of its own — that lives on the sub-issues). Every
+  sub-issue gets a `Parent: [LOCAL-ID]` line referencing it. When a
+  sub-issue also has a `Blocked by:` line, `Blocked by:` stays the
+  literal first line and `Parent:` moves to second — Ralph's
+  detached-mode parser only inspects the first line for the dependency
+  pattern, so `Blocked by:` can never be pushed off it. A sub-issue with
+  a parent but no dependency has `Parent:` alone as its first line. The
+  parent is informational only, same as the rest of this file — it is
+  never created via a tracker API call, and it is not itself an
+  executable unit: it exists so the hierarchy survives the copy into
+  whatever tracker the user creates issues in.
 - The `Key mapping` table is for the user: after creating the issues in
   their tracker (Jira, Bitbucket, anything), they may fill in the real
   keys. Downstream reports use the tracker key when present, the local
-  ID otherwise. An empty mapping is valid; nothing depends on it.
+  ID otherwise. An empty mapping is valid; nothing depends on it. Parent
+  entries get a row like any other local ID.
 - Also write `batch-YYYYMMDD-HHMMSS.csv` alongside, with columns
   `Summary,Description` (quoted multiline values), importable by Jira's
-  CSV importer for one-shot issue creation.
+  CSV importer for one-shot issue creation. Parent and sub-issue rows are
+  included the same way, `Blocked by:`/`Parent:` lines folded into the
+  quoted `Description` value.
 
 Then print:
 
   Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
   Create the issues in your tracker (CSV import available), optionally
-  fill the key mapping, then invoke Ralph.
+  fill the key mapping, then invoke Ralph. If your tracker supports
+  parent/sub-issue links, create the parent entry first so sub-issues can
+  reference its real key.
 
 Nothing else after the summary. PRD archiving applies the same as in
 connected mode.
 
 ## Dependency format
 
-This section covers `tracker: linear` and detached mode. For
-`tracker: github`, dependencies are wired natively at creation time (see
-"Issue creation (connected mode)" above) — never write a `Blocked by:`
-line into a GitHub issue body.
+This section covers detached mode. For connected mode, dependencies are
+wired natively at creation time via `gh` (see "Issue creation (connected
+mode)" above) — never write a `Blocked by:` line into a GitHub issue
+body.
 
 If an issue has a hard dependency on another issue in the same batch,
 write this as the FIRST line of the description:
@@ -295,24 +275,27 @@ write this as the FIRST line of the description:
   Blocked by: [ISSUE-ID] Title of blocking issue
 
 Rules:
-- Use the exact issue ID assigned by Linear (e.g. GG-12)
+- Use the exact local issue ID assigned in this batch (e.g. SQ-2)
 - One `Blocked by` line per blocker. Multiple blockers = multiple lines,
   all before any other content
+- If the sub-issue also has a `Parent:` reference, `Blocked by:` (and
+  any additional blocker lines) stays first and `Parent:` follows
+  immediately after — Ralph's detached-mode parser only inspects the
+  first line for the dependency pattern
 - Only use `Blocked by` for hard dependencies
 - If there are no dependencies, omit this line entirely
 
 Ralph reads this format to build the execution order. Any other format
 will be ignored.
 
-After all issues are created, print a summary. For `tracker: linear` and
-detached mode:
+After all issues are created, print a summary. For detached mode:
 
   Created N issues:
   - [ISSUE-ID] Title
   - [ISSUE-ID] Title
-  Review them on Linear before invoking /ralph.
+  Review them, then create them in your tracker before invoking /ralph.
 
-For `tracker: github`, include the parent when one was created:
+For connected mode, include the parent when one was created:
 
   Created N issues:
   - #<parent-number> <parent title> (parent)
@@ -347,13 +330,3 @@ After all issues are created, append:
   [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
 
 Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
-
----
-
-> **Note:** The following MCP prefix note applies only when
-> `tracker: linear` is selected in `chisel-config.json` — it is not a
-> baseline assumption. MCP tool prefix depends on server name at
-> configuration time.
-> For Claude Code with server name `linear-server`: `mcp__linear-server__`
-> For Codex with server name `linear`: `mcp__linear__`
-> See `PLATFORM_DIFFERENCES.md` for the cross-platform differences.
