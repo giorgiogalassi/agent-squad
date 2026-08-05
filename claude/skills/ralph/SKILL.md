@@ -285,10 +285,94 @@ Cody's task: assign the issue (connected mode), check out the branch
 (creating it from base on the first issue, reusing it after), implement,
 run tests, commit, and open a PR only when told to.
 
-### 2b. Evaluate result
+Before spawning Cody, determine this issue's **working directory** — the
+Sidecar-supplied `working_directory` for this issue when Ralph is running
+under Sidecar (a worktree path), the project root otherwise. Do not use
+`git rev-parse --show-toplevel` for this: it resolves to the wrong root
+inside a Sidecar worktree. In that working directory, capture a
+verification baseline for use in 2b:
 
-Classify Cody's result using these criteria. When in doubt, prefer
-escalation over a retry that cannot change the outcome.
+```bash
+git -C <working-directory> log --oneline -1
+git -C <working-directory> status --porcelain
+```
+
+### 2b. Verify Cody's commit, then evaluate result
+
+Cody's printed summary is not evidence on its own. A Cody run that stalls
+mid-build or trips on a shell-quoting error can still print a plausible
+"Done" summary while having committed nothing — this happened in
+practice. Before classifying any result, verify it mechanically with git,
+in the same working directory established in 2a:
+
+```bash
+git -C <working-directory> log --oneline -1
+git -C <working-directory> status --porcelain
+git -C <working-directory> branch --show-current
+```
+
+This verification is git-only and calls no tracker tool; it behaves
+identically in connected and detached mode.
+
+Check, against the 2a baseline:
+
+1. **Commit check.** HEAD's subject line must carry this issue's ID.
+   Match tolerantly across project conventions — `[SQ-26] ...`, bare
+   `IISP-14501 ...`, and this repo's own `[#44] ...` must all count as a
+   match on the ID token, not one hardcoded bracket form. If the
+   project's own commit history (already known from architecture.md, or
+   `git -C <working-directory> log --oneline -5`) shows no issue-ID
+   prefix convention at all, degrade this check to: HEAD's commit hash
+   changed since the 2a baseline. Do not fail every issue on such a
+   project for lacking an ID it never had.
+2. **Clean-tree check.** `git status --porcelain` must match its 2a
+   baseline state (usually empty). If the working tree already carried
+   the user's own unrelated WIP before dispatch, that same WIP being
+   still present and unchanged also passes — Ralph only requires that
+   Cody left nothing new uncommitted, not that the tree was pristine to
+   begin with.
+3. **Branch check.** `git branch --show-current` must equal the `branch`
+   Ralph assigned this issue in Phase 1b/2a.
+
+**Branch mismatch stops the batch.** If the branch check fails, do not
+retry and do not attempt a fix: Ralph never commits, resets, or stashes
+to repair another branch's state — that is out of scope for an
+orchestrator that does not write code. Print:
+`<ISSUE-ID>: branch mismatch — expected <branch>, found <found-branch>.
+Stopping batch, needs manual repair.` and stop the entire batch,
+escalating to the user.
+
+**No-op exception.** If HEAD is unchanged from baseline, the tree matches
+its baseline state, the branch matches, and Cody's own printed summary
+explicitly states no code change was needed (docs-only issue, or the
+acceptance criteria were already satisfied) — this is not a stall. Treat
+it as **Success, no-op**: append
+`[ISSUE-ID] resolved, no-op. Notes: <reason Cody gave>` to `progress.txt`,
+mark the issue unblocking for downstream issues, and move to the next
+issue. Connected mode: comment on the issue with Cody's stated reason
+instead of opening a PR (there is nothing to review).
+
+**Stall** (new category, distinct from retryable failure and escalation
+below): the commit check or the clean-tree check fails while the branch
+check still passes, and the no-op exception above does not apply — i.e.
+no issue-ID commit landed, or new uncommitted changes are sitting in the
+tree beyond the 2a baseline.
+
+- Increment the same per-issue attempt counter used by retryable
+  failures below (shared max-3 budget, see 2c).
+- Re-dispatch Cody with `cody resume`, plus the uncommitted diff
+  (`git -C <working-directory> diff` and
+  `git -C <working-directory> status --porcelain`) and the last reported
+  error or output from the stalled attempt, so Cody can resume instead of
+  restarting from scratch.
+- At the 3rd attempt (stalls and retryable failures counted together),
+  escalate via 2c exactly as an ordinary retryable failure would — same
+  label, same comment, same "continue with the next issue" behavior. A
+  stall never loops past this budget.
+
+Once verification passes (or the no-op exception applies), classify the
+result using the criteria below. When in doubt, prefer escalation over a
+retry that cannot change the outcome.
 
 **Success** means all of the following:
 - Connected: PR opened, or branch pushed with printed manual PR
@@ -348,7 +432,8 @@ appended to Cody's context. At 3: escalate (see 2c).
 
 ### 2c. Escalation
 
-When an issue fails 3 times:
+When an issue fails 3 times (retryable failures and stalls share one
+counter, per 2b):
 - Connected: apply the configured `blocked` label (read from
   `state_labels` in `chisel-config.json`, not hardcoded) and comment the
   last error output on the sub-issue:
@@ -431,8 +516,14 @@ resolved issue. Format:
   never change its open/closed state or post a rollup comment on it. It
   exists only to group sub-issues.
 - Write `progress.txt` in English regardless of conversation language.
-- Max 3 retries per issue, retryable failures only. After 3, escalate
-  and continue. Immediate-escalation conditions skip retries entirely.
+- Max 3 retries per issue, retryable failures and stalls share the
+  counter (see 2b/2c). After 3, escalate and continue.
+  Immediate-escalation conditions skip retries entirely.
+- Never classify a Cody result from its printed summary alone — verify
+  with git first, per 2b.
+- Never repair a branch mismatch. Stop the batch and escalate to the
+  user instead; re-dispatching Cody is the only recovery action Ralph
+  ever takes.
 
 ## Session log
 
