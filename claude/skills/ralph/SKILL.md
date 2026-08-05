@@ -344,6 +344,43 @@ When an issue fails 3 times:
 - Print: `GG-12 failed after 3 attempts. Escalating to you.`
 - Continue with the next issue. Do not stop the entire batch.
 
+### 2d. Adopt native GitHub stacks (`tracker: github` only, best-effort)
+
+A **chain**, for this step only, is a connected component of the
+`blockedBy`/`blocking` graph built in Phase 1 with 2 or more issues.
+Singleton issues (no edges to any other in-batch issue) are never passed
+to `gh stack init` — this step does not run for them at all.
+
+Once every issue in a chain has finished Phase 2 successfully (its own
+branch created and its own PR opened, per the unchanged Phase 1b/2a
+mechanism), run once per chain, passing the chain's branches in the same
+bottom-to-top order already established by Phase 1's topological sort
+(the issue with no in-batch blocker first, then each dependent in the
+order it was queued):
+
+```bash
+gh stack init <branch-1> <branch-2> ... <branch-N>
+```
+
+- Run this once per chain, after that chain's last issue completes Phase
+  2 — not before, and not per-issue.
+- If any issue in the chain escalated (2c) and therefore never got a
+  branch/PR, skip `gh stack init` for that chain entirely and log one
+  line: `Skipped stack adoption for chain <lead-issue-id>: <issue-id> escalated`.
+  Do not attempt a partial stack.
+- If `gh stack init` itself fails for any reason (extension missing,
+  incompatible branch topology, or any other error), log one line:
+  `gh stack init failed for chain <lead-issue-id>: <error>` and continue
+  the batch. No retry, no escalation. This is purely additive — it has no
+  effect on any issue's or chain's success/failure status already
+  recorded in 2b/2c.
+- `tracker: linear` and detached mode: skip this step entirely.
+
+This does not change how branches or PRs are created in 2a — Cody's
+`--base <blocker's branch>` mechanism from #29 is unchanged. This step
+only runs after the fact, adopting already-existing branches into
+GitHub's native stack view via the `gh-stack` CLI extension.
+
 ## Phase 3: end of batch report
 
 In detached mode, first set `Status: executed` in the batch file, then
