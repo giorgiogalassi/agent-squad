@@ -46,19 +46,19 @@ These are advisory guidelines that apply throughout this skill:
 
 ### Startup
 
-Read `<vault>/projects/<project>/.squad/chisel-config.json` to get the team and project
-identifiers. The file nests its fields under a top-level `chisel` key
-(`chisel.team_id`, `chisel.project_id`, `chisel.review_label`,
-`chisel.default_status`). If invoked with a specific issue ID (`GG-12`), work only on that
-issue. Otherwise fetch all open issues in the current project with status
-matching `default_status` from config.
+Read `<vault>/projects/<project>/.squad/chisel-config.json` for
+`chisel.mode`, `chisel.review_label`, and `chisel.state_labels` (the
+file nests its fields under a top-level `chisel` key). Phase 1 defines
+how the batch is discovered, both when invoked with a specific issue ID
+(`GG-12`) and when invoked with none.
 
 ### Mode
 
 `chisel.mode` from the same config selects the tracker mode. Missing
 field means `connected`.
 
-**Connected:** fetch issues from Linear as described above.
+**Connected:** discover the batch as described in Phase 1 below (native
+GitHub relationships).
 
 **Detached:** do not call any tracker tool, read or write. The source
 of truth is the most recent `batch-*.md` with `Status: pending` in
@@ -104,46 +104,68 @@ Only continue to Phase 1 after all applicable checks pass.
 
 ## Phase 1: build the execution order
 
-Branch on `chisel.tracker` from `chisel-config.json`.
+Exactly two paths, selected by `chisel.mode` (per Mode above): connected
+or detached. GitHub is the only connected-mode tracker, so there is no
+separate Linear-text path within connected mode to branch on.
 
-### `tracker: github`
+### Connected mode: batch discovery and native dependency graph
 
-Fetch the batch from the parent/container issue's sub-issues — this
-excludes the parent by construction, so it never becomes a node in the
-graph:
+**Batch discovery** — how Ralph decides which issues to work on:
+
+- **No specific issue ID:** list open issues in the repo and exclude
+  every parent/container issue:
+  ```bash
+  gh issue list -R <owner>/<repo> --state open --json number,title,subIssuesSummary
+  ```
+  Drop any issue whose `subIssuesSummary.total > 0` from the result — it
+  has sub-issues, so it is a container, not executable work itself. The
+  remaining issues are the batch. This exclusion is checked per issue,
+  not by tracking "the" parent, so it correctly skips every container
+  when multiple parents/containers are open at once — each is excluded
+  independently on its own `subIssuesSummary`, not just the first one
+  found.
+- **A specific issue ID:** check that issue first:
+  ```bash
+  gh issue view <issue-number> -R <owner>/<repo> --json subIssuesSummary
+  ```
+  If `subIssuesSummary.total > 0`, it is a parent/container. Refuse it —
+  do not attempt to execute it:
+
+    <issue-number> is a parent/container issue (N sub-issues). Ralph
+    does not execute containers directly. Invoke it on one of the
+    sub-issues, or with no issue ID to run the whole open batch.
+
+  Stop; do not proceed to Phase 2 for this invocation. Otherwise, the
+  batch is that one issue.
+
+**Dependency graph:** for each issue in the batch, read its native
+dependency fields rather than parsing the issue body:
 
 ```bash
-gh issue view <parent-number> --json subIssues
+gh issue view <issue-number> -R <owner>/<repo> --json blockedBy,blocking
 ```
 
-If invoked with a specific issue ID, work only on that issue instead.
+Build the graph from `blockedBy` (edges into the issue) and `blocking`
+(edges out of it).
 
-For each sub-issue in the batch, read its native dependency fields
-rather than parsing the issue body:
+A parent/container issue excluded above never enters the graph as a
+node: it is never claimed, retried, or escalated, its open/closed state
+is never changed, and no rollup comment is ever posted on it (see
+Rules).
 
-```bash
-gh issue view <issue-number> --json blockedBy,blocking
-```
+### Detached mode: text dependency graph
 
-Build the dependency graph from `blockedBy` (edges into the issue) and
-`blocking` (edges out of it).
-
-The parent/container issue is never entered into the graph as a node: it
-is never claimed, retried, or escalated, its open/closed state is never
-changed, and no rollup comment is ever posted on it (see Rules).
-
-### `tracker: linear` and detached mode
-
-Read every issue in the batch. For each issue, check the first line of
-its description for the pattern:
+Read every issue in the batch (the `batch-*.md` file identified in Mode
+above). For each issue, check the first line of its description for the
+pattern:
 
   Blocked by: [ISSUE-ID] ...
 
 Build the dependency graph from these declarations.
 
-### Resolve execution order (all trackers)
+### Resolve execution order (both modes)
 
-Once the dependency graph is built (from either source above):
+Once the dependency graph is built (from either path above):
 1. Find issues with no blockers (in-degree = 0). These run first.
 2. Mark them queued. Remove their edges from the graph.
 3. Repeat until all issues are queued or a cycle is detected.
@@ -151,8 +173,8 @@ Once the dependency graph is built (from either source above):
 If a cycle is detected:
 
   Cycle detected: GG-12 -> GG-14 -> GG-12
-  Cannot resolve. Fix the dependency manually on Linear (or on GitHub,
-  for tracker: github). Stop.
+  Cannot resolve. Fix the dependency manually on GitHub (connected mode)
+  or in the batch file (detached mode). Stop.
 
 Do not proceed.
 
