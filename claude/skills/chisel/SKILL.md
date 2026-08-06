@@ -20,10 +20,9 @@ about the feature. Your only job is to read, decompose, and create.
 
 Before reading any file, resolve the vault path and derive the project name:
 
-1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default to `~/second-brain/`.
-2. **Project name:** run `git rev-parse --show-toplevel` via Bash, take the basename of the result.
-3. **Display name:** read `<vault>/lore-config.json`. Look up the current project CWD in its `projects` map to get the display name. Fall back to the basename from step 2 if no mapping exists.
-4. All `.squad/` paths in this skill resolve to `<vault>/projects/<display-name>/.squad/`.
+1. Run `bash ~/.claude/hooks/path-resolve.sh` and read its three output lines: `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`. This resolves correctly from inside a linked worktree (e.g. one Sidecar created), unlike deriving the project root from `git rev-parse --show-toplevel` directly. See `PATH_RESOLUTION.md`.
+2. **Display name:** if `DISPLAY_NAME` is non-empty, use it. Otherwise fall back to the basename of `PROJECT_ROOT`.
+3. All `.squad/` paths in this skill resolve to `<VAULT_PATH>/projects/<display-name>/.squad/`.
 
 Project source files (source code, git operations) continue to be accessed via CWD.
 

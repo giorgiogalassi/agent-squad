@@ -34,8 +34,11 @@ Resolve the vault path and project display name before reading any file:
 
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
    to `~/second-brain/`.
-2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash, record the
-   absolute path.
+2. **Project root:** run `bash ~/.claude/hooks/path-resolve.sh` and read
+   `PROJECT_ROOT` and `DISPLAY_NAME` from its output. This resolves
+   correctly inside a linked worktree (Sidecar's, for instance), unlike
+   deriving the project root from `git rev-parse --show-toplevel` directly.
+   See `PATH_RESOLUTION.md`.
 3. **Display name:** read `<vault>/lore-config.json` and look up the project
    CWD in its `projects` map. Fall back to the CWD basename if no mapping
    exists.

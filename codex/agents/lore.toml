@@ -85,9 +85,12 @@ reset, INDEX update), and is what you run when beginning real squad work.
       at <path>. Create it? [Y/n]" and wait for confirmation.
 
 2. Deduce candidate project name:
-   a. Run: git rev-parse --show-toplevel
+   a. Run ~/.codex/hooks/path-resolve.sh. Take PROJECT_ROOT from its
+      output as the project root — this resolves correctly inside a
+      linked worktree (Sidecar's, for instance), unlike deriving it from
+      git rev-parse --show-toplevel directly. See PATH_RESOLUTION.md.
       Extract the final path component as the candidate name.
-      Record the full absolute path as cwd_path.
+      Record PROJECT_ROOT as cwd_path.
    b. If not in a git repo, use current directory name and path.
    c. If the resolved path equals the vault path, warn and stop:
         "This session is running inside the vault itself. The vault

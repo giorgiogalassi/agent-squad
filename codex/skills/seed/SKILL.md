@@ -21,14 +21,13 @@ architectural decisions.
 
 Before any other phase, resolve the vault path and the project display name:
 
-1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
-   to `~/second-brain/`.
-2. **Project CWD:** run `git rev-parse --show-toplevel` via a shell command
-   and record the absolute path.
-3. **Display name:** read `<vault>/lore-config.json` and look up the project
-   CWD in its `projects` map.
-4. If the vault does not exist, or `lore-config.json` has no entry for this
-   CWD, stop and print:
+1. Run `~/.codex/hooks/path-resolve.sh` via a shell command and read its
+   three output lines: `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`. This
+   resolves correctly from inside a linked worktree, unlike deriving the
+   project root from `git rev-parse --show-toplevel` directly. See
+   `PATH_RESOLUTION.md`.
+2. If `VAULT_PATH` does not exist as a directory, or `DISPLAY_NAME` is
+   empty, stop and print:
 
      No vault mapping found for this project.
      Run `lore start` first: Lore creates the vault, resolves the display
@@ -36,8 +35,8 @@ Before any other phase, resolve the vault path and the project display name:
 
    Never derive the display name yourself. Lore owns project naming and
    conflict resolution. Seed only consumes the mapping.
-5. All `<project-name>` references in this skill resolve to the display name
-   from step 3, and all `.squad/` paths resolve to
+3. All `<project-name>` references in this skill resolve to
+   `DISPLAY_NAME`, and all `.squad/` paths resolve to
    `<vault>/projects/<project-name>/.squad/`.
 
 ## Phase 1: read the project

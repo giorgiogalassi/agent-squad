@@ -22,6 +22,8 @@ These behaviors are intentionally the same in both trees:
 - `Ralph` runs issues in dependency order using `Blocked by:` metadata
 - `Cody` implements issues and opens PRs
 - `Reven` reviews PRs against acceptance criteria and project conventions
+- `Sidecar` opens a worktree on an existing branch, invokes Cody once per
+  user-described fix, and tears the worktree down at close
 - `.squad/` is the shared workflow contract for both environments
 
 If one of those semantics changes, it should usually change in both trees.
@@ -49,6 +51,16 @@ difference is how each platform invokes and orchestrates the workflow.
 - Claude `Ralph` is written for Claude subagent orchestration
 - Codex `Ralph` is written for Codex subagent orchestration
 - The execution intent is the same, but the delegation mechanism is not
+
+### Sidecar
+
+Same delegation-mechanism divergence as Ralph, since Sidecar spawns Cody
+the same way Ralph does:
+
+- Claude `Sidecar` spawns Cody via Claude's native `Agent()` workflow
+- Codex `Sidecar` spawns Cody via Codex sub-agent tools
+- Both pass the same `working_directory` field to Cody so it operates
+  inside the worktree instead of the resolved project root
 
 ### Cody and Reven
 

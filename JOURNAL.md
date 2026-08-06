@@ -490,6 +490,205 @@ The user-facing command surface is now `lore start`, `lore prefer`, `lore recove
 
 ---
 
+### Iteration 22: Sidecar — Worktree-Backed Fix Sessions
+
+Sustained use surfaced a gap the MVP flow had no answer for: "this UI
+piece is wrong" on a branch that already exists. The only available path
+was re-running the full pipeline — Forge for a discovery session that had
+nothing left to discover, Chisel to explain the fix wasn't a new tracked
+issue but belonged on a specific branch, then Ralph again — or bypassing
+the squad entirely and talking straight to the codebase. The first option
+is ceremony sized for a batch of tracker issues, paid in full for a
+one-line change. The second is faster but leaves nothing in the vault:
+no evidence of the work, breaking the premise the whole second-brain
+layer is built on.
+
+Two designs were considered before landing on the final one. The first
+kept the same skill sequence but had Ralph itself hold a branch open
+after execution so the user could return to it. This was rejected: it
+would have bent Ralph's contract — dependency graph, retry/escalation
+counters, batch reporting — around a case that needs none of that, and
+"batch mode" versus "someone is now typing at me interactively" would
+have become two behaviors wearing one name. The second, adopted design is
+a new, small companion skill, Sidecar, that sits next to Ralph rather
+than inside it and requires an existing branch as its only input.
+
+Sidecar takes a branch name, resolves its base (from an open PR if one
+exists, else the last progress.txt mention, else `main`), and opens a
+`git worktree` for it inside the project directory — not in the vault.
+This is a deliberate, narrow exception to the zero-footprint principle
+from Iteration 14: a worktree is a real, disposable working copy needed
+to run and test the branch, not squad state, so it does not belong in
+`~/second-brain/` and does not violate the rule that host projects carry
+zero squad footprint. It is git-ignored in the host project and removed
+when the session closes.
+
+Orientation reads the diff against the resolved base, not a full re-read
+of prior planning docs — progress.txt is a terse Ralph log and the
+original Chisel batch reflects intent, not what actually shipped; the
+diff is ground truth, and Cody is instructed to read the PR body or
+progress.txt itself, on demand, only if the diff doesn't explain enough
+for a given fix. Each fix the user describes becomes one Cody invocation
+in the worktree (`branch action: continue`, `open pr: no`), mirroring how
+Ralph already invokes Cody per issue rather than inventing an open-ended
+persistent chat session — Cody keeps its existing `maxTurns` contract
+unchanged. A single `working_directory` field was added to Cody's own
+definition (both trees) so it runs its git and shell commands inside the
+worktree instead of the resolved project root, and skips the branch
+checkout step entirely: the worktree is already on the right branch by
+construction, and checking out something else inside it would corrupt it.
+
+The evidence problem is solved by writing at teardown, not per turn.
+Cody still writes only its usual single `status.md` checkpoint, at PR
+open — no change to that contract. Sidecar itself, mirroring Ralph's
+existing division of responsibility (Ralph writes progress.txt, not
+Cody), appends exactly one line summarizing the whole session, not one
+per fix: at this stage the issues are small enough that a session-level
+summary is sufficient, and a line per chat turn would flood
+`progress.txt` with noise Ralph's own batches never produce. Reven is
+never invoked automatically — consistent with how it is invoked
+everywhere else in the squad, manually, when the user is ready.
+
+> **Key decision:** a workspace artifact is not automatically a
+> zero-footprint violation — the rule is about squad *state*, not about
+> ordinary git mechanics. A worktree is scoped, disposable, and
+> git-ignored, so it can live inside the project without compromising the
+> principle that state belongs in the vault. Separately: when a new
+> interaction pattern doesn't fit an existing skill's contract, add a
+> sibling skill rather than growing the existing one two behaviors deep.
+
+**Addendum — worktree path convention:** the first draft placed worktrees
+at `.worktrees/` on both trees, a Sidecar-invented path. Checking against
+Claude Code's own documentation before shipping surfaced that
+`.claude/worktrees/<name>/` is already Claude Code's native default for
+`--worktree`, `EnterWorktree`, and subagent `isolation: worktree`, and
+its own docs explicitly recommend git-ignoring exactly that path. Sidecar
+was moved to match it: `.claude/worktrees/` on the Claude tree, so it
+lands where Claude Code users already expect worktree content (and often
+where it's already git-ignored), and `.codex/worktrees/` on the Codex
+tree for consistency between distributions — noted as a parity choice,
+not a confirmed native Codex convention, since no equivalent documented
+default was found there. A second design question this raised — whether
+Sidecar should delegate to Claude Code's native `EnterWorktree` tool or
+`isolation: worktree` subagent frontmatter instead of hand-rolled `git
+worktree` commands — was deliberately not taken: both are Claude-only,
+and adopting either would widen the Claude/Codex behavioral gap beyond
+the "delegation mechanism only" difference the rest of the squad holds
+to (see `PLATFORM_DIFFERENCES.md`). Sidecar keeps portable git commands
+on both trees; revisit only if Codex ships an equivalent native primitive.
+
+---
+
+### Iteration 23: Path Resolution Broke Inside Worktrees
+
+Every skill and agent resolves which vault project it's talking to from
+`git rev-parse --show-toplevel`, then looks that path up in
+`lore-config.json`'s `projects` map, or falls back to its basename as the
+project name. That protocol predates Sidecar and was never re-examined
+against it. It's wrong inside a linked worktree, and the wrongness is
+silent, not a crash.
+
+Verified directly rather than assumed: a small throwaway repo with one
+linked worktree showed `--show-toplevel` returning the *linked worktree's
+own* directory, not the main repository's — different absolute path,
+different basename. Since every skill's vault lookup is keyed on exactly
+that path, a skill invoked from inside a Sidecar worktree would miss the
+`lore-config.json` mapping entirely. Seed's own protocol names the
+failure mode: *"No vault mapping found for this project."* Worse, several
+skills fall back to the CWD basename when the mapping misses, so
+`progress.txt`, `architecture.md`, `chisel-config.json` — the whole
+`.squad/` tree — would silently read from and write to a namespace named
+after the *branch* instead of the project, fragmenting the evidence trail
+Sidecar exists to preserve. The bug sat exactly at the seam between two
+things built independently: the path protocol assumed one working
+directory per project, and Sidecar's whole premise is more than one.
+
+The fix, also verified directly rather than assumed: `git rev-parse
+--path-format=absolute --git-common-dir` returns the *main* repository's
+`.git` directory regardless of which worktree it runs from — confirmed
+identical output from both the main checkout and the linked worktree in
+the same test repo. The project root is the parent of that path, correct
+uniformly, no conditional branching on "am I in a worktree" required.
+This is a native git primitive, not a Sidecar-specific convention, so it
+holds for worktrees created outside Sidecar's own naming scheme too.
+`--path-format=absolute` needs git 2.31+; every site falls back to plain
+`--show-toplevel` if the command fails, matching the project's existing
+degrade-gracefully convention (Seed already does this for missing files).
+
+The fix touches every skill and agent — 18 files across both trees, plus
+the two `lore-orient.sh` hooks, which needed the real shell logic
+patched, not just prose, since they run unattended at SessionStart.
+Rather than edit 18 near-identical copies from memory, `PATH_RESOLUTION.md`
+was added at the repo root as the algorithm's single canonical source —
+with one explicit condition attached to it: it is never read at runtime
+by any skill or agent. Iteration 19 deliberately removed the squad's
+shared runtime-context files on the grounds that nothing in the runtime
+depended on them, and that principle isn't reversed here. `PATH_RESOLUTION.md`
+is a maintainer's reference, not a preload; the fix still lives, inlined
+and verbatim, in every skill's own "Path resolution protocol" section,
+exactly as the architecture requires. Grepping both trees for
+`--path-format=absolute --git-common-dir` after this change confirmed
+all 18 files plus both hooks carry the identical fix.
+
+> **Key decision:** a single canonical source and a self-contained
+> runtime are not in tension — the tension only exists if the canonical
+> source gets loaded. Keeping `PATH_RESOLUTION.md` maintainer-only and
+> propagating its text by hand (or by a future lint script diffing
+> against it) gets the "one place to update" property the multiplying
+> file count demanded, without reopening the shared-runtime-file question
+> Iteration 19 already settled.
+
+**Addendum — a script, not a skill:** hand-propagating the fix across 18
+files raised an obvious follow-up: could a dedicated "orientation skill"
+that every other skill invokes replace the copy-paste entirely? Tempting,
+and rejected, for a reason more specific than Iteration 19's general
+principle. Skills have no return-value semantics — "invoke the orient
+skill" means loading its prose into context and hoping the model acts on
+it before continuing, not a function call with a result handed back.
+Nothing enforces that a three-line deterministic computation actually
+gets delegated rather than pattern-matched inline from training data, and
+even when it is invoked, it costs a full skill-load (frontmatter, trigger
+matching, the works) for a `git rev-parse` and a `jq` lookup. That is
+the same soft, easily-skipped dependency Iteration 19 removed, just
+relocated rather than eliminated.
+
+A shared *script* has none of that ambiguity, and the project already had
+a working precedent for one: `lore-orient.sh`, real shared logic every
+session already runs at `SessionStart`, not prose copied per-file. So
+`path-resolve.sh` was added at `claude/hooks/` and `codex/hooks/` —
+resolves `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` via the
+`git-common-dir` fix above, prints three `KEY=VALUE` lines, nothing else.
+Deliberately mechanism only, not policy: what a skill does with an empty
+`DISPLAY_NAME` still varies (Seed stops, most others fall back to a
+basename, Lore creates the mapping) and stays inline, per skill, exactly
+as before. Every one of the 18 files' path resolution protocol was
+rewritten to call the script as step one instead of re-deriving the
+algorithm; `PATH_RESOLUTION.md` now documents the script's algorithm and
+rationale rather than holding text to be copied, and is itself still
+never read at runtime by anything — only the script is. `path-resolve.sh`
+also absorbed `lore-orient.sh`'s own inline copy of the same resolution
+logic (with a defensive inline fallback if it's ever missing), so the
+hook stopped carrying a third copy of an algorithm now implemented once.
+
+One more bug surfaced while wiring this in, caught by testing rather than
+assuming the refactor was safe: `lore-orient.sh`'s evidence section
+reported `Branch:` and `Recent commits:` via `git -C "$ROOT"`, where
+`$ROOT` was about to become *always* the main project root. Fine before
+worktrees existed; wrong now, since a session orienting from inside a
+Sidecar worktree would report the main checkout's branch instead of its
+own. Fixed by dropping `-C "$ROOT"` from those two calls so they use the
+ambient working directory — the vault lookup needs the recovered project
+root, but evidence should reflect wherever the session actually is.
+
+> **Key decision:** the deciding factor between "shared skill" and
+> "shared script" isn't purity, it's whether the runtime can be trusted
+> to actually use the shared thing. A script is something every skill
+> already unconditionally executes as an ordinary Bash step; a sibling
+> skill is something a model may or may not choose to invoke. Route
+> mechanism through whichever one the runtime can't accidentally skip.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -561,6 +760,7 @@ The user-facing command surface is now `lore start`, `lore prefer`, `lore recove
 | **Cody** | Writes code. Assigns the issue, creates a branch, implements, and opens the PR. |
 | **Reven** | Reviews every PR. You invoke Reven manually after Cody opens the PR. |
 | **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
+| **Sidecar** | Companion entry point for fixes on an existing branch. Opens a worktree, invokes Cody once per fix, tears down and writes one summary line on close. Does not touch Forge/Archy/Chisel/Ralph. |
 | **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
 | **Lore** | Manages second-brain vault. `lore start` orients and reconstructs status; `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
 
@@ -584,6 +784,9 @@ The user-facing command surface is now `lore start`, `lore prefer`, `lore recove
                 Cody opens PR → you invoke Reven.
                 Reven requests changes → feedback to Cody → repeat.
 Merge.
+
+/sidecar <branch>   Alternate entry point, bypasses everything above.
+                     Worktree on an existing branch, Cody per fix, close.
 ```
 
 ---
