@@ -5,6 +5,9 @@ Codex distributions.
 
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
+Sidecar -> Cody, on an existing branch, once (a companion entry point for
+iterative fixes — see "Sidecar" below)
+
 ## MVP Flow
 
 ```text
@@ -45,6 +48,39 @@ creates tracker issues (Linear or a local batch file), `Ralph` drives
 execution through `Cody` one branch per dependency chain, and `Reven`
 reviews before merge.
 
+## Sidecar: iterating on an existing branch
+
+The MVP flow above is sized for a batch of tracker issues. It's the wrong
+tool for "this UI piece is wrong on the branch I already have out" —
+re-running Forge and Chisel just to describe a fix to a branch that
+already exists is pure ceremony, and talking straight to the codebase
+instead leaves no trail in the vault.
+
+`/sidecar <branch-name>` is the companion entry point for that case. It
+does not touch Forge, Archy, Chisel, or Ralph. Given a branch that
+already exists (typically one with an open PR, or one Ralph committed
+but hasn't closed), it:
+
+1. Creates a git worktree for that branch inside the project directory —
+   a real, disposable working copy so you can run and test it without
+   disturbing your main checkout.
+2. Orients from the diff against the branch's base, not from a full
+   re-read of prior planning docs.
+3. Invokes Cody once per fix you describe, committing each one in the
+   worktree.
+4. On "done": pushes and opens/updates the PR (or prints the paste-ready
+   description in detached mode), writes one summary line to
+   `progress.txt`, and removes the worktree.
+
+The worktree is an intentional exception to the squad's usual
+zero-footprint rule: unlike `.squad/` state, it is not squad memory, just
+an ordinary disposable checkout, git-ignored in the host project and
+gone by the time Sidecar closes. The evidence trail lands in the same
+`progress.txt` Ralph already writes to — one line per Sidecar session,
+not one per fix, since issues at this stage are small enough that a
+session-level summary is enough. Reven is never invoked automatically;
+run it yourself when you're ready for another review pass.
+
 ## What's in this repo
 
 ```text
@@ -52,6 +88,9 @@ agent-squad/
   JOURNAL.md        Design journal: iterations, decisions, open points
   PLATFORM_DIFFERENCES.md
                     Semantic and technical differences between trees
+  PATH_RESOLUTION.md
+                    Algorithm and rationale behind path-resolve.sh. Docs
+                    only — never read at runtime; the script is what runs.
   README.md         This file
   claude/
     skills/
@@ -60,13 +99,16 @@ agent-squad/
       chisel/       YAML/PRD -> Linear issues
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
+      sidecar/      Worktree-backed iterative fix session on an existing branch
       lore/         Slash-command wrapper delegating to the Lore agent
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
     hooks/
-      lore-orient.sh  SessionStart read-only orientation script
+      path-resolve.sh Shared vault/project-root resolution. Required —
+                       every skill and agent calls it as step one.
+      lore-orient.sh   SessionStart read-only orientation script (optional)
   codex/
     skills/
       forge/        Codex skill variants
@@ -74,13 +116,16 @@ agent-squad/
       chisel/
       seed/
       ralph/
+      sidecar/      Worktree-backed iterative fix session on an existing branch
       lore/         Wrapper delegating to the Lore agent
     agents/
       cody.toml     Codex custom agent
       reven.toml    Codex custom agent
       lore.toml     Codex custom agent for second-brain
     hooks/
-      lore-orient.sh  SessionStart read-only orientation script
+      path-resolve.sh Shared vault/project-root resolution. Required —
+                       every skill and agent calls it as step one.
+      lore-orient.sh   SessionStart read-only orientation script (optional)
 ```
 
 ## Installation
@@ -97,18 +142,28 @@ After install, Squad is available in every project immediately.
 # Claude Code
 cp -r claude/agents/* ~/.claude/agents/
 cp -r claude/skills/* ~/.claude/skills/
+mkdir -p ~/.claude/hooks
+cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
 ```
 
 ```bash
 # Codex
 cp -r codex/agents/* ~/.codex/agents/
 cp -r codex/skills/* ~/.agents/skills/
+mkdir -p ~/.codex/hooks
+cp codex/hooks/path-resolve.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/path-resolve.sh
 ```
+
+`path-resolve.sh` is not optional: every skill and agent's "Path
+resolution protocol" calls it as its first step (see
+`PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
+resolve which vault project it's talking to.
 
 ### Optional: SessionStart auto-orientation
 
 A read-only hook can inject "where you left off" at the start of every
-session, so you do not have to ask. It never writes and never blocks.
+session, so you do not have to ask. It never writes and never blocks. It
+also calls `path-resolve.sh`, so install that first if you haven't.
 
 ```bash
 # Claude Code
@@ -197,10 +252,21 @@ vault files directly when needed.
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
       issues/                      detached-mode batch files and handoffs
-      progress.txt                 Ralph's per-issue batch memory. Read by Cody.
+      progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
     decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
 ```
+
+Sidecar is the one exception to "all runtime files live in the vault": its
+git worktree (`.claude/worktrees/<branch>/` on the Claude side,
+`.codex/worktrees/<branch>/` on Codex) lives inside the host project
+itself, git-ignored there, and is removed when the session closes. The
+Claude path matches Claude Code's own native worktree convention
+(`--worktree`, `EnterWorktree`, subagent `isolation: worktree`), so it
+lands exactly where most Claude Code users already expect worktree
+content, and often where their `.gitignore` already excludes. It is a
+disposable working copy, not squad state, so it does not follow the
+zero-footprint rule above.
 
 ## Tracker modes
 

@@ -36,8 +36,11 @@ Resolve the vault path and project display name before reading any file:
 
 1. **Vault path:** use `SECOND_BRAIN_PATH` env var if set; otherwise default
    to `~/second-brain/`.
-2. **Project CWD:** run `git rev-parse --show-toplevel` via Bash, record the
-   absolute path.
+2. **Project root:** run `bash ~/.claude/hooks/path-resolve.sh` and read
+   `PROJECT_ROOT` and `DISPLAY_NAME` from its output. This resolves
+   correctly inside a linked worktree (Sidecar's, for instance), unlike
+   deriving the project root from `git rev-parse --show-toplevel` directly.
+   See `PATH_RESOLUTION.md`.
 3. **Display name:** read `<vault>/lore-config.json` and look up the project
    CWD in its `projects` map. Fall back to the CWD basename if no mapping
    exists.
@@ -85,6 +88,17 @@ Before doing anything else:
   Do not stop.
 
 ### 1. Check out the branch
+
+If your prompt includes `working_directory: <path>` (Sidecar invokes you
+this way), skip this entire step. Sidecar has already created a worktree
+at that path and checked it out onto the target branch via
+`git worktree add`. Run every Bash command in this task — git, test,
+build, everything — with that path as the effective working directory
+instead of the project root resolved above. Do not `git checkout`
+anything; checking out a different branch inside someone else's worktree
+would fail or corrupt it.
+
+Without `working_directory`, proceed as below.
 
 Ralph supplies `branch`, `base`, and `branch action` in your prompt. When
 invoked directly without them, default to `branch action: create`,

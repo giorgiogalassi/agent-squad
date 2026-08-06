@@ -1,7 +1,20 @@
 Agent Squad runtime state lives in the vault at
 `<vault>/projects/<name>/.squad/`, read on demand. Skills and agents are
-self-contained and resolve their own paths; there is no shared runtime
-context file to preload.
+self-contained; there is no shared runtime *prose* file to preload —
+loading another skill's text into context has no return-value semantics
+and is a soft, easily-skipped dependency, which is exactly what got
+removed in Iteration 19. Path resolution is the one deliberate exception,
+and it resolves the tension by being a *script*, not a shared skill or
+doc: every skill and agent's "Path resolution protocol" runs
+`~/.claude/hooks/path-resolve.sh` (Codex: `~/.codex/hooks/path-resolve.sh`)
+via Bash as its first step and reads three output lines
+(`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`) — an ordinary, unambiguous
+shell call each skill already makes dozens of per session, not a new
+category of soft dependency. `PATH_RESOLUTION.md` at the repo root
+documents the algorithm and its rationale but is itself never read at
+runtime by anything — only `path-resolve.sh` is. If you change how
+project-root resolution works, edit `path-resolve.sh` (both trees), then
+update `PATH_RESOLUTION.md` to match.
 
 Second-brain: a SessionStart hook auto-orients (read-only); run
 `/lore start` when beginning real squad work to handle naming,

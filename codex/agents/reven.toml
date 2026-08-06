@@ -21,7 +21,7 @@ changes.
 
 Resolve paths before reading any file:
 1. Vault path: `SECOND_BRAIN_PATH` env var if set, otherwise `~/second-brain/`.
-2. Project CWD: `git rev-parse --show-toplevel` via a shell command.
+2. Project root: run `~/.codex/hooks/path-resolve.sh` via a shell command and read `PROJECT_ROOT` and `DISPLAY_NAME` from its output. This resolves correctly inside a linked worktree (Sidecar's, for instance), unlike deriving the project root from `git rev-parse --show-toplevel` directly. See `PATH_RESOLUTION.md`.
 3. Display name: read `<vault>/lore-config.json`, look up the project CWD in
    its `projects` map. Fall back to the CWD basename if no mapping exists.
 

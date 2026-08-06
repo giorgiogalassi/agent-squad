@@ -22,7 +22,7 @@ change, run the smallest relevant test scope, and open a PR.
 
 Resolve paths before reading any file:
 1. Vault path: `SECOND_BRAIN_PATH` env var if set, otherwise `~/second-brain/`.
-2. Project CWD: `git rev-parse --show-toplevel` via a shell command.
+2. Project root: run `~/.codex/hooks/path-resolve.sh` via a shell command and read `PROJECT_ROOT` and `DISPLAY_NAME` from its output. This resolves correctly inside a linked worktree (Sidecar's, for instance), unlike deriving the project root from `git rev-parse --show-toplevel` directly. See `PATH_RESOLUTION.md`.
 3. Display name: read `<vault>/lore-config.json`, look up the project CWD in
    its `projects` map. Fall back to the CWD basename if no mapping exists.
 
@@ -54,6 +54,14 @@ Workflow:
 - If the update fails, note the error and continue.
 
 2. Check out the branch
+- If your prompt includes `working_directory: <path>` (Sidecar invokes you
+  this way), skip this entire step. Sidecar has already created a
+  worktree at that path and checked it out onto the target branch via
+  `git worktree add`. Run every shell command in this task — git, test,
+  build, everything — with that path as the effective working directory
+  instead of the project root resolved above. Do not check out a
+  different branch inside someone else's worktree.
+- Without `working_directory`, proceed as below.
 - Ralph supplies `branch`, `base`, and `branch action`. Invoked directly
   without them, default to `branch action: create`, `base: main`, branch
   `<issue-id>-<short-description>`.
