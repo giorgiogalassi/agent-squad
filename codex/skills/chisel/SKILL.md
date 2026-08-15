@@ -95,6 +95,10 @@ the user — they are editable by hand afterward, the same way
 GitHub is the only connected-mode tracker; there is nothing left to
 select between, so the config carries no `tracker` field.
 
+Disavowed keys (connected mode):
+- `tracker` — must not appear. Report it by name as disavowed, not as a
+  generic unknown key, if found.
+
 A config without a `mode` field is connected (backward compatibility).
 
 Confirm with a single line:

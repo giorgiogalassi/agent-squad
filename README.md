@@ -144,6 +144,7 @@ cp -r claude/agents/* ~/.claude/agents/
 cp -r claude/skills/* ~/.claude/skills/
 mkdir -p ~/.claude/hooks
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
+cp claude/hooks/chisel-config-validate.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/chisel-config-validate.py
 ```
 
 ```bash
@@ -152,12 +153,19 @@ cp -r codex/agents/* ~/.codex/agents/
 cp -r codex/skills/* ~/.agents/skills/
 mkdir -p ~/.codex/hooks
 cp codex/hooks/path-resolve.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/path-resolve.sh
+cp codex/hooks/chisel-config-validate.py ~/.codex/hooks/ && chmod +x ~/.codex/hooks/chisel-config-validate.py
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
 resolve which vault project it's talking to.
+
+`chisel-config-validate.py` is an optional CI-style gate that checks
+every `chisel-config.json` in the vault against the schema documented in
+that platform's own `chisel/SKILL.md`. It is not invoked automatically
+by any skill or agent — run it manually (`--prune` to remove flagged
+keys; read-only otherwise).
 
 ### Optional: SessionStart auto-orientation
 
