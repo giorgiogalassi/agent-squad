@@ -111,7 +111,7 @@ infer it yourself and state it when proposing to close:
 - **mixed:** significant changes to both source code and non-code files
 
 `change_type` drives the recommended next step:
-- `docs` → implement directly (or /chisel if Linear tracking is needed)
+- `docs` → implement directly (or /chisel if issue tracking is wanted)
 - `code` or `mixed` → route through /chisel pipeline
 
 The routing is a recommendation, not a gate. The user always decides.

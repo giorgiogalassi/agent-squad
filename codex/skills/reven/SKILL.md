@@ -116,5 +116,4 @@ This is a prompt for the user to act on after merge.
 
 ---
 
-> **Note:** In the Codex set, Reven is invoked as a Codex sub-agent. Use the
-> Linear MCP prefix `mcp__linear__`.
+> **Note:** In the Codex set, Reven is invoked as a Codex sub-agent.

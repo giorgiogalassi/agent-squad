@@ -124,6 +124,3 @@ This is a prompt for the user to act on after merge.
 > the verdict manually. When Sentry is active, Sentry reads the verdict and
 > routes accordingly. Review comments are posted via the authenticated `gh`
 > CLI account — the same account as the repository owner in solo workflows.
->
-> MCP tool prefix: `mcp__linear-server__` for Claude Code,
-> `mcp__linear__` for Codex. See `PLATFORM_DIFFERENCES.md`.

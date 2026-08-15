@@ -76,7 +76,6 @@ definition format differs enough that they cannot share one file.
 These are mostly semantically aligned. The primary differences are mechanical:
 
 - invocation wording
-- MCP tool prefix
 - platform-local metadata conventions
 
 ### Lore
