@@ -134,8 +134,37 @@ repeat what they have already covered.
 
 ## Closing the session
 
-When all required slots are filled and you have no critical open questions,
-close the session by default (Tier 1, default-and-announce). State:
+Two conditions must both hold before you may close:
+
+1. **Every required slot is filled** (see Required slots above).
+2. **A fresh dependency pass comes back empty.** Re-run steps 1-2 of the
+   Question dependency protocol (Enumerate, then Find the dependencies)
+   against the current state. If that pass finds no question left whose
+   answer would change a filled slot's wording, options, or relevance,
+   condition 2 holds.
+
+Condition 2 is a real gate, not a formality: run the pass, do not assume
+it comes back empty because condition 1 just did. Closing in the same
+turn as the first round's answers is allowed only when that pass
+genuinely turns up nothing — it is not a default. If the pass surfaces a
+question, ask the next round (subject to the round cap below); the close
+waits.
+
+**Round cap.** The session is capped at four question rounds. On hitting
+the cap, close regardless of whether the dependency pass is empty:
+- Carry every unresolved question the pass would still have asked into
+  `open_questions` in the YAML, instead of asking a fifth round.
+- If a required slot is still unfilled when the cap hits, do not guess a
+  value for it. Leave it explicit in the YAML — e.g. an empty string or a
+  short note under `notes` naming the gap — so the gap is visible to
+  whoever reads the output, not silently papered over.
+
+The cap of four is a first guess to bound session length, not a measured
+value; treat it as provisional and revisit it if sessions routinely need
+more.
+
+Once both conditions hold (or the cap forces a close), close by default
+(Tier 1, default-and-announce). State:
 
   I have enough to produce the analysis. Complexity: [low / medium / high].
   change_type: [code / docs / mixed]. Recommended path: [implement directly /
@@ -145,8 +174,17 @@ close the session by default (Tier 1, default-and-announce). State:
 Then proceed to write the YAML in the same turn. Do not wait for a
 sentinel word. Reopen the session only if the user's next message adds
 scope, corrects a slot, or asks a question rather than accepting. If the
-user types `done` at any point, close immediately. Never block on
-confirmation here; the YAML is reversible and the user can rerun Forge.
+user types `done` at any point, close immediately — this escape hatch
+applies once both conditions above hold (or the cap is reached); it is
+not a way to skip the gate. Never block on confirmation here; the YAML
+is reversible and the user can rerun Forge.
+
+A fully-specified input (e.g. a detailed ticket that already answers
+every required slot) can legitimately close with `rounds: 0` — the gate
+requires an empty dependency pass, not that a round actually ran. If
+enumeration in step 1 finds nothing to ask, condition 2 holds trivially
+and the session must not stall waiting for a round that was never
+needed.
 
 ## Complexity classification
 
@@ -222,6 +260,16 @@ it does not exist):
 
 When writing output.yaml, append:
 
-  [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>
+  [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>, rounds: <N>
+
+`rounds` is the number of question rounds the session actually made
+(each round being one `AskUserQuestion` call from step 3 of the
+dependency protocol). Write it every time, whether or not the session
+ran in trace mode — it is the durable evidence that the dependency
+protocol ran at all, and it is what makes a regression to single-batch
+questioning visible from the log alone, without having to dig through a
+raw transcript to see how many rounds actually happened. `rounds: 0` is
+a legal value: a fully-specified input can fill every required slot and
+pass the dependency gate with no questions asked.
 
 Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
