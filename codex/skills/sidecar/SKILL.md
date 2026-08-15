@@ -285,5 +285,4 @@ Use a shell command to get the current timestamp: `date "+%Y-%m-%d %H:%M"`
 > tools rather than Claude's native `Agent()` workflow, the same mechanism
 > Ralph uses. Cody must already be defined in `~/.codex/agents/cody.toml`,
 > and must support the `working_directory` field (see Cody's "On start"
-> section) before Sidecar can invoke it. Use the Linear MCP prefix
-> `mcp__linear__`.
+> section) before Sidecar can invoke it.
