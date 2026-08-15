@@ -78,6 +78,15 @@ These are mostly semantically aligned. The primary differences are mechanical:
 - invocation wording
 - platform-local metadata conventions
 
+`Forge`'s question dependency protocol (enumerate, find dependencies, ask
+roots only, re-derive) is shared, including the closing gate, the
+four-round cap, `--trace` (off by default, session-scoped), and the
+`rounds: <N>` line on `[forge] end` in the session log. The only
+mechanical divergence is how a round's roots are batched into one ask:
+Claude `Forge` uses a single `AskUserQuestion` call (up to four
+questions per call); Codex `Forge` has no such tool, so it asks all
+roots together as a numbered list in one message (same cap of four).
+
 ### Lore
 
 Lore is the most semantically divergent agent across platforms
