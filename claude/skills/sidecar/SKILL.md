@@ -121,6 +121,78 @@ expects if they've used worktrees before.
    comment (`# Sidecar worktrees — ephemeral, never committed`). This is
    the host project's gitignore, written once per project.
 
+## Phase 2b: dependency population
+
+Runs automatically, always, right after Phase 2 step 4 and before Phase 3.
+There is no flag to enable or skip it — a worktree without its
+dependencies is not runnable, and a flag would only preserve a way back
+to that broken state. It never touches the source checkout, never runs
+an install, and never fails the session.
+
+1. **Discover.** From the project root (the source checkout, not the
+   worktree), find every `node_modules` directory without recursing into
+   one once found — nested `node_modules` inside a package come along
+   with their parent as part of the copy:
+
+   ```bash
+   find . \( -name .git -o -path './.claude/worktrees' \) -prune \
+     -o -type d -name node_modules -print -prune
+   ```
+
+   If this finds nothing, the project has no dependencies to clone
+   (non-JS project, or dependencies never installed in this checkout).
+   Skip the rest of this phase silently — do not mention it in the
+   Phase 3 output. This is detection, not a flag.
+
+2. **Reproduce each one**, at the same relative path inside the
+   worktree, one at a time:
+
+   - Target: `<worktree-path>/<relative-path>` (e.g. `./app/node_modules`
+     -> `<worktree-path>/app/node_modules`).
+   - **Reuse check first.** If the target already exists and is
+     non-empty, and no `<target>.sidecar-tmp` sibling is present, it's
+     either a prior clone or one the user installed into directly —
+     leave it alone and record it as "already present" in the report.
+     Do not re-clone blindly.
+   - **Copy to a temp sibling, then atomically rename it into place:**
+     `<target>.sidecar-tmp` first, `mv <target>.sidecar-tmp <target>`
+     only after the copy exits 0. This is what makes an interrupted
+     copy detectable and safe: the real target path never exists until
+     the copy is complete, so a leftover `.sidecar-tmp` directory from a
+     cancelled or crashed run is unambiguously partial. Before copying,
+     remove any leftover `.sidecar-tmp` from a previous interrupted
+     attempt (`rm -rf <target>.sidecar-tmp`) and start clean — never
+     resume into a partial copy.
+   - **Tiered copy strategy, cheapest first, first success wins:**
+
+     | Order | Mechanism | Notes |
+     |---|---|---|
+     | 1 | `cp -Rc <source-path> <target>.sidecar-tmp` | APFS clonefile on macOS. Near-instant, no extra disk. |
+     | 2 | `cp -R --reflink=auto <source-path> <target>.sidecar-tmp` | Filesystems with reflink support (btrfs, XFS). |
+     | 3 | `cp -R <source-path> <target>.sidecar-tmp` | Plain recursive copy. Real cost — on a multi-GB `node_modules` this can take tens of seconds. Time it and say so; do not let it look like an unexplained pause. |
+
+     Record which tier actually succeeded and the elapsed time for the
+     path that was copied.
+   - **Never symlink `node_modules` from the source checkout into the
+     worktree**, under any tier, as a shortcut or a fallback. A symlinked
+     `node_modules` means an install run inside the worktree mutates the
+     source checkout's `node_modules` directly — corrupting the user's
+     primary working directory, the exact thing the worktree exists to
+     protect. Every tier above is a real, independent copy.
+   - **If all three tiers fail** for a given path (permissions, disk
+     space, unsupported filesystem with no fallback), clean up any
+     partial `.sidecar-tmp` left behind, record the path as failed, and
+     move on to the next discovered path. Do not stop the session.
+
+3. **Report**, folded into the Phase 3 "Sidecar ready" output (below) —
+   never silent. If every discovered path failed, name the install
+   command instead of a mechanism: detect it from the source checkout's
+   lockfile (`package-lock.json` -> `npm install`, `yarn.lock` -> `yarn
+   install`, `pnpm-lock.yaml` -> `pnpm install`; none found -> "run your
+   project's install command") and tell the user the worktree needs it
+   before it's runnable. A bare worktree is today's behavior and a valid
+   fallback — Sidecar still reaches Phase 3 and orientation continues.
+
 ## Phase 3: orientation
 
 Inside the worktree:
@@ -135,6 +207,7 @@ Print, and nothing else:
 Sidecar ready.
 Branch: <branch>   Base: <base>
 Diff: <N files changed, insertions/deletions from --stat>
+Dependencies: <cp -Rc | cp -R --reflink=auto | cp -R> — N path(s) populated in <Xs>: <relative-path-1>, <relative-path-2>
 
 cd <worktree-path>
 
@@ -145,6 +218,17 @@ Describe the fix and I'll pass it to Cody.
 The `cd <worktree-path>` line is its own line, with the real absolute
 path substituted in, so it is a single copy-paste — do not fold it into
 a sentence or bury it after other text.
+
+The `Dependencies:` line reflects whatever Phase 2b actually did — do
+not print it, or print it empty, when Phase 2b found no `node_modules`
+at all (silent skip, per Phase 2b step 1). When paths were already
+present from a prior session, say so instead of a mechanism (`Dependencies:
+already present — N path(s): <relative-path-1>, ...`). When every copy
+failed, say so and name the install command instead of a mechanism
+(`Dependencies: clone failed for N path(s) — run <install command> in
+<worktree-path> before testing.`). Mixed outcomes (some copied, some
+reused, some failed) get one line per outcome, each on its own line
+under `Dependencies:`.
 
 Do not read the full diff, the PR body, or progress.txt yourself here —
 that is Cody's job per fix (Phase 4), on necessity, not a fixed upfront
@@ -260,6 +344,8 @@ everywhere else in this system: manually, by the user, when they're ready.
 - `.claude/worktrees/` lives in the host project, is git-ignored there, and is
   never routed through the vault — it is ordinary disposable project
   state, not squad state.
+- Never symlink `node_modules` into a worktree, in Phase 2b or anywhere
+  else. Always a real copy — see Phase 2b for why.
 - If the user asks for the worktree path again mid-session, reprint
   `cd <worktree-path>` on its own line immediately — don't make them
   scroll back to the orientation message for it.
