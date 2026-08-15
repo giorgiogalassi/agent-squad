@@ -1,0 +1,186 @@
+name: Issue lifecycle on PR close
+
+# Closes the terminal-transition gap in the squad's label lifecycle
+# (see issue #94): Chisel applies `needs-review` at creation, Cody
+# swaps `in-progress` -> `in-review` when a PR opens, but nothing ever
+# moved an issue out of `in-review` or closed it once its PR merged.
+#
+# This workflow is the terminal step: it runs whenever a PR targeting
+# the default branch is closed (merged or not) and reconciles the
+# linked issue's state.
+#
+# ---------------------------------------------------------------------
+# IMPORTANT COUPLING: the label names below (`in-progress`, `in-review`,
+# `needs-review`) are hardcoded to the squad's documented defaults.
+# They are NOT read from `chisel-config.json`, because that file lives
+# in the user's second-brain vault (~/second-brain/projects/<name>/.squad/),
+# which is outside this repo and not available to a GitHub Actions
+# runner. If a user customises `state_labels` / `review_label` in their
+# vault config, this workflow will silently stop matching those custom
+# names. There is no config-syncing mechanism here by design (see #94)
+# -- if you rename labels, update the `STATE_LABELS` list below too.
+# ---------------------------------------------------------------------
+#
+# IMPORTANT PERMISSIONS PREREQUISITE: this workflow requests
+# `issues: write` via the `permissions:` block below, but the repo-level
+# "Workflow permissions" setting (Settings -> Actions -> General) can
+# still override and block it if set to "Read repository contents
+# permission" (read-only). If the first run fails with a 403 on label
+# removal or issue close, switch that setting to "Read and write
+# permissions". This workflow does not attempt to change it itself.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  reconcile-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve issue and reconcile labels/state
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Labels this workflow owns exclusively. Never touch anything
+            // else (bug, documentation, enhancement, etc.) -- see #94
+            // constraint 5.
+            const STATE_LABELS = ['in-progress', 'in-review', 'needs-review'];
+
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // --- Step 1: resolve the issue this PR is for. ---------------
+            // Priority order (see #94 constraint 3):
+            //   a) GitHub's own closingIssuesReferences (e.g. "Closes #N"
+            //      in the PR body) -- most reliable when present.
+            //   b) The squad's branch-name convention: <issue-number>-<slug>
+            //      (e.g. "57-forge-question-dependency-protocol").
+            //   c) The PR title convention: "[#N] <type>: <subject>".
+            // If none resolves, exit without acting -- never guess.
+
+            let issueNumbers = [];
+
+            const gqlResult = await github.graphql(
+              `query($owner:String!, $repo:String!, $number:Int!) {
+                repository(owner:$owner, name:$repo) {
+                  pullRequest(number:$number) {
+                    closingIssuesReferences(first: 10) {
+                      nodes { number }
+                    }
+                  }
+                }
+              }`,
+              { owner, repo, number: pr.number }
+            );
+            const linked = gqlResult.repository.pullRequest.closingIssuesReferences.nodes;
+            if (linked.length > 0) {
+              issueNumbers = linked.map((n) => n.number);
+            }
+
+            if (issueNumbers.length === 0) {
+              const branchMatch = /^(\d+)-/.exec(pr.head.ref || '');
+              if (branchMatch) {
+                issueNumbers = [parseInt(branchMatch[1], 10)];
+              }
+            }
+
+            if (issueNumbers.length === 0) {
+              const titleMatch = /^\[#(\d+)\]/.exec(pr.title || '');
+              if (titleMatch) {
+                issueNumbers = [parseInt(titleMatch[1], 10)];
+              }
+            }
+
+            if (issueNumbers.length === 0) {
+              console.log(`No issue could be resolved for PR #${pr.number}. Exiting without action.`);
+              return;
+            }
+
+            console.log(`Resolved issue(s) for PR #${pr.number}: ${issueNumbers.join(', ')}`);
+
+            // --- Step 2: reconcile each resolved issue. -------------------
+            for (const issueNumber of issueNumbers) {
+              const issueData = await github.graphql(
+                `query($owner:String!, $repo:String!, $number:Int!) {
+                  repository(owner:$owner, name:$repo) {
+                    issue(number:$number) {
+                      state
+                      subIssuesSummary { total }
+                    }
+                  }
+                }`,
+                { owner, repo, number: issueNumber }
+              );
+              const issue = issueData.repository.issue;
+              if (!issue) {
+                console.log(`Issue #${issueNumber} not found. Skipping.`);
+                continue;
+              }
+
+              // Never auto-close a container issue (has sub-issues).
+              // See #94 constraint 5.
+              const isContainer = issue.subIssuesSummary && issue.subIssuesSummary.total > 0;
+
+              if (pr.merged) {
+                if (isContainer) {
+                  console.log(`Issue #${issueNumber} has sub-issues (container). Skipping auto-close.`);
+                  continue;
+                }
+
+                // Clear all three state labels. `needs-review` is cleared
+                // here too (not left permanent): since it is applied
+                // uniformly at creation and never distinguished anything
+                // (see #94 defect 2), the decision comment on #94 treats
+                // it as noise to clear alongside the others once the
+                // issue is done.
+                await removeLabels(issueNumber, STATE_LABELS);
+
+                if (issue.state !== 'CLOSED') {
+                  await github.rest.issues.update({
+                    owner,
+                    repo,
+                    issue_number: issueNumber,
+                    state: 'closed',
+                    state_reason: 'completed',
+                  });
+                  console.log(`Closed issue #${issueNumber} (PR #${pr.number} merged).`);
+                } else {
+                  console.log(`Issue #${issueNumber} already closed. Idempotent no-op.`);
+                }
+              } else {
+                // PR closed WITHOUT merging. Do not mark the issue done,
+                // but don't leave it stranded in `in-review` either --
+                // clear just that label so the issue returns to an
+                // actionable state (it may still be legitimately
+                // `in-progress` if work continues, so that label is left
+                // alone).
+                await removeLabels(issueNumber, ['in-review']);
+                console.log(`PR #${pr.number} closed without merging. Cleared in-review on issue #${issueNumber}, left open.`);
+              }
+            }
+
+            async function removeLabels(issueNumber, labels) {
+              for (const name of labels) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner,
+                    repo,
+                    issue_number: issueNumber,
+                    name,
+                  });
+                } catch (err) {
+                  // 404 means the label was never set (or already removed)
+                  // -- idempotent no-op, not an error. See #94 constraint 5.
+                  if (err.status !== 404) {
+                    throw err;
+                  }
+                }
+              }
+            }

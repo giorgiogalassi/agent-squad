@@ -85,6 +85,13 @@ run it yourself when you're ready for another review pass.
 
 ```text
 agent-squad/
+  .github/
+    workflows/
+      issue-lifecycle.yml
+                    On PR merge/close, closes the linked issue and clears
+                    its state labels (in-progress/in-review/needs-review).
+                    Label names are hardcoded here — not read from
+                    chisel-config.json, which lives outside this repo.
   JOURNAL.md        Design journal: iterations, decisions, open points
   PLATFORM_DIFFERENCES.md
                     Semantic and technical differences between trees
@@ -289,6 +296,13 @@ without pushing. Use detached in work environments where agents must not
 hold write access to company tools, or as a fallback when the tracker MCP
 is down. The thinking layers (Forge, Archy, Seed, Lore, Reven's review
 logic) are identical in both modes.
+
+`.github/workflows/issue-lifecycle.yml` only applies in `connected` mode
+against a GitHub tracker: it closes an issue and clears its state labels
+when the linked PR merges (or clears `in-review` if the PR is closed
+without merging). No agent in the squad merges PRs or performs this
+step — see `.github/workflows/issue-lifecycle.yml` for the resolution
+logic and label-name caveats.
 
 When using the squad across trust domains (personal and work), use one
 vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a
