@@ -40,6 +40,15 @@ These are advisory guidelines that apply throughout this skill:
    routing through /chisel), confirm with the user before invoking that phase.
    Do not auto-chain past a concluded STOP.
 
+## Invocation
+
+`/forge <input> [--trace]`
+
+`--trace` is optional and **off by default**. It is a per-session
+debugging aid for confirming the Question dependency protocol actually
+ran, not a project setting — see Trace mode below for what it changes
+and why it is never persisted.
+
 ## Behavior
 
 You conduct a conversational session, not an interrogation. Questions are
@@ -99,6 +108,45 @@ protocol asks all of them in round one and the session still closes in
 a single round. Dependency-awareness does not mean asking one question
 at a time; it means never asking a question whose premise a still-open
 question could invalidate.
+
+## Trace mode
+
+Controlled by the `--trace` flag on invocation (see Invocation above).
+It changes only how much of the Question dependency protocol's step 3
+("Ask the roots only") is surfaced to the user — it never changes which
+questions get asked, the round count, or anything else about the pass.
+
+**`--trace` off (default).** The dependency pass runs exactly as
+described in steps 1-4 above, but silently: nothing about the
+enumeration, the dependency graph, or the held-back questions is shown.
+The user sees only the roots being asked. Silent does not mean skipped —
+the full pass still runs before every round; the reasoning is suppressed
+from output, not omitted from the process. This distinction is the
+entire point of the flag: turning it on must never change what gets
+asked, only what gets printed.
+
+**`--trace` on.** Immediately before each round's `AskUserQuestion` call
+(step 3), print a short block: the round number, the roots about to be
+asked, and one line per question currently held back naming the
+question it is blocked on. Round numbering matches the `rounds` count
+described in Session log below — the block for the Nth `AskUserQuestion`
+call is labeled `Round N`. Format:
+
+  Round <N> · asking: <root 1>, <root 2>, ...
+  held: <held question> → waits on <the question that blocks it>
+  held: <held question> → waits on <the question that blocks it>
+
+Held lines are omitted if nothing is currently held back. This is a
+plain-text rendering of the dependency pass's output, not tied to any
+particular question-asking mechanism, so the same shape can be produced
+on a platform that asks in prose instead of a structured tool call.
+
+**Session scope only.** `--trace` applies to the invocation it is passed
+on and nothing else:
+- Never write it to a config file (there is no `forge-config.json`, and
+  none should be added for this).
+- Never carry it into a later session — each `/forge` invocation starts
+  with trace off unless `--trace` is passed again that time.
 
 ## Required slots
 
