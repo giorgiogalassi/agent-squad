@@ -6,7 +6,7 @@ description: >
   <branch>", "let's iterate on <branch>", "small fixes on <branch>",
   "this UI piece is wrong on <branch>". Do NOT trigger when there is no
   existing branch to attach to — use /forge to start new work instead.
-allowed-tools: Read, Write, Bash, mcp__linear-server__get_issue
+allowed-tools: Read, Write, Bash
 ---
 
 # Sidecar
@@ -285,6 +285,3 @@ Use `date "+%Y-%m-%d %H:%M"` via Bash to get the current timestamp.
 > the same mechanism Ralph uses. Cody must already be defined in
 > `~/.claude/agents/cody.md`, and must support the `working_directory`
 > prompt field (see Cody's "On start" section) before Sidecar can invoke it.
->
-> MCP tool prefix: `mcp__linear-server__` for Claude Code,
-> `mcp__linear__` for Codex. See `PLATFORM_DIFFERENCES.md`.
