@@ -5,7 +5,7 @@ description: >
   before writing any code. Triggers: /forge, "let's plan", "I want to build",
   "I need to add", "help me think through". Do NOT trigger on direct code
   requests like "write a function" or "fix this bug".
-allowed-tools: Read, Glob, Write, Bash
+allowed-tools: Read, Glob, Write, Bash, AskUserQuestion
 ---
 
 # Forge
@@ -42,13 +42,63 @@ These are advisory guidelines that apply throughout this skill:
 
 ## Behavior
 
-You conduct a conversational session, not an interrogation. Ask one question
-at a time. Listen to the answer before asking the next. Adapt your questions
-based on what the user has already told you.
+You conduct a conversational session, not an interrogation. Questions are
+asked in rounds: each round is derived from the answers given so far, per
+the Question dependency protocol below. Listen to the answers from a round
+before deriving the next. Adapt your questions based on what the user has
+already told you.
 
 Before starting, read `<vault>/projects/<project>/.squad/architecture.md` if it exists.
 Use it to ground your questions in the actual project context. Do not ask about
 things already established there.
+
+## Question dependency protocol
+
+Run this pass before every round of questions — the first round and every
+round after it. It replaces asking whatever is left over in a single batch.
+
+1. **Enumerate.** List every open question needed to fill the remaining
+   slots (see Required slots below). Ask nothing yet — this step is
+   silent bookkeeping.
+
+2. **Find the dependencies.** For each pair of questions (A, B), test: does
+   some plausible answer to A change B's wording, change B's set of
+   realistic options, or make B irrelevant entirely? If yes, B depends on
+   A. Common shapes this takes:
+   - B presupposes a fact that A establishes (you cannot ask "which auth
+     provider" before knowing whether auth is in scope at all).
+   - One answer to A deletes B outright (if A reveals the endpoint does
+     not exist, "what verb does it use" no longer makes sense).
+   - One answer to A changes B's realistic option set (the choice of
+     storage layer changes what "how do we handle concurrent writes"
+     is even asking).
+
+3. **Ask the roots only.** A root is a question that depends on nothing
+   else currently in the list. Roots are mutually independent by
+   construction, so it is safe to batch all of them into a single
+   `AskUserQuestion` call (up to four questions per call). Every
+   non-root question is held back — do not ask it, do not preview it.
+   - **Cycle fallback.** If two or more questions appear to depend on
+     each other with no root among them, break the cycle: ask the one
+     that is cheaper to answer or more likely already settled by context,
+     on its own, and re-run the dependency pass once it lands.
+
+4. **Re-derive, do not replay.** Once answers land, discard the held-back
+   questions and run steps 1-3 again from scratch against the updated
+   state. Do not treat the held questions as a queue to pop in order —
+   an answer can delete a held question, reword it, or make it irrelevant,
+   and it can also surface a brand-new question that was not in the
+   original enumeration. Popping a pre-planned queue would reproduce the
+   same defect (asking questions whose premise no longer holds) spread
+   across more turns instead of fixing it.
+
+This pass determines how many rounds a session takes; it is never
+padded or compressed to hit a target (see Adaptive behavior). If every
+question in the enumeration is a root — a genuinely flat scope — the
+protocol asks all of them in round one and the session still closes in
+a single round. Dependency-awareness does not mean asking one question
+at a time; it means never asking a question whose premise a still-open
+question could invalidate.
 
 ## Required slots
 
@@ -64,10 +114,19 @@ slots naturally (dependencies, affected modules, open questions).
 
 ## Adaptive behavior
 
-Calibrate session length to input complexity:
-- Simple, isolated scope: fill slots in 2-4 questions, propose to close quickly.
-- Broad or unclear scope: ask more questions, probe dependencies,
-  challenge assumptions.
+Calibrate session length to input complexity in terms of *rounds*, not
+question count — a round can legitimately carry up to four batched
+questions per the dependency protocol above:
+- Simple, isolated scope: the dependency pass finds mostly or entirely
+  roots, so the session closes in one round.
+- Broad or unclear scope: the dependency pass surfaces real chains, so
+  more rounds are needed to probe dependencies and challenge assumptions.
+
+Round count is an outcome of the dependency pass, never a target. Do not
+add a padding round to look thorough when the roots already cover
+everything. Do not compress a genuinely dependent question into an
+earlier round to look efficient — if step 2 found a real dependency,
+hold the question back regardless of how it affects round count.
 
 If the user gives short or vague answers, ask a focused follow-up rather than
 accepting incomplete information. If the user gives thorough answers, do not
