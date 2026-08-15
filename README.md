@@ -16,7 +16,7 @@ iterative fixes — see "Sidecar" below)
 /clear          Reset session context.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
-/chisel         Create tracker issues (Linear in connected mode, a local batch file in detached mode).
+/chisel         Create tracker issues (GitHub in connected mode, a local batch file in detached mode).
 /ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
 Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
@@ -44,9 +44,9 @@ graph LR
 
 The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
 structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
-creates tracker issues (Linear or a local batch file), `Ralph` drives
-execution through `Cody` one branch per dependency chain, and `Reven`
-reviews before merge.
+creates tracker issues (GitHub issues in connected mode, or a local batch
+file in detached mode), `Ralph` drives execution through `Cody` one branch
+per dependency chain, and `Reven` reviews before merge.
 
 ## Sidecar: iterating on an existing branch
 
@@ -96,7 +96,7 @@ agent-squad/
     skills/
       forge/        Interactive brainstorming -> .squad/forge/output.yaml
       archy/        Architecture analysis -> .squad/prd/current.md
-      chisel/       YAML/PRD -> Linear issues
+      chisel/       YAML/PRD -> GitHub issues
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
       sidecar/      Worktree-backed iterative fix session on an existing branch
@@ -271,8 +271,9 @@ zero-footprint rule above.
 ## Tracker modes
 
 `chisel.mode` in `chisel-config.json` selects how the squad talks to your
-issue tracker. `connected` (default) creates and updates Linear issues via
-MCP and opens PRs with `gh`. `detached` keeps agents fully hands-off:
+issue tracker. `connected` (default) creates and updates GitHub issues and
+opens PRs, both via `gh`; there is no tracker to choose between in this
+mode. `detached` keeps agents fully hands-off:
 Chisel writes a local batch file (with a Jira-importable CSV), Ralph
 executes from it and produces a handoff checklist you replay into the
 tracker, Cody commits locally and prints a paste-ready PR description
