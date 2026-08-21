@@ -65,104 +65,94 @@ Requires a branch name from the user; never infer one.
 
 ## Phase 2: worktree setup
 
-Worktree path: `.claude/worktrees/<branch-slug>/` at the project root
-(`/` in the branch name → `-`). This is Claude Code's own native
-worktree convention, so it usually pre-exists in users' `.gitignore`.
+The hook computes the worktree path as `.claude/worktrees/<branch-slug>/`
+at the project root (`/` in the branch name → `-`) — Claude Code's own
+native worktree convention, so it usually pre-exists in users'
+`.gitignore`.
 
-1. `git worktree list` — if the branch is checked out elsewhere, stop
-   and tell the user to close that checkout; never force.
-2. If the worktree dir already exists (prior unclean session), reuse it:
-   `git -C <path> fetch` + `status` to confirm right branch and clean,
-   then continue. Else `git worktree add .claude/worktrees/<branch-slug> <branch>`.
-3. Resolve and use the **absolute** worktree path from here on
-   (`git -C <path> rev-parse --show-toplevel` or
-   `git worktree list --porcelain`) — for everything printed to the user
-   and passed to Cody. Relative paths break when the user's shell isn't
-   at the project root.
-4. Ensure the host project's `.gitignore` has a `.claude/worktrees/`
-   entry; append once with a short comment if missing
-   (`# Sidecar worktrees — ephemeral, never committed`).
+1. Run `bash ~/.claude/hooks/worktree.sh create <branch>`.
+2. Exit 1 (refusal) — the branch is already checked out at another
+   worktree path: stop and tell the user to close that checkout; never
+   force past it.
+3. Exit 2 (error) — a bug, not a policy decision: report it and stop.
+4. Exit 0: parse `WORKTREE_PATH=<absolute>` and
+   `WORKTREE_CREATED=true|false` from stdout. Use this **absolute**
+   path from here on — for everything printed to the user and passed
+   to Cody. Relative paths break when the user's shell isn't at the
+   project root.
+
+The hook owns reuse (fetch + branch verification when the worktree
+directory already exists), creation, and the host project's
+`.gitignore` entry for `.claude/worktrees/` — Sidecar makes no `git
+worktree`, `cp -R`, or `stat` call of its own here.
 
 ## Phase 2b: dependency population
 
 Runs automatically after Phase 2, before Phase 3 — no enable/skip flag.
-Never touches the source checkout, never runs an install, never fails
-the session.
 
-1. **Discover** every `node_modules` in the source checkout (project
-   root), without recursing into one once found — nested copies come
-   along with their parent. Prune known worktree directories so another
-   worktree's deps are never mistaken for project deps. `.codex/worktrees`
-   is pruned too even though the Codex distribution was removed (#148):
-   a project that used Codex before the removal may still have a stale
-   `.codex/worktrees/` directory on disk, and pruning it costs nothing.
+1. Run `bash ~/.claude/hooks/worktree.sh deps <worktree-path>` — the
+   hook discovers every `node_modules` in the source checkout (project
+   root), without recursing into one once found, pruning both
+   distributions' worktree trees so another worktree's deps are never
+   mistaken for project deps; reproduces each at the same relative path
+   in the worktree (reuse check on a non-empty target; tiered copy,
+   cheapest first — APFS clonefile, then reflink, then plain — into a
+   `.sidecar-tmp` sibling only `mv`'d into place after a successful
+   copy; never a symlink); and reports lockfile staleness (Phase 2c,
+   below). It never touches the source checkout, never runs an
+   install, and never fails the session — exit 2 here is a bug, not a
+   policy decision, and still doesn't block orientation.
 
-   ```bash
-   find . \( -name .git -o -path './.claude/worktrees' -o -path './.codex/worktrees' \) -prune \
-     -o -type d -name node_modules -print -prune
-   ```
+2. Parse its output:
+   - `DEP=<rel>|<outcome>|<tier>|<seconds>` — one line per discovered
+     dependency tree. `<outcome>`: `cloned`, `already-present`, or
+     `failed`. `<tier>`: `clonefile`, `reflink`, `plain`, or `-`.
+     No `DEP=` lines at all → non-JS project or deps never installed:
+     skip the rest of 2b/2c silently (no mention in Phase 3 output).
+   - `STALE=<rel>|<kind>` — zero or more lines per dependency tree,
+     feeding Phase 2c below.
 
-   Nothing found → non-JS project or deps never installed: skip the rest
-   of 2b/2c silently (no mention in Phase 3 output).
-
-2. **Reproduce each** at the same relative path in the worktree:
-   - **Reuse check:** target exists and non-empty → if a stale
-     `<target>.sidecar-tmp` sibling also exists, delete the tmp
-     (`rm -rf`) and keep the existing target; record `already present`.
-     Never re-clone blindly, never `mv` a tmp next to or into an
-     existing target.
-   - **Copy to `<target>.sidecar-tmp`, then `mv` into place** only after
-     the copy exits 0 — an interrupted copy leaves only an unambiguous
-     partial tmp, never a half-real target. Remove any leftover tmp
-     before starting; never resume into one.
-   - **Tiered copy, cheapest first, first success wins:**
-     1. `cp -Rc` (APFS clonefile, macOS — near-instant, no extra disk)
-     2. `cp -R --reflink=auto` (btrfs/XFS)
-     3. `cp -R` (plain; can take tens of seconds on multi-GB trees —
-        time it and say so)
-     Record the tier used and elapsed time.
-   - **Never symlink** `node_modules` into the worktree, ever: an
-     install in the worktree would then mutate the source checkout — the
-     exact thing the worktree protects against.
-   - **All tiers fail** (permissions, disk, filesystem): clean up the
-     partial tmp, record the path as failed, continue with the next
-     path. Never stop the session.
-
-3. **Report** in the Phase 3 output (below), never silently. If every
-   path failed, name the install command from the lockfile table below
+3. **Report** in the Phase 3 output (below), never silently, from the
+   `DEP=` lines: all `cloned` → mechanism is the tier name (mixed tiers
+   get one line each); all `already-present` → `already present`; all
+   `failed` → name the install command from the lockfile table below
    instead of a mechanism — a bare worktree is a valid fallback and
-   orientation continues.
+   orientation continues; mixed outcomes get one line each.
 
 ## Phase 2c: lockfile staleness check
 
-Runs automatically after 2b for every directory 2b touched (cloned,
-reused, or failed). Comparison only — never installs, never touches the
-network, never undoes 2b.
+Fed by the same `worktree.sh deps` call as Phase 2b, for every
+dependency tree it reported (cloned, reused, or failed). Comparison
+only — the hook never installs, never touches the network, never
+undoes its own population.
 
 Lockfile names, all handled identically: `package-lock.json`,
 `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`,
 `bun.lockb`.
 
-Per directory, two independent comparisons — always report which one
-failed, never a vague "deps may be stale":
+Map each `STALE=<rel>|<kind>` line onto the two independent comparisons
+below — always report which one failed, never a vague "deps may be
+stale":
 
-a. **Branch drift** — `diff -q` the lockfile in the worktree vs the
-   source checkout. Identical → record as consistent (a positive
-   result). Different → mismatch: record lockfile, path, and the install
-   command to run in the worktree. Present in only one tree → record as
-   a presence difference (not a content mismatch). Absent in both → not
-   applicable; don't warn about an impossible comparison.
+a. **Branch drift** — `STALE=<rel>|branch-drift` → the lockfile
+   differs between the worktree branch and the source checkout:
+   mismatch, record lockfile, path, and the install command to run in
+   the worktree. `STALE=<rel>|presence-diff` → present in only one
+   tree: record as a presence difference (not a content mismatch). No
+   `STALE=` line for a `DEP=` tree whose parent directory has the
+   lockfile in both trees → record as consistent (a positive result).
+   No lockfile in either tree → not applicable; don't warn about an
+   impossible comparison. (The hook itself only emits `STALE=` for the
+   two warning outcomes — determine the lockfile name and the
+   consistent/not-applicable split by checking which of the names
+   below is present in the worktree's and source checkout's copy of
+   the tree's parent directory.)
 
-b. **Source self-staleness** — is the source checkout's own
-   `node_modules` older than its own lockfile? Compare mtimes portably
-   (GNU stat has no `-f`; try BSD form first with stderr AND stdout
-   discarded on failure):
-   ```bash
-   mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
-   ```
-   Lockfile newer than `node_modules` → the copy was already stale
-   before Sidecar copied it. Its fix is an install in the **source
-   checkout**, not the worktree; report it separately from (a).
+b. **Source self-staleness** — `STALE=<rel>|self-stale` → the source
+   checkout's own `node_modules` is older than its own lockfile: the
+   copy was already stale before Sidecar copied it. Its fix is an
+   install in the **source checkout**, not the worktree; report it
+   separately from (a), on its own line, may coexist with drift.
 
 Install commands (named in warnings, never executed):
 `package-lock.json`/`npm-shrinkwrap.json` → `npm install`; `yarn.lock` →
@@ -254,13 +244,20 @@ On a real close signal:
 2. Sidecar (not Cody) appends one line to `.squad/progress.txt`:
    `[<branch>] <date> sidecar session: N fixes. Notes: <one-line summary>`
    Once per session, not per fix.
-3. **Clean generated artifacts, then remove.** Delete every
-   `node_modules` and `*.sidecar-tmp` inside the worktree (`rm -rf`) —
-   cloned this session or found already present, they are generated
-   content, safe to delete, and otherwise block removal. Then
-   `git worktree remove .claude/worktrees/<branch-slug>`. If removal
-   still fails, real uncommitted work remains: name the exact manual
-   command and never `--force` without the user confirming the loss.
+3. **Clean and remove.** Run `bash ~/.claude/hooks/worktree.sh remove
+   <branch>`.
+   - Exit 0: parse `REMOVED=true|false` and `CLEANED=<paths>`. The hook
+     deletes every `node_modules` and `*.sidecar-tmp` it can find by
+     path inside the worktree first — generated content, safe to
+     delete, whether cloned this session, found already present, or
+     left over from a prior session (even one predating this hook, and
+     even a worktree with no `.gitignore` entry) — then removes the
+     worktree.
+   - Exit 1 (refusal): real uncommitted tracked work remains. Never
+     `--force` — name the exact manual command (inspect with `git -C
+     <worktree-path> status`, then `git worktree remove <worktree-path>`
+     once the user has confirmed the loss) so the user decides.
+   - Exit 2 (error): a bug, not a policy decision: report it and stop.
 4. Print, and nothing else:
 
    ```

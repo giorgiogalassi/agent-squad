@@ -986,9 +986,18 @@ claude/
     chisel/SKILL.md
     seed/SKILL.md
     ralph/SKILL.md
+    sidecar/SKILL.md
+    reven/SKILL.md
+    lore/SKILL.md
   agents/
     cody.md
     reven.md
+    lore.md
+  hooks/
+    path-resolve.sh
+    worktree.sh
+    lore-orient.sh
+    chisel-config-validate.py
 ```
 
 `PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no

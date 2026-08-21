@@ -91,7 +91,9 @@ agent-squad/
                     its state labels (in-progress/in-review/needs-review).
                     Label names are hardcoded here — not read from
                     chisel-config.json, which lives outside this repo.
+  CLAUDE.md         Project instructions read by Claude Code sessions
   JOURNAL.md        Design journal: iterations, decisions, open points
+  LICENSE
   PLATFORM_DIFFERENCES.md
                     Historical note: this repo maintained a parallel Codex
                     distribution until #148 removed it.
@@ -99,6 +101,8 @@ agent-squad/
                     Algorithm and rationale behind path-resolve.sh. Docs
                     only — never read at runtime; the script is what runs.
   README.md         This file
+  assets/
+    mvp-flow.mmd    Mermaid diagram of the MVP flow
   claude/
     skills/
       forge/        Interactive brainstorming -> .squad/forge/output.yaml
@@ -107,6 +111,7 @@ agent-squad/
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
       sidecar/      Worktree-backed iterative fix session on an existing branch
+      reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
     agents/
       cody.md       Claude agent definition for implementation
@@ -115,7 +120,13 @@ agent-squad/
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
+      worktree.sh      create/path/remove/deps worktree lifecycle
+                       mechanism (used today by Sidecar; Ralph's epic
+                       mode will consume it too — see the "Worktree
+                       hook" section below).
       lore-orient.sh   SessionStart read-only orientation script (optional)
+      chisel-config-validate.py
+                       Validates chisel-config.json shape
 ```
 
 ## Installation
@@ -133,12 +144,56 @@ cp -r claude/skills/* ~/.claude/skills/
 mkdir -p ~/.claude/hooks
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
 cp claude/hooks/chisel-config-validate.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/chisel-config-validate.py
+cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
 resolve which vault project it's talking to.
+
+## Worktree hook
+
+`claude/hooks/worktree.sh` extracts worktree lifecycle management
+(create, locate, remove, dependency population) out of skill prose into
+an executable, testable mechanism. Sidecar consumes it today — Phases 2,
+2b, 2c, and 5 all call into it — and Ralph's future epic mode is
+specified against the same `create`/`path`/`remove`/`deps` contract.
+
+It follows `path-resolve.sh`'s conventions: `KEY=VALUE` lines on
+stdout, mechanism only (no policy — Sidecar still owns when to warn,
+what to say, and when to ask the user for confirmation), no interactive
+prompts. It resolves its own project root via `path-resolve.sh`
+(expected as a sibling file) and never calls
+`git rev-parse --show-toplevel`, which returns a linked worktree's own
+directory rather than the main project's when run from inside one.
+
+Exit codes: `0` success, `1` a refusal the caller must surface (never a
+forced operation), `2` an internal error.
+
+```bash
+worktree.sh create <branch>          # WORKTREE_PATH=..., WORKTREE_CREATED=true|false
+worktree.sh path <branch>            # WORKTREE_PATH=...
+worktree.sh remove <branch>          # REMOVED=true|false, CLEANED=<paths>
+worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and STALE=<rel>|<kind> lines
+```
+
+Depends only on `git` and POSIX shell utilities — no `jq`.
+
+Install alongside `path-resolve.sh`:
+
+```bash
+cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
+```
+
+Hooks are consumed from `~/.claude/hooks/`, not from the checkout — a
+reinstall (re-running the copy command above) is required before this
+change takes effect for any skill that starts calling it.
+
+A `codex/hooks/worktree.sh` mirror is deliberately not written yet; it
+depends on a pending decision about dropping the codex distribution
+entirely.
+
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
 every `chisel-config.json` in the vault against the schema documented in
@@ -247,12 +302,49 @@ hold write access to company tools, or as a fallback when the tracker MCP
 is down. The thinking layers (Forge, Archy, Seed, Lore, Reven's review
 logic) are identical in both modes.
 
-`.github/workflows/issue-lifecycle.yml` only applies in `connected` mode
-against a GitHub tracker: it closes an issue and clears its state labels
-when the linked PR merges (or clears `in-review` if the PR is closed
-without merging). No agent in the squad merges PRs or performs this
-step — see `.github/workflows/issue-lifecycle.yml` for the resolution
-logic and label-name caveats.
+### Installing the issue-lifecycle workflow (connected mode)
+
+`.github/workflows/issue-lifecycle.yml` in *this* repository is what
+reconciles Agent Squad's own issues. It is not something a project using
+the squad in `connected` mode already has — connected-mode issues live
+in *your* project's repository, and this workflow only ships inside
+`agent-squad/.github/`, so nothing installs it there automatically. No
+agent in the squad writes CI configuration into your repository on your
+behalf: creating issues and labels via `gh` is a small, per-action,
+reviewable operation; committing a GitHub Actions workflow that runs on
+every PR close and can close issues is a standing change to your CI
+pipeline, and that decision is left to you.
+
+To get the same terminal-state reconciliation (closing an issue and
+clearing its state labels when the linked PR merges, clearing
+`in-review` when a PR closes without merging, and restoring `in-review`
+if the issue is later reopened) in your own project:
+
+1. Copy `.github/workflows/issue-lifecycle.yml` from this repository
+   into your project's `.github/workflows/`.
+2. Create the labels it expects to exist, if they don't already (Chisel
+   creates these for you on its first connected run in your project, so
+   if Chisel has already run there you can skip this step):
+   - `in-progress`
+   - `in-review`
+   - `needs-review` (or whatever you set `review_label` to in
+     `chisel-config.json` — see the note below)
+3. In your repository's Settings → Actions → General, set "Workflow
+   permissions" to "Read and write permissions". The workflow requests
+   `issues: write` in its own `permissions:` block, but that setting
+   can still force it read-only and cause 403s on label removal or
+   issue close.
+
+The three label names above (`in-progress`, `in-review`, `needs-review`)
+are hardcoded inside the workflow file, not read from
+`chisel-config.json` (that file lives in your vault, outside the repo,
+and is not available to a GitHub Actions runner). If you customize
+`state_labels` or `review_label` in your vault config, edit the
+`STATE_LABELS` list in your copy of the workflow to match, or the two
+will silently drift apart. No agent merges PRs or performs this
+reconciliation step itself — see the comments in
+`.github/workflows/issue-lifecycle.yml` for the full resolution logic
+and label-name caveats.
 
 When using the squad across trust domains (personal and work), use one
 vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a

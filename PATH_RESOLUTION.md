@@ -71,11 +71,27 @@ worktree` itself relies on the common-dir/git-dir split internally), not
 a Sidecar-specific convention, so it's robust to worktrees created
 outside Sidecar's own naming convention too.
 
-`--path-format=absolute` requires git 2.31+ (released March 2021).
-`path-resolve.sh` falls back to plain `git rev-parse --show-toplevel` if
-the command fails, matching this project's existing "degrade gracefully,
-don't hard-fail on a missing capability" convention (see Seed's "if a
-file does not exist, continue without it").
+`--path-format=absolute` requires git 2.31+ (released March 2021). Git
+older than that does **not** fail on the unrecognised flag — verified
+directly: `git rev-parse` echoes any option it doesn't recognise back to
+stdout as a literal extra line and keeps processing the rest of the
+command, exiting 0. A naive `[ -n "$COMMON_DIR" ]` check can't tell that
+apart from success, so `path-resolve.sh` instead validates the output:
+it must be exactly one line and an existing directory. `path-resolve.sh`
+falls back to plain `git rev-parse --show-toplevel` when that validation
+fails, matching this project's existing "degrade gracefully, don't
+hard-fail on a missing capability" convention (see Seed's "if a file
+does not exist, continue without it").
+
+**Submodules.** `--git-common-dir` from inside a submodule resolves to
+`<super>/.git/modules/<name>`, not the submodule's own root — verified
+directly with a real submodule fixture. `path-resolve.sh` checks `git
+rev-parse --show-superproject-working-tree` first; when that's non-empty
+(we're inside a submodule) it skips the common-dir path entirely and
+uses `--show-toplevel` (the submodule's own checkout root) instead. This
+correctly resolves a plain submodule checkout, but a submodule opened as
+a linked worktree is not supported — an intersection this project does
+not attempt to resolve.
 
 ## The script
 
