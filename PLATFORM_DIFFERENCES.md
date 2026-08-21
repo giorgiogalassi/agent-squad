@@ -106,19 +106,20 @@ them, because the vault copy is the only one Codex can read.
 - Timestamp mismatch detection and inline recovery offer
 - 7-day staleness check with git branch status
 - status.md schema and overwrite behavior
-- Experience log schema with type field and 5 type definitions
 - lore start reconstructs status.md from evidence when stale; no session-end command
 - lore recover reconstructs from git evidence
 - 100-line cap on development.md with curation step
-- Confirmation required before any write
+- Two-tier confirmation model: Tier 1 (default-and-announce) for
+  reconstruction and routine writes, Tier 2 (explicit yes, wait) for
+  vault creation, name-conflict resolution, and `lore recover` writes
 - <private> tag stripping
 - Cody incremental checkpoint at PR open
 - Instance namespacing ([claude-code] / [codex])
-- Invocation aliases (lore start/end/prefer/recover) recognized
+- Invocation aliases (lore start/prefer/recover) recognized
   without clarification in both platforms
-- Staleness check uses 30-minute wall clock threshold, not
-  checkpoint-vs-updated comparison, to prevent false positives
-  on tool switches
+- Staleness check: stale when the Cody checkpoint is newer than
+  Last updated, or Last updated is older than 7 days — not a
+  wall-clock threshold
 - Context refs auto-loaded at session start, no confirmation needed
 - status.md Done section compressed to ~400 token cap
 - Next section uses ACTION/CONTEXT signal marker format
@@ -126,7 +127,7 @@ them, because the vault copy is the only one Codex can read.
 **No MCP dependency in either platform.**
 The vault is a plain markdown directory. Both Lore definitions
 use Read, Write, and Bash tools exclusively. MCP is not used and
-not recommended for Lore's access patterns. See docs/backends.md.
+not recommended for Lore's access patterns.
 
 ---
 

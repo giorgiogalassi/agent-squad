@@ -929,9 +929,17 @@ claude/
     chisel/SKILL.md
     seed/SKILL.md
     ralph/SKILL.md
+    sidecar/SKILL.md
+    reven/SKILL.md
+    lore/SKILL.md
   agents/
     cody.md
     reven.md
+    lore.md
+  hooks/
+    path-resolve.sh
+    lore-orient.sh
+    chisel-config-validate.py
 codex/
   skills/
     forge/SKILL.md
@@ -939,9 +947,17 @@ codex/
     chisel/SKILL.md
     seed/SKILL.md
     ralph/SKILL.md
+    sidecar/SKILL.md
+    reven/SKILL.md
+    lore/SKILL.md
   agents/
     cody.toml
     reven.toml
+    lore.toml
+  hooks/
+    path-resolve.sh
+    lore-orient.sh
+    chisel-config-validate.py
 ```
 
 For exact format and behavior differences between the two trees, see `PLATFORM_DIFFERENCES.md`.

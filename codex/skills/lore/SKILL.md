@@ -27,4 +27,4 @@ or write the vault yourself. Hand off to the agent and let it run. All
 behavior, confirmation rules, and output belong to the agent, not this
 wrapper.
 
-If no recognized subcommand is given, list the four above and stop.
+If no recognized subcommand is given, list the three above and stop.

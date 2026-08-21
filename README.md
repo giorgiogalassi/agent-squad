@@ -92,13 +92,17 @@ agent-squad/
                     its state labels (in-progress/in-review/needs-review).
                     Label names are hardcoded here — not read from
                     chisel-config.json, which lives outside this repo.
+  CLAUDE.md         Project instructions read by Claude Code sessions
   JOURNAL.md        Design journal: iterations, decisions, open points
+  LICENSE
   PLATFORM_DIFFERENCES.md
                     Semantic and technical differences between trees
   PATH_RESOLUTION.md
                     Algorithm and rationale behind path-resolve.sh. Docs
                     only — never read at runtime; the script is what runs.
   README.md         This file
+  assets/
+    mvp-flow.mmd    Mermaid diagram of the MVP flow
   claude/
     skills/
       forge/        Interactive brainstorming -> .squad/forge/output.yaml
@@ -107,6 +111,7 @@ agent-squad/
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
       sidecar/      Worktree-backed iterative fix session on an existing branch
+      reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
     agents/
       cody.md       Claude agent definition for implementation
@@ -116,6 +121,8 @@ agent-squad/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
       lore-orient.sh   SessionStart read-only orientation script (optional)
+      chisel-config-validate.py
+                       Validates chisel-config.json shape
   codex/
     skills/
       forge/        Codex skill variants
@@ -124,6 +131,7 @@ agent-squad/
       seed/
       ralph/
       sidecar/      Worktree-backed iterative fix session on an existing branch
+      reven/        Wrapper delegating to the Reven agent
       lore/         Wrapper delegating to the Lore agent
     agents/
       cody.toml     Codex custom agent
@@ -133,6 +141,8 @@ agent-squad/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
       lore-orient.sh   SessionStart read-only orientation script (optional)
+      chisel-config-validate.py
+                       Validates chisel-config.json shape
 ```
 
 ## Installation
