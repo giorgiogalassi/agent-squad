@@ -19,16 +19,31 @@ and never writes to any config or to the SKILL.md.
 
 --prune: opt-in removal. For each config that fails validation, remove
 only the exact keys the validator flagged as unknown/disavowed (leaving
-every documented key, key order, and formatting untouched), re-validate
+every documented key and its relative key order untouched), re-validate
 the pruned file, and report what was removed and whether the file now
-passes. Configs that fail to parse as JSON are never pruned — a
-malformed file is reported and left alone, never guessed at. Configs
-that are already clean are never rewritten (no-op, no touched mtimes).
+passes. The file is rewritten with canonical JSON formatting (2-space
+indent, trailing newline) — original indentation width or other
+whitespace styling is NOT preserved, only key presence and order.
+Configs that fail to parse as JSON are never pruned — a malformed file
+is reported and left alone, never guessed at. Configs that are already
+clean are never rewritten (no-op, no touched mtimes).
 
-Exit code: 0 if every discovered config is clean, 1 if any config has a
-violation (parse failure, unknown key, disavowed key, wrong mode value,
-etc). This lets the script act as a CI-style gate. With --prune, the
-exit code still reflects the post-prune state.
+An empty file, or a config that parses to `{}` (or otherwise has no
+`chisel` key), is treated as a violation rather than CLEAN: Chisel's own
+"Configuration check" (SKILL.md) treats a missing or fieldless config as
+needing the configuration flow, so this validator reports the same
+config as failing rather than passing.
+
+Exit codes:
+  0 — every discovered config is clean (or no configs were found).
+  1 — at least one config has a violation (parse failure, unknown key,
+      disavowed key, wrong mode value, empty/fieldless config, etc).
+      With --prune, this reflects the post-prune state.
+  2 — the schema source of truth itself could not be resolved or
+      parsed (path-resolve.sh missing/failed, SKILL.md not found, the
+      expected fences/sections missing or malformed). This is a setup
+      failure, distinct from a config being invalid, and is fatal:
+      the script cannot validate anything without the schema.
 """
 
 import argparse
@@ -39,7 +54,6 @@ import sys
 from pathlib import Path
 
 MODE_VALUES = {"detached", "connected"}
-STATE_LABEL_KEYS = {"in_progress", "in_review", "blocked"}
 
 SKILL_MD_RELATIVE = "codex/skills/chisel/SKILL.md"
 
@@ -114,6 +128,7 @@ def parse_schema(skill_md_path):
       {
         "detached": {"allowed": set(...)},
         "connected": {"allowed": set(...), "disavowed": {"tracker": "..."}},
+        "state_label_keys": set(...),
       }
     """
     try:
@@ -154,6 +169,20 @@ def parse_schema(skill_md_path):
             "under 'chisel'; the schema anchors have changed shape."
         )
 
+    # state_labels' inner keys are also part of the schema (the connected
+    # shape fence), not a separate hardcoded list: change the fence and
+    # this parser follows, same as every other key set here.
+    connected_state_labels = connected_shape.get("chisel", {}).get(
+        "state_labels", {}
+    )
+    if not isinstance(connected_state_labels, dict) or not connected_state_labels:
+        fail(
+            f"The connected shape json fence in {skill_md_path} had no "
+            "'state_labels' object with keys; the schema anchors have "
+            "changed shape."
+        )
+    state_label_keys = set(connected_state_labels.keys())
+
     # Disavowed keys (connected mode) bullet list, e.g.:
     # Disavowed keys (connected mode):
     # - `tracker` — must not appear. Report it by name as disavowed, ...
@@ -179,6 +208,7 @@ def parse_schema(skill_md_path):
     return {
         "detached": {"allowed": detached_allowed},
         "connected": {"allowed": connected_allowed, "disavowed": disavowed},
+        "state_label_keys": state_label_keys,
     }
 
 
@@ -198,9 +228,20 @@ def validate_config(data, schema):
 
     chisel = data.get("chisel")
     if chisel is None:
-        # Empty {} or missing 'chisel' wrapper key: nothing to validate
-        # against, and nothing forbidden either. Treat as clean, defaulting
-        # to connected mode per the no-mode-means-connected rule.
+        # Empty {} or missing 'chisel' wrapper key: Chisel's own
+        # "Configuration check" (SKILL.md) treats a config that doesn't
+        # exist or is missing required fields as needing the
+        # configuration flow — not as a valid, already-configured state.
+        # Agree with that verdict rather than reporting CLEAN.
+        violations.append(
+            {
+                "message": (
+                    "chisel: config is empty or missing the 'chisel' key "
+                    "— Chisel's configuration flow has not been run"
+                ),
+                "path": None,
+            }
+        )
         return violations, "connected"
     if not isinstance(chisel, dict):
         violations.append({"message": "'chisel' key is not an object", "path": None})
@@ -220,9 +261,10 @@ def validate_config(data, schema):
                 "path": None,
             }
         )
-        # Can't reliably pick an allowed-key set for an invalid mode;
-        # still check keys against the union of both, using the closest.
-        mode = "connected" if mode not in ("detached",) else "detached"
+        # Can't reliably pick an allowed-key set for an invalid mode
+        # value; fall back to connected, per the no-mode-means-connected
+        # rule (the invalid value itself is already reported above).
+        mode = "connected"
 
     mode_schema = schema[mode]
     allowed = mode_schema["allowed"]
@@ -264,7 +306,7 @@ def validate_config(data, schema):
                 )
             else:
                 for inner_key in state_labels.keys():
-                    if inner_key not in STATE_LABEL_KEYS:
+                    if inner_key not in schema["state_label_keys"]:
                         violations.append(
                             {
                                 "message": (
