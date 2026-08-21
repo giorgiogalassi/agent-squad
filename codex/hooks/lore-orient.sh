@@ -14,12 +14,19 @@
 # Resolve vault path, project root, and display name via the shared
 # path-resolve.sh utility (installed alongside this hook) rather than
 # re-deriving the algorithm here. See PATH_RESOLUTION.md.
+#
+# Parsed line-by-line (not `eval`'d): path-resolve.sh's output is not
+# shell-quoted, so eval-ing it would break on a path containing a space
+# and execute anything shaped like $(...) or `...` in a directory name.
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 if [ -x "$HOOK_DIR/path-resolve.sh" ]; then
-  eval "$("$HOOK_DIR/path-resolve.sh")"
-  VAULT="$VAULT_PATH"
-  ROOT="$PROJECT_ROOT"
-  DISPLAY="$DISPLAY_NAME"
+  while IFS='=' read -r _key _value; do
+    case "$_key" in
+      VAULT_PATH) VAULT="$_value" ;;
+      PROJECT_ROOT) ROOT="$_value" ;;
+      DISPLAY_NAME) DISPLAY="$_value" ;;
+    esac
+  done < <("$HOOK_DIR/path-resolve.sh")
 else
   # path-resolve.sh not installed alongside this hook — degrade to
   # resolving inline rather than failing the whole orientation.
