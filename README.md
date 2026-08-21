@@ -115,6 +115,10 @@ agent-squad/
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
+      worktree.sh      create/path/remove worktree lifecycle mechanism
+                       (used today by Sidecar; Ralph's epic mode will
+                       consume it too — see the "Worktree hook" section
+                       below).
       lore-orient.sh   SessionStart read-only orientation script (optional)
   codex/
     skills/
@@ -152,6 +156,7 @@ cp -r claude/skills/* ~/.claude/skills/
 mkdir -p ~/.claude/hooks
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
 cp claude/hooks/chisel-config-validate.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/chisel-config-validate.py
+cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
 ```
 
 ```bash
@@ -167,6 +172,47 @@ cp codex/hooks/chisel-config-validate.py ~/.codex/hooks/ && chmod +x ~/.codex/ho
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
 resolve which vault project it's talking to.
+
+## Worktree hook
+
+`claude/hooks/worktree.sh` extracts worktree lifecycle management
+(create, locate, remove) out of skill prose into an executable,
+testable mechanism. Sidecar consumes it today; Ralph's future epic mode
+is specified against the same `create`/`path`/`remove` contract.
+
+It follows `path-resolve.sh`'s conventions: `KEY=VALUE` lines on
+stdout, mechanism only (no policy — Sidecar still owns when to warn,
+what to say, and when to ask the user for confirmation), no interactive
+prompts. It resolves its own project root via `path-resolve.sh`
+(expected as a sibling file) and never calls
+`git rev-parse --show-toplevel`, which returns a linked worktree's own
+directory rather than the main project's when run from inside one.
+
+Exit codes: `0` success, `1` a refusal the caller must surface (never a
+forced operation), `2` an internal error.
+
+```bash
+worktree.sh create <branch>   # WORKTREE_PATH=..., WORKTREE_CREATED=true|false
+worktree.sh path <branch>     # WORKTREE_PATH=...
+worktree.sh remove <branch>   # REMOVED=true|false, CLEANED=<paths>
+```
+
+Depends only on `git` and POSIX shell utilities — no `jq`.
+
+Install alongside `path-resolve.sh`:
+
+```bash
+cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
+```
+
+Hooks are consumed from `~/.claude/hooks/`, not from the checkout — a
+reinstall (re-running the copy command above) is required before this
+change takes effect for any skill that starts calling it.
+
+A `codex/hooks/worktree.sh` mirror is deliberately not written yet; it
+depends on a pending decision about dropping the codex distribution
+entirely.
+
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
 every `chisel-config.json` in the vault against the schema documented in
