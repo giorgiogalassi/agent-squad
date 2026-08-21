@@ -1,0 +1,39 @@
+name: Squad lint
+
+# Runs scripts/squad-lint.sh (issue #118) on every pull request: parity
+# and contract checks between claude/ and codex/, the path-resolution
+# protocol, chisel-config.json field cross-references, and dangling
+# documentation pointers.
+#
+# Hardening notes (lessons from #106 / PR #131, applied here even
+# though this workflow is simpler and read-only):
+#   - No `issues:`/`pull-requests:` write permission is requested. This
+#     job only reads the checked-out tree and exits with the lint's
+#     exit code; it never calls the GitHub API, so there is no 403/401
+#     path to guard and no need to assume a fork PR's token can write
+#     anything -- it never tries to.
+#   - The lint script itself is expected to exit non-zero on violations
+#     -- that failure is the point of this job, not a bug to swallow.
+#     Nothing here catches or masks that exit code.
+#   - `set -uo pipefail` inside the script (see scripts/squad-lint.sh)
+#     means unset variables and pipeline failures surface instead of
+#     being silently ignored; grep calls that legitimately find nothing
+#     are explicitly guarded with `|| true` in the script so an empty
+#     result never gets confused with a tool failure.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  squad-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run squad-lint.sh
+        run: bash scripts/squad-lint.sh

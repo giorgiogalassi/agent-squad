@@ -257,3 +257,34 @@ the ten absorbed fixes should be considered resolved repo-wide: the
 future mirroring pass into `codex/` is expected but not yet scheduled;
 no tracking issue was opened for it as part of this change (also by
 explicit user decision).
+
+---
+
+## Parity Allowlist
+
+Machine-readable allowlist consumed by `scripts/squad-lint.sh` (check 2:
+claude/codex file-set parity and semantic drift; see issue #118). Add an
+entry here instead of disabling the check when a divergence is
+deliberate.
+
+Format, one entry per line, anywhere in this file:
+
+```
+- claude-only: <path relative to claude/>
+- codex-only: <path relative to codex/>
+- semantic-diff: <path relative to its own tree root> — <note>
+```
+
+`claude-only` / `codex-only` mark a file that exists on only one side of
+the tree by design (e.g. a claude-native hook with no codex equivalent).
+`semantic-diff` marks a file pair that exists on both sides but is
+allowed to diverge in a way the check would otherwise flag (e.g. wording
+or notation carried over from before a convention changed).
+
+No entries currently. The 2026-08-21 prompt-compression divergence above
+is a whole-tree content divergence already covered narratively; it does
+not need a `semantic-diff` line per file because check 2's semantic
+check only looks at cross-skill slash notation, not prose-length parity.
+When a genuinely file-scoped, deliberate divergence lands (for example a
+claude-only hook script with no codex twin), add its line here rather
+than turning the check off.
