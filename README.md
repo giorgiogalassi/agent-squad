@@ -115,10 +115,10 @@ agent-squad/
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
-      worktree.sh      create/path/remove worktree lifecycle mechanism
-                       (used today by Sidecar; Ralph's epic mode will
-                       consume it too — see the "Worktree hook" section
-                       below).
+      worktree.sh      create/path/remove/deps worktree lifecycle
+                       mechanism (used today by Sidecar; Ralph's epic
+                       mode will consume it too — see the "Worktree
+                       hook" section below).
       lore-orient.sh   SessionStart read-only orientation script (optional)
   codex/
     skills/
@@ -176,9 +176,10 @@ resolve which vault project it's talking to.
 ## Worktree hook
 
 `claude/hooks/worktree.sh` extracts worktree lifecycle management
-(create, locate, remove) out of skill prose into an executable,
-testable mechanism. Sidecar consumes it today; Ralph's future epic mode
-is specified against the same `create`/`path`/`remove` contract.
+(create, locate, remove, dependency population) out of skill prose into
+an executable, testable mechanism. Sidecar consumes it today — Phases 2,
+2b, 2c, and 5 all call into it — and Ralph's future epic mode is
+specified against the same `create`/`path`/`remove`/`deps` contract.
 
 It follows `path-resolve.sh`'s conventions: `KEY=VALUE` lines on
 stdout, mechanism only (no policy — Sidecar still owns when to warn,
@@ -192,9 +193,10 @@ Exit codes: `0` success, `1` a refusal the caller must surface (never a
 forced operation), `2` an internal error.
 
 ```bash
-worktree.sh create <branch>   # WORKTREE_PATH=..., WORKTREE_CREATED=true|false
-worktree.sh path <branch>     # WORKTREE_PATH=...
-worktree.sh remove <branch>   # REMOVED=true|false, CLEANED=<paths>
+worktree.sh create <branch>          # WORKTREE_PATH=..., WORKTREE_CREATED=true|false
+worktree.sh path <branch>            # WORKTREE_PATH=...
+worktree.sh remove <branch>          # REMOVED=true|false, CLEANED=<paths>
+worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and STALE=<rel>|<kind> lines
 ```
 
 Depends only on `git` and POSIX shell utilities — no `jq`.
