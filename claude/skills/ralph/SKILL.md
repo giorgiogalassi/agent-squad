@@ -67,7 +67,10 @@ error and stop:
   never executable work; each is excluded independently on its own field.
   **Review gate:** if `review_label` is configured (not `none`), also
   exclude issues still carrying it — the label means "awaiting human
-  review", and Ralph executes only reviewed work. Report the exclusion:
+  review", and Ralph executes only reviewed work. Nothing in this phase
+  removes `review_label` — see `LABEL_STATE_MACHINE.md` for the full
+  label lifecycle and why removal happens later, not here. Report the
+  exclusion:
   `Skipped N issue(s) still labeled <review_label> — review them or remove the label to include.`
   The remaining issues are the batch.
 - **Specific issue ID given:**
@@ -238,6 +241,10 @@ After 3 attempts (stalls + retryable failures share the counter):
   gh issue edit <n> -R <owner>/<repo> --remove-label <in_progress> --add-label <blocked>
   gh issue comment <n> -R <owner>/<repo> --body "<last error output>"
   ```
+  Always remove `in_progress` in the same call that adds `blocked` — an
+  escalated issue never carries both. `review_label`, if still present,
+  is left alone (see `LABEL_STATE_MACHINE.md`): a blocked issue
+  legitimately still needs human eyes.
 - Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
   to the handoff.
 - Print `#12 failed after 3 attempts. Escalating to you.` and continue

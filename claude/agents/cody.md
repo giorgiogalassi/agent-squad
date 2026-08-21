@@ -58,6 +58,12 @@ Issue number missing from the prompt → extract from the description
 continue; do not stop. Detached: skip — Ralph records status in the
 handoff.
 
+Do not touch `review_label` here, even if it is still on the issue
+(that happens when Ralph ran on an explicit override — see
+`LABEL_STATE_MACHINE.md`). Claiming is not reviewing; stripping it as a
+side effect of claim would fabricate evidence of a human review that
+never happened.
+
 ### 1. Check out the branch
 
 `working_directory: <path>` in your prompt (Sidecar) → skip this step
@@ -173,9 +179,15 @@ Then act on `open pr` (default `yes` when invoked directly):
   branch never targets main by accident. If `gh` is unavailable, push
   and print manual instructions. Immediately after the PR is created,
   swap labels on every covered issue (both from `state_labels`, never
-  hardcoded):
+  hardcoded), and also remove `review_label` if one is configured (not
+  `none`) — this is the point in the cycle where the pre-work review
+  gate label retires in favor of `in_review`; see `LABEL_STATE_MACHINE.md`.
+  Removal is a no-op if the label is already gone (the normal case,
+  where a human already removed it before Ralph ever claimed the
+  issue):
   ```bash
   gh issue edit <n> -R <owner>/<repo> --remove-label <in_progress> --add-label <in_review>
+  gh issue edit <n> -R <owner>/<repo> --remove-label <review_label>  # skip if review_label is none
   ```
 - **`open pr: yes`, detached:** never push, never call any forge API.
   Print a paste-ready PR description (title `[CHAIN] title`, base
