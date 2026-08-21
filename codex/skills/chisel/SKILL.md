@@ -101,6 +101,12 @@ Disavowed keys (connected mode):
 
 A config without a `mode` field is connected (backward compatibility).
 
+**Label verification.** On first connected run, verify every configured
+label (`review_label` unless `none`, and all three `state_labels`)
+exists in the target repo (`gh label list`); create missing ones with
+`gh label create` and say so — downstream label swaps by Cody and Ralph
+fail otherwise.
+
 Confirm with a single line:
 
   Configuration saved to <vault>/projects/<project>/.squad/chisel-config.json
@@ -177,8 +183,11 @@ context, acceptance criteria, notes — no `Blocked by:` line (see
    If an issue was already created without it (e.g. the label didn't
    exist yet), apply it after the fact with
    `gh issue edit <number> --add-label "<review_label>"`. Skip this step
-   entirely if `review_label` is `none`. The label must already exist in
-   the target repo — Chisel does not create labels.
+   entirely if `review_label` is `none`. The label is verified to exist
+   (and created if missing) once, on the first connected run — see
+   "Label verification" in the Configuration flow above. `review_label`
+   is the only place this label is ever added; see
+   `LABEL_STATE_MACHINE.md` for where and why it is removed later.
 
 Dependencies are native GitHub state (queryable via
 `gh issue view --json parent,blockedBy,blocking`), not text in the body.

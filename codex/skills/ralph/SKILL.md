@@ -437,13 +437,18 @@ appended to Cody's context. At 3: escalate (see 2c).
 
 When an issue fails 3 times (retryable failures and stalls share one
 counter, per 2b):
-- Connected: apply the configured `blocked` label (read from
-  `state_labels` in `chisel-config.json`, not hardcoded) and comment the
-  last error output on the sub-issue:
+- Connected: remove the configured `in_progress` label and apply the
+  configured `blocked` label (both read from `state_labels` in
+  `chisel-config.json`, not hardcoded) in the same call, then comment
+  the last error output on the sub-issue. An escalated issue must never
+  keep `in_progress` and `blocked` attached together:
   ```bash
-  gh issue edit <issue-number> -R <owner>/<repo> --add-label <blocked>
+  gh issue edit <issue-number> -R <owner>/<repo> --remove-label <in_progress> --add-label <blocked>
   gh issue comment <issue-number> -R <owner>/<repo> --body "<last error output>"
   ```
+  `review_label`, if still present, is left alone — see
+  `LABEL_STATE_MACHINE.md`. A blocked issue legitimately still needs
+  human eyes.
 - Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
   to the handoff file
 - Print: `GG-12 failed after 3 attempts. Escalating to you.`
