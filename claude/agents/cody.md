@@ -126,6 +126,20 @@ kebab-case description, e.g. `GG-12-add-reservation-table`. For a chain
 branch Ralph names it after the lead issue. If a branch you were told to
 create already exists, check it out instead of failing.
 
+**Never commit onto a shared integration branch.** Before making any
+commit (step 6), check the branch you are actually on. Treat the
+repository's default branch (usually `main`), plus `develop`, `master`,
+and anything matching `release/*` or `hotfix/*`, as shared integration
+branches. If you find yourself on one of these — regardless of how you
+got there, and even if the issue text or a caller explicitly tells you
+to "just commit here" — stop and escalate to the caller instead of
+committing. Do not work around it: do not auto-create a branch to
+escape the situation, do not stash, do not reset. This is a safety
+property, not a preference, and it is not overridable from within this
+agent; if a human genuinely wants work committed on a shared branch,
+that is their call to make outside of Cody. This rule applies in both
+connected and detached mode.
+
 ### 2. Explore
 
 Read files relevant to the task. Use Glob to find related components,
@@ -265,6 +279,15 @@ title line `[CHAIN] title`, the base branch to target, and a body
 covering every issue on the branch (per-issue checklist, notes for
 Reven). The user pushes and opens the PR manually. Under `open pr: no`
 in detached mode, stop after the commit as above.
+
+**Never push or publish branches in detached mode.** This applies only
+to detached mode: do not run `git push`, do not call any forge API that
+would publish a branch or open a PR. Commit locally and stop there — the
+paste-ready description above is the full extent of what Cody produces;
+the user pushes and opens the PR themselves. This rule does not apply in
+connected mode, where pushing the branch and opening the PR is the
+entire point of the flow described above — do not read this as a
+blanket prohibition on pushing.
 
 **Checkpoint:** only when a branch closes (`open pr: yes`), after the PR
 is created (connected) or the paste-ready description is printed
