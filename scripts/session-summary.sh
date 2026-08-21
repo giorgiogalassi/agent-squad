@@ -3,9 +3,9 @@
 #
 # A human runs this on demand to see "what happened" without opening
 # session.log, progress.txt, and the vault's git history by hand. It is
-# a script, not a hook: nothing in claude/ or codex/ invokes it
+# a script, not a hook: nothing in claude/ invokes it
 # automatically, so it lives in scripts/ alongside squad-lint.sh
-# (#118/#140) rather than in claude/hooks or codex/hooks.
+# (#118/#140) rather than in claude/hooks.
 #
 # Strictly read-only: this script never writes, moves, or deletes
 # anything under the vault or the workspace. It only reads
@@ -14,14 +14,14 @@
 # refresh `git status`/`git log` would otherwise perform).
 #
 # Paths are resolved via path-resolve.sh, never re-derived. Because
-# this script lives outside claude/hooks and codex/hooks (it is not a
+# this script lives outside claude/hooks (it is not a
 # hook), it looks for path-resolve.sh in, in order: this repo's own
-# claude/hooks/ or codex/hooks/ copy (so it works from a checkout with
+# claude/hooks/ copy (so it works from a checkout with
 # nothing installed), then the installed ~/.claude/hooks/ and
-# ~/.codex/hooks/ copies. First one found wins.
+# installed copy. First one found wins.
 #
-# Single copy, no codex mirror: this script never touches claude/ or
-# codex/ skill/agent prose, only vault state plus path-resolve.sh's
+# Single copy: this script never touches
+# skill/agent prose, only vault state plus path-resolve.sh's
 # KEY=VALUE stdout contract, which is identical on both platforms. A
 # per-platform mirror would duplicate logic with nothing to diverge on.
 #
@@ -68,9 +68,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PATH_RESOLVE=""
 for candidate in \
   "$REPO_ROOT/claude/hooks/path-resolve.sh" \
-  "$REPO_ROOT/codex/hooks/path-resolve.sh" \
-  "$HOME/.claude/hooks/path-resolve.sh" \
-  "$HOME/.codex/hooks/path-resolve.sh"
+  "$HOME/.claude/hooks/path-resolve.sh"
 do
   if [ -x "$candidate" ] || [ -f "$candidate" ]; then
     PATH_RESOLVE="$candidate"
@@ -79,7 +77,7 @@ do
 done
 
 if [ -z "$PATH_RESOLVE" ]; then
-  echo "session-summary: cannot find path-resolve.sh (checked repo claude/codex hooks and ~/.claude, ~/.codex hooks); cannot resolve paths without it." >&2
+  echo "session-summary: cannot find path-resolve.sh (checked $REPO_ROOT/claude/hooks and ~/.claude/hooks); cannot resolve paths without it." >&2
   exit 2
 fi
 

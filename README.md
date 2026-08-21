@@ -190,10 +190,6 @@ Hooks are consumed from `~/.claude/hooks/`, not from the checkout — a
 reinstall (re-running the copy command above) is required before this
 change takes effect for any skill that starts calling it.
 
-A `codex/hooks/worktree.sh` mirror is deliberately not written yet; it
-depends on a pending decision about dropping the codex distribution
-entirely.
-
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
 every `chisel-config.json` in the vault against the schema documented in
