@@ -297,12 +297,49 @@ hold write access to company tools, or as a fallback when the tracker MCP
 is down. The thinking layers (Forge, Archy, Seed, Lore, Reven's review
 logic) are identical in both modes.
 
-`.github/workflows/issue-lifecycle.yml` only applies in `connected` mode
-against a GitHub tracker: it closes an issue and clears its state labels
-when the linked PR merges (or clears `in-review` if the PR is closed
-without merging). No agent in the squad merges PRs or performs this
-step — see `.github/workflows/issue-lifecycle.yml` for the resolution
-logic and label-name caveats.
+### Installing the issue-lifecycle workflow (connected mode)
+
+`.github/workflows/issue-lifecycle.yml` in *this* repository is what
+reconciles Agent Squad's own issues. It is not something a project using
+the squad in `connected` mode already has — connected-mode issues live
+in *your* project's repository, and this workflow only ships inside
+`agent-squad/.github/`, so nothing installs it there automatically. No
+agent in the squad writes CI configuration into your repository on your
+behalf: creating issues and labels via `gh` is a small, per-action,
+reviewable operation; committing a GitHub Actions workflow that runs on
+every PR close and can close issues is a standing change to your CI
+pipeline, and that decision is left to you.
+
+To get the same terminal-state reconciliation (closing an issue and
+clearing its state labels when the linked PR merges, clearing
+`in-review` when a PR closes without merging, and restoring `in-review`
+if the issue is later reopened) in your own project:
+
+1. Copy `.github/workflows/issue-lifecycle.yml` from this repository
+   into your project's `.github/workflows/`.
+2. Create the labels it expects to exist, if they don't already (Chisel
+   creates these for you on its first connected run in your project, so
+   if Chisel has already run there you can skip this step):
+   - `in-progress`
+   - `in-review`
+   - `needs-review` (or whatever you set `review_label` to in
+     `chisel-config.json` — see the note below)
+3. In your repository's Settings → Actions → General, set "Workflow
+   permissions" to "Read and write permissions". The workflow requests
+   `issues: write` in its own `permissions:` block, but that setting
+   can still force it read-only and cause 403s on label removal or
+   issue close.
+
+The three label names above (`in-progress`, `in-review`, `needs-review`)
+are hardcoded inside the workflow file, not read from
+`chisel-config.json` (that file lives in your vault, outside the repo,
+and is not available to a GitHub Actions runner). If you customize
+`state_labels` or `review_label` in your vault config, edit the
+`STATE_LABELS` list in your copy of the workflow to match, or the two
+will silently drift apart. No agent merges PRs or performs this
+reconciliation step itself — see the comments in
+`.github/workflows/issue-lifecycle.yml` for the full resolution logic
+and label-name caveats.
 
 When using the squad across trust domains (personal and work), use one
 vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a
