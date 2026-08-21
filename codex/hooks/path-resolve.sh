@@ -16,8 +16,26 @@
 # `--show-toplevel` returns a *linked worktree's own* directory when run
 # from inside one (e.g. a worktree Sidecar created) rather than the main
 # project's — see PATH_RESOLUTION.md for why that matters and how this
-# was verified. Falls back to `--show-toplevel` on git older than 2.31,
-# which predates `--path-format`.
+# was verified.
+#
+# `--path-format=absolute` requires git 2.31+. Git older than that does
+# NOT fail on the unrecognised flag — verified directly: `git rev-parse`
+# echoes any option it doesn't recognise back to stdout as a literal
+# line and keeps processing the rest of the command, exiting 0. So
+# `COMMON_DIR` would come back as a two-line string (the echoed flag
+# plus the real --git-common-dir output) instead of failing, and a bare
+# `-n "$COMMON_DIR"` check can't tell that apart from success. Instead
+# the output is validated: it must be exactly one line and an existing
+# directory. Falls back to `--show-toplevel` when that validation fails.
+#
+# Submodules: `--git-common-dir` from inside a submodule resolves to
+# `<super>/.git/modules/<name>`, not the submodule's own root, so the
+# common-dir path is skipped entirely when
+# `--show-superproject-working-tree` reports we're inside one, and
+# `--show-toplevel` (the submodule's own checkout root) is used
+# instead. This means PROJECT_ROOT for a submodule opened as a linked
+# worktree is not resolved correctly (an unsupported combination); plain
+# submodule checkouts resolve correctly.
 #
 # Output: three KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
@@ -30,10 +48,16 @@
 
 VAULT="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
 
-COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-if [ -n "$COMMON_DIR" ]; then
-  ROOT="$(dirname "$COMMON_DIR")"
-else
+ROOT=""
+SUPERPROJECT="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
+if [ -z "$SUPERPROJECT" ]; then
+  COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  LINE_COUNT="$(printf '%s\n' "$COMMON_DIR" | wc -l | tr -d ' ')"
+  if [ -n "$COMMON_DIR" ] && [ "$LINE_COUNT" = "1" ] && [ -d "$COMMON_DIR" ]; then
+    ROOT="$(dirname "$COMMON_DIR")"
+  fi
+fi
+if [ -z "$ROOT" ]; then
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 fi
 
