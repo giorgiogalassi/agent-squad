@@ -1,0 +1,40 @@
+name: Hook tests
+
+# Runs the executable harness for claude/hooks/worktree.sh
+# (scripts/test-worktree.sh) on both Linux and macOS runners.
+#
+# Dual-platform execution is load-bearing here, not general hygiene:
+# NEW-18a is a Linux-only defect (BSD `stat -f %m` returns the mtime;
+# GNU `stat -f %m` returns a mount point instead, since GNU `stat -f`
+# means "filesystem status", not "file status"). A harness that only
+# ever runs on macOS -- the author's own machine -- passes against the
+# broken implementation and reproduces exactly the blind spot that let
+# the bug ship twice. See scripts/test-worktree.sh's own header and
+# issue #110 for the full history.
+#
+# No dependencies are installed: git and coreutils/BSD stat already
+# ship on both ubuntu-latest and macos-latest GitHub-hosted runners.
+
+on:
+  pull_request:
+    paths:
+      - "claude/hooks/worktree.sh"
+      - "scripts/test-worktree.sh"
+      - ".github/workflows/hook-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-worktree:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run scripts/test-worktree.sh
+        run: bash scripts/test-worktree.sh

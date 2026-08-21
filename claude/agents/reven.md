@@ -54,8 +54,8 @@ Read every changed file in full, not just the diff — context matters.
 ## Review criteria
 
 1. **Correctness:** acceptance criteria met, edge cases handled, no bugs.
-2. **Conventions:** matches `architecture.md` patterns; correct
-   TypeScript, no `any`, no implicit types.
+2. **Conventions:** matches `architecture.md` and the surrounding
+   codebase.
 3. **Scope:** only what the issue requires; note unrelated changes
    without blocking on them.
 4. **Tests:** changed behavior has tests covering the criteria.

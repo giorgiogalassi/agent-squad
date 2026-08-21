@@ -71,17 +71,32 @@ worktree` itself relies on the common-dir/git-dir split internally), not
 a Sidecar-specific convention, so it's robust to worktrees created
 outside Sidecar's own naming convention too.
 
-`--path-format=absolute` requires git 2.31+ (released March 2021).
-`path-resolve.sh` falls back to plain `git rev-parse --show-toplevel` if
-the command fails, matching this project's existing "degrade gracefully,
-don't hard-fail on a missing capability" convention (see Seed's "if a
-file does not exist, continue without it").
+`--path-format=absolute` requires git 2.31+ (released March 2021). Git
+older than that does **not** fail on the unrecognised flag — verified
+directly: `git rev-parse` echoes any option it doesn't recognise back to
+stdout as a literal extra line and keeps processing the rest of the
+command, exiting 0. A naive `[ -n "$COMMON_DIR" ]` check can't tell that
+apart from success, so `path-resolve.sh` instead validates the output:
+it must be exactly one line and an existing directory. `path-resolve.sh`
+falls back to plain `git rev-parse --show-toplevel` when that validation
+fails, matching this project's existing "degrade gracefully, don't
+hard-fail on a missing capability" convention (see Seed's "if a file
+does not exist, continue without it").
+
+**Submodules.** `--git-common-dir` from inside a submodule resolves to
+`<super>/.git/modules/<name>`, not the submodule's own root — verified
+directly with a real submodule fixture. `path-resolve.sh` checks `git
+rev-parse --show-superproject-working-tree` first; when that's non-empty
+(we're inside a submodule) it skips the common-dir path entirely and
+uses `--show-toplevel` (the submodule's own checkout root) instead. This
+correctly resolves a plain submodule checkout, but a submodule opened as
+a linked worktree is not supported — an intersection this project does
+not attempt to resolve.
 
 ## The script
 
-`claude/hooks/path-resolve.sh` and `codex/hooks/path-resolve.sh` (kept
-identical apart from a comment) implement the algorithm above plus the
-`lore-config.json` lookup, and print three lines to stdout:
+`claude/hooks/path-resolve.sh` implements the algorithm above plus the
+`lore-config.json` lookup, and prints three lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
@@ -100,9 +115,8 @@ as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent's protocol now reads:
 
-> Run `~/.claude/hooks/path-resolve.sh` (Codex: `~/.codex/hooks/path-resolve.sh`)
-> and read its three output lines: `VAULT_PATH`, `PROJECT_ROOT`,
-> `DISPLAY_NAME`.
+> Run `~/.claude/hooks/path-resolve.sh` and read its three output lines:
+> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`.
 
 ## What does NOT change
 
@@ -132,23 +146,17 @@ every skill's first step calls it. It installs alongside `lore-orient.sh`
 somehow missing — see the hook's own comments):
 
 ```bash
-# Claude Code
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
-
-# Codex
-cp codex/hooks/path-resolve.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/path-resolve.sh
 ```
 
 See `README.md`'s Installation section for the full install sequence.
 
 ## Files carrying this fix
 
-Both trees, kept in parity (grep for `path-resolve.sh` to verify):
+Grep for `path-resolve.sh` to verify:
 
-- `claude/skills/{forge,archy,chisel,ralph,seed,sidecar}/SKILL.md` and
-  the `codex/` equivalents
-- `claude/agents/{cody,reven,lore}.md` and the `codex/` equivalents
-  (`.toml` for Codex)
-- `claude/hooks/lore-orient.sh` and `codex/hooks/lore-orient.sh`
-- `claude/hooks/path-resolve.sh` and `codex/hooks/path-resolve.sh` — the
-  actual implementation; everything else calls these two.
+- `claude/skills/{forge,archy,chisel,ralph,seed,sidecar}/SKILL.md`
+- `claude/agents/{cody,reven,lore}.md`
+- `claude/hooks/lore-orient.sh`
+- `claude/hooks/path-resolve.sh` — the actual implementation; everything
+  else calls it.

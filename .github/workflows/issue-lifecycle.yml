@@ -7,7 +7,9 @@ name: Issue lifecycle on PR close
 #
 # This workflow is the terminal step: it runs whenever a PR targeting
 # the default branch is closed (merged or not) and reconciles the
-# linked issue's state.
+# linked issue's state. It also runs when an issue is reopened, to
+# restore the state label(s) a non-merge PR close stripped (see #106
+# defect d).
 #
 # ---------------------------------------------------------------------
 # IMPORTANT COUPLING: the label names below (`in-progress`, `in-review`,
@@ -28,11 +30,19 @@ name: Issue lifecycle on PR close
 # permission" (read-only). If the first run fails with a 403 on label
 # removal or issue close, switch that setting to "Read and write
 # permissions". This workflow does not attempt to change it itself.
+#
+# IMPORTANT FORK PREREQUISITE (see #106 defect c): when the merged PR
+# came from a fork, GITHUB_TOKEN is forced read-only regardless of the
+# repo/workflow permissions settings above. Label and close calls in
+# that case return 403. Those failures are caught and logged rather
+# than failing the run -- see `withPermissionGuard` below.
 
 on:
   pull_request:
     types: [closed]
     branches: [main]
+  issues:
+    types: [reopened]
 
 permissions:
   contents: read
@@ -41,6 +51,7 @@ permissions:
 
 jobs:
   reconcile-issue:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve issue and reconcile labels/state
@@ -56,10 +67,33 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
+            // Runs an issues.* write call, swallowing failures caused by
+            // insufficient token permissions (403, or 401) instead of
+            // rethrowing and failing the whole run. This is what lets a
+            // merged fork PR -- which only gets a read-only token -- log
+            // a warning and move on rather than turn the run red.
+            // See #106 defect (c).
+            async function withPermissionGuard(description, fn) {
+              try {
+                await fn();
+              } catch (err) {
+                if (err.status === 403 || err.status === 401) {
+                  console.log(`Permission denied while ${description} (status ${err.status}). This is expected for merged fork PRs, which receive a read-only token. Logging and continuing.`);
+                  return;
+                }
+                throw err;
+              }
+            }
+
             // --- Step 1: resolve the issue this PR is for. ---------------
             // Priority order (see #94 constraint 3):
             //   a) GitHub's own closingIssuesReferences (e.g. "Closes #N"
-            //      in the PR body) -- most reliable when present.
+            //      in the PR body) -- most reliable when present, but only
+            //      when the reference resolves to THIS repository. A PR
+            //      body can say "Closes owner/other#5", which GitHub still
+            //      surfaces here; blindly using `number` would act on an
+            //      unrelated same-numbered issue in this repo. See #106
+            //      defect (b).
             //   b) The squad's branch-name convention: <issue-number>-<slug>
             //      (e.g. "57-forge-question-dependency-protocol").
             //   c) The PR title convention: "[#N] <type>: <subject>".
@@ -72,7 +106,10 @@ jobs:
                 repository(owner:$owner, name:$repo) {
                   pullRequest(number:$number) {
                     closingIssuesReferences(first: 10) {
-                      nodes { number }
+                      nodes {
+                        number
+                        repository { owner { login } name }
+                      }
                     }
                   }
                 }
@@ -80,8 +117,15 @@ jobs:
               { owner, repo, number: pr.number }
             );
             const linked = gqlResult.repository.pullRequest.closingIssuesReferences.nodes;
-            if (linked.length > 0) {
-              issueNumbers = linked.map((n) => n.number);
+            const localLinked = linked.filter(
+              (n) => n.repository.owner.login === owner && n.repository.name === repo
+            );
+            const crossRepoLinked = linked.filter((n) => !localLinked.includes(n));
+            if (crossRepoLinked.length > 0) {
+              console.log(`Ignoring ${crossRepoLinked.length} closing reference(s) that point to a different repository: ${crossRepoLinked.map((n) => `${n.repository.owner.login}/${n.repository.name}#${n.number}`).join(', ')}`);
+            }
+            if (localLinked.length > 0) {
+              issueNumbers = localLinked.map((n) => n.number);
             }
 
             if (issueNumbers.length === 0) {
@@ -107,49 +151,68 @@ jobs:
 
             // --- Step 2: reconcile each resolved issue. -------------------
             for (const issueNumber of issueNumbers) {
-              const issueData = await github.graphql(
-                `query($owner:String!, $repo:String!, $number:Int!) {
-                  repository(owner:$owner, name:$repo) {
-                    issue(number:$number) {
-                      state
-                      subIssuesSummary { total }
+              // `github.graphql` throws (rather than resolving with a null
+              // `issue` field) when the number does not exist in this
+              // repository at all -- e.g. a branch named `9999-experiment`
+              // that was never a real issue. Without this try/catch the
+              // throw propagates out of the loop and fails the whole run
+              // red instead of skipping. See #106 defect (a).
+              let issueData;
+              try {
+                issueData = await github.graphql(
+                  `query($owner:String!, $repo:String!, $number:Int!) {
+                    repository(owner:$owner, name:$repo) {
+                      issue(number:$number) {
+                        state
+                        subIssuesSummary { total }
+                      }
                     }
-                  }
-                }`,
-                { owner, repo, number: issueNumber }
-              );
+                  }`,
+                  { owner, repo, number: issueNumber }
+                );
+              } catch (err) {
+                console.log(`Issue #${issueNumber} could not be resolved (${err.message}). Skipping.`);
+                continue;
+              }
+
               const issue = issueData.repository.issue;
               if (!issue) {
                 console.log(`Issue #${issueNumber} not found. Skipping.`);
                 continue;
               }
 
-              // Never auto-close a container issue (has sub-issues).
-              // See #94 constraint 5.
+              // Never auto-close a container issue (has sub-issues), but
+              // still clear its state labels on merge -- only the
+              // auto-close is meant to be skipped for containers, not the
+              // label cleanup. See #106 defect (e).
               const isContainer = issue.subIssuesSummary && issue.subIssuesSummary.total > 0;
 
               if (pr.merged) {
-                if (isContainer) {
-                  console.log(`Issue #${issueNumber} has sub-issues (container). Skipping auto-close.`);
-                  continue;
-                }
-
                 // Clear all three state labels. `needs-review` is cleared
                 // here too (not left permanent): since it is applied
                 // uniformly at creation and never distinguished anything
                 // (see #94 defect 2), the decision comment on #94 treats
                 // it as noise to clear alongside the others once the
                 // issue is done.
-                await removeLabels(issueNumber, STATE_LABELS);
+                await withPermissionGuard(`removing state labels from issue #${issueNumber}`, () =>
+                  removeLabels(issueNumber, STATE_LABELS)
+                );
+
+                if (isContainer) {
+                  console.log(`Issue #${issueNumber} has sub-issues (container). State labels cleared; skipping auto-close.`);
+                  continue;
+                }
 
                 if (issue.state !== 'CLOSED') {
-                  await github.rest.issues.update({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                    state: 'closed',
-                    state_reason: 'completed',
-                  });
+                  await withPermissionGuard(`closing issue #${issueNumber}`, () =>
+                    github.rest.issues.update({
+                      owner,
+                      repo,
+                      issue_number: issueNumber,
+                      state: 'closed',
+                      state_reason: 'completed',
+                    })
+                  );
                   console.log(`Closed issue #${issueNumber} (PR #${pr.number} merged).`);
                 } else {
                   console.log(`Issue #${issueNumber} already closed. Idempotent no-op.`);
@@ -161,7 +224,9 @@ jobs:
                 // actionable state (it may still be legitimately
                 // `in-progress` if work continues, so that label is left
                 // alone).
-                await removeLabels(issueNumber, ['in-review']);
+                await withPermissionGuard(`clearing in-review on issue #${issueNumber}`, () =>
+                  removeLabels(issueNumber, ['in-review'])
+                );
                 console.log(`PR #${pr.number} closed without merging. Cleared in-review on issue #${issueNumber}, left open.`);
               }
             }
@@ -178,9 +243,52 @@ jobs:
                 } catch (err) {
                   // 404 means the label was never set (or already removed)
                   // -- idempotent no-op, not an error. See #94 constraint 5.
+                  // Permission errors (403/401) are handled by the caller's
+                  // withPermissionGuard, so they are allowed to propagate
+                  // up out of this function.
                   if (err.status !== 404) {
                     throw err;
                   }
                 }
               }
+            }
+
+  restore-labels-on-reopen:
+    if: github.event_name == 'issues' && github.event.action == 'reopened'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore state label stripped by a non-merge PR close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // A PR closed without merging clears `in-review` from its
+            // linked issue (see the `reconcile-issue` job above). If that
+            // issue is later reopened, nothing ever put `in-review` back
+            // -- reopening was a dead end for that label. Restore it here.
+            // See #106 defect (d).
+            //
+            // This is deliberately narrow: it restores `in-review`
+            // specifically, since that is the label the non-merge-close
+            // path strips. It does not attempt to guess whether
+            // `in-progress` should also be restored, since that label is
+            // never removed by the close path and reopening should not
+            // invent state this workflow never took away.
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: ['in-review'],
+              });
+              console.log(`Restored in-review on issue #${issueNumber} after reopen.`);
+            } catch (err) {
+              if (err.status === 403 || err.status === 401) {
+                console.log(`Permission denied while restoring in-review on issue #${issueNumber} (status ${err.status}). Logging and continuing.`);
+                return;
+              }
+              throw err;
             }
