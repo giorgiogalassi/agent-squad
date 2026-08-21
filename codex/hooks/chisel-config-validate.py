@@ -40,6 +40,7 @@ from pathlib import Path
 
 MODE_VALUES = {"detached", "connected"}
 STATE_LABEL_KEYS = {"in_progress", "in_review", "blocked"}
+PROJECT_KEYS = {"owner", "number"}
 
 SKILL_MD_RELATIVE = "codex/skills/chisel/SKILL.md"
 
@@ -260,6 +261,30 @@ def validate_config(data, schema):
                                     f"key under mode={mode}"
                                 ),
                                 "path": ("chisel", "state_labels", inner_key),
+                            }
+                        )
+        if key == "project":
+            project = chisel[key]
+            if not isinstance(project, dict):
+                violations.append(
+                    {
+                        "message": (
+                            f"chisel.project: expected an object, got "
+                            f"{type(project).__name__}"
+                        ),
+                        "path": None,
+                    }
+                )
+            else:
+                for inner_key in project.keys():
+                    if inner_key not in PROJECT_KEYS:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.project.{inner_key}: unknown "
+                                    f"key under mode={mode}"
+                                ),
+                                "path": ("chisel", "project", inner_key),
                             }
                         )
 

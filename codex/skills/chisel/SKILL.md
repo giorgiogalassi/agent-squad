@@ -47,6 +47,20 @@ valid configuration. If it does, read it silently and proceed. If it does not
 exist or is missing required fields, run the configuration flow before doing
 anything else.
 
+### Preflight (connected mode, before the first `gh` call)
+
+Run `which gh`, `gh auth status`, and confirm `gh --version` is at least
+2.95.0 (required for `--parent`/`--blocked-by`). If `chisel.project` is
+configured, extend this same preflight before creating anything:
+confirm the `project` scope is present in the `gh auth status`
+token-scopes line (if missing, tell the user to run
+`gh auth refresh -s project`), then confirm the project exists and is
+reachable with `gh project view <project.number> --owner <project.owner>`.
+On any preflight failure, print the error and stop before creating
+anything — never fail mid-batch leaving a partial issue graph or a
+project half populated. If creation still fails partway despite a clean
+preflight, list what was and wasn't created before stopping.
+
 ## Configuration flow
 
 Ask these questions one at a time:
@@ -68,9 +82,12 @@ and write:
 }
 ```
 
-If **connected**, ask only:
+If **connected**, ask, one at a time:
 1. "What label should I apply to issues waiting for your review?
    (e.g. 'needs-review'; reply 'none' for no label)"
+2. "Should new issues be added to a GitHub Project automatically? Give
+   the project owner (user or org login) and number, e.g. 'octocat 2'
+   (reply 'none' to skip)."
 
 Write `<vault>/projects/<project>/.squad/chisel-config.json`:
 
@@ -83,6 +100,10 @@ Write `<vault>/projects/<project>/.squad/chisel-config.json`:
       "in_progress": "in-progress",
       "in_review": "in-review",
       "blocked": "blocked"
+    },
+    "project": {
+      "owner": "octocat",
+      "number": 2
     }
   }
 }
@@ -91,6 +112,11 @@ Write `<vault>/projects/<project>/.squad/chisel-config.json`:
 `state_labels` is populated with the defaults shown above without asking
 the user — they are editable by hand afterward, the same way
 `review_label` already is.
+
+`project` is optional: omit the key entirely when the answer to
+question 2 is 'none'. It is only ever asked as part of this
+connected-mode configuration flow above — never as a stand-alone
+question when a config already exists and is simply being read.
 
 GitHub is the only connected-mode tracker; there is nothing left to
 select between, so the config carries no `tracker` field.
@@ -179,6 +205,21 @@ context, acceptance criteria, notes — no `Blocked by:` line (see
    `gh issue edit <number> --add-label "<review_label>"`. Skip this step
    entirely if `review_label` is `none`. The label must already exist in
    the target repo — Chisel does not create labels.
+5. **Add to the configured project**, if `chisel.project` is set, as a
+   separate step right after each issue (parent included) is created.
+   Capture the issue's URL from the `gh issue create` output and run:
+   ```bash
+   gh project item-add <project.number> --owner <project.owner> --url <issue-url>
+   ```
+   Do not use `gh issue create --project`: on gh 2.95.0 that flag takes
+   a project **title**, not the stable owner+number pair Chisel already
+   verified in preflight, and folding it into issue creation would mean
+   a project-side failure surfaces as a `gh issue create` failure,
+   muddying whether the issue itself was created. Keeping it a separate
+   call means an `item-add` failure never loses or retries the issue —
+   report it inline (`WARNING: could not add #<n> to project: <error>`)
+   and continue creating the rest of the batch. Skip this step entirely
+   when `chisel.project` is absent.
 
 Dependencies are native GitHub state (queryable via
 `gh issue view --json parent,blockedBy,blocking`), not text in the body.
@@ -306,6 +347,13 @@ For connected mode, include the parent when one was created:
   - #<issue-number> <title>
   - #<issue-number> <title>
   Review them on GitHub before invoking Ralph.
+
+If `chisel.project` is configured and any `item-add` call failed, list
+those failures immediately after the created-issues list — the issues
+still exist, they just aren't on the board yet:
+
+  Could not add to project (issue created, add manually):
+  - #<issue-number> <title> — <error>
 
 Nothing else after the summary.
 
