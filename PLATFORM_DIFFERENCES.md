@@ -177,8 +177,33 @@ and a live Codex run on this machine, which attempted to load user skills from
 | Handler | `type: command`, stdout injected as context | `type = "command"`, stdout injected as context |
 | Script | `~/.claude/hooks/lore-orient.sh` | `~/.codex/hooks/lore-orient.sh` |
 
-Same script content, same read-only orientation behavior. Only the
-config mechanism differs. Both inject stdout as session context.
+Same read-only orientation behavior, but the scripts are *not*
+identical, and that divergence is intentional: Claude Code's
+SessionStart hook expects structured stdout, so the claude script
+accumulates its output into a variable and emits it as JSON
+(`{"systemMessage": ..., "additionalContext": ...}`) via `jq -n`, with
+a manual-escaping fallback when `jq` is unavailable. Codex's
+SessionStart hook injects raw stdout as context directly, so the codex
+script just `echo`s plain text and has no JSON envelope and no `jq`
+dependency at all. Both still: resolve paths via `path-resolve.sh`
+without `eval`, read `status.md`/`progress.txt`/`session.log` the same
+way, and print the same underlying orientation content — only the
+output envelope differs, driven by what each host expects on stdout.
+
+### chisel-config-validate.py
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| `SKILL_MD_RELATIVE` | `claude/skills/chisel/SKILL.md` | `codex/skills/chisel/SKILL.md` |
+| `path-resolve.sh` location | `~/.claude/hooks/path-resolve.sh` | `~/.codex/hooks/path-resolve.sh` |
+
+Both copies otherwise run identical logic, including `find_skill_md`'s
+candidate order (`PROJECT_ROOT` first, then the checkout implied by the
+script's own location, then the installed Claude layout
+`~/.claude/skills/chisel/SKILL.md`, then the installed Codex layout
+`~/.agents/skills/chisel/SKILL.md`). Both files check both installed
+layouts regardless of which distribution they ship in, so the validator
+still finds the schema if only one of the two is installed on a machine.
 
 ---
 

@@ -142,7 +142,9 @@ context, acceptance criteria, notes; never a `Blocked by:` line
    `gh issue edit <blocker> --add-blocking <dependent>`.
 4. Apply `review_label` to every created issue (parent included) at
    creation (`--label`), or after the fact with `--add-label`. Skip
-   entirely when `none`.
+   entirely when `none`. Chisel is the only place that ever adds
+   `review_label` — see `LABEL_STATE_MACHINE.md` for where and why it
+   is removed later.
 5. If `chisel.project` is configured, add every created issue (parent
    included) to it as a separate step right after that issue is
    created — capture the issue's URL from the `gh issue create` output

@@ -127,6 +127,12 @@ Disavowed keys (connected mode):
 
 A config without a `mode` field is connected (backward compatibility).
 
+**Label verification.** On first connected run, verify every configured
+label (`review_label` unless `none`, and all three `state_labels`)
+exists in the target repo (`gh label list`); create missing ones with
+`gh label create` and say so — downstream label swaps by Cody and Ralph
+fail otherwise.
+
 Confirm with a single line:
 
   Configuration saved to <vault>/projects/<project>/.squad/chisel-config.json
