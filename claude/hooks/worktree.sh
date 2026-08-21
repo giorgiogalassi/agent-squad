@@ -259,14 +259,7 @@ LOCKFILES="package-lock.json npm-shrinkwrap.json yarn.lock pnpm-lock.yaml bun.lo
 # before trusting it; fall back to the GNU form otherwise. Prints
 # nothing and returns non-zero if neither produced a numeric value.
 mtime() {
-  out="$(stat -f %m -- "$1" 2>/dev/null)"
-  case "$out" in
-    ''|*[!0-9]*) out="$(stat -c %Y -- "$1" 2>/dev/null)" ;;
-  esac
-  case "$out" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  printf '%s\n' "$out"
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
 }
 
 # Populate one dependency tree (e.g. node_modules) at $1 (relative to
