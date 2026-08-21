@@ -190,6 +190,21 @@ without `eval`, read `status.md`/`progress.txt`/`session.log` the same
 way, and print the same underlying orientation content — only the
 output envelope differs, driven by what each host expects on stdout.
 
+### chisel-config-validate.py
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| `SKILL_MD_RELATIVE` | `claude/skills/chisel/SKILL.md` | `codex/skills/chisel/SKILL.md` |
+| `path-resolve.sh` location | `~/.claude/hooks/path-resolve.sh` | `~/.codex/hooks/path-resolve.sh` |
+
+Both copies otherwise run identical logic, including `find_skill_md`'s
+candidate order (`PROJECT_ROOT` first, then the checkout implied by the
+script's own location, then the installed Claude layout
+`~/.claude/skills/chisel/SKILL.md`, then the installed Codex layout
+`~/.agents/skills/chisel/SKILL.md`). Both files check both installed
+layouts regardless of which distribution they ship in, so the validator
+still finds the schema if only one of the two is installed on a machine.
+
 ---
 
 ## Verification Status
