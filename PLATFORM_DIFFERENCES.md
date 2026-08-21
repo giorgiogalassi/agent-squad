@@ -236,3 +236,24 @@ config mechanism differs. Both inject stdout as session context.
 If you change workflow semantics, mirror the change in both trees.
 
 If you change only platform mechanics, change only the relevant tree.
+
+---
+
+## Intentional Divergences (dated)
+
+### 2026-08-21 — claude/ prompt compression not yet mirrored to codex/
+
+As of this date, the 11 files under `claude/` (3 agents, 8 skills) were
+replaced with a compressed rewrite (~19,900 → ~11,700 words, -41%) that
+also absorbs ten previously-triaged behavior fixes into the prompt text:
+NEW-1, NEW-2, NEW-5, NEW-6, NEW-7, NEW-10, NEW-15, NEW-18a/b/c, NEW-19,
+NEW-21a/b. `codex/` was deliberately left untouched by explicit user
+decision — this is a one-sided change, not an oversight, and breaks the
+dual-distribution parity this file's Maintenance Rule otherwise requires.
+
+Until `codex/` receives the equivalent compression and fix set, none of
+the ten absorbed fixes should be considered resolved repo-wide: the
+`codex/` tree still carries the original defects the fixes address. A
+future mirroring pass into `codex/` is expected but not yet scheduled;
+no tracking issue was opened for it as part of this change (also by
+explicit user decision).
