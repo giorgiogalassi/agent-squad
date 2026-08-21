@@ -689,6 +689,62 @@ root, but evidence should reflect wherever the session actually is.
 
 ---
 
+### Iteration 24: Dropping the Codex Distribution
+
+Iteration 12 committed to two parallel trees — `claude/` and `codex/` —
+on the theory that they were "parallel implementations of the same
+workflow," not one canonical tree plus a thin port. In practice, parity
+was maintained by prose discipline (grep both trees, mirror every
+change) rather than anything mechanical, and it slipped. By the time
+this decision landed, the `codex/` tree carried real, unfixed defects
+tracked as separate issues — NEW-15 and NEW-18a/b/c in its Sidecar
+skill, a missing path-resolution protocol in its Reven skill (Iteration
+23's fix never reached it), and stale `tracker:` selectors in its Ralph
+skill. Those defects, and the issues describing them (#121–#128), were
+never implemented; they were deliberately sequenced last in a Ralph
+batch specifically so they could be cancelled outright if this decision
+landed, rather than fixed in a tree about to be deleted.
+
+On 2026-08-21 the repository owner decided to drop Codex as a supported
+platform and maintain Claude Code only (#148). The rationale: dual
+distribution never paid for itself. Codex was actually used far less
+than Claude Code, so its tree accumulated drift and unfixed defects
+between the rare sessions that touched it, while every Claude-side
+change still carried the tax of "did I remember to mirror this" —
+exactly the soft, easily-skipped-dependency failure mode Iteration 19
+rejected for in-session prose, just relocated to cross-session
+maintenance discipline instead of eliminated. A tree nobody was
+reliably keeping in parity was providing the appearance of portability
+without the substance of it.
+
+The fix is a straight deletion, worked outward from the tree itself:
+`codex/` is gone, along with every document that assumed its existence
+— `CLAUDE.md`'s "Squad Distribution" mandate to mirror every change and
+grep both trees, `README.md`'s Codex install instructions and repo-tree
+entries, `PATH_RESOLUTION.md`'s Codex hook paths and dual-tree file
+list, and the Codex install commands in `PLATFORM_DIFFERENCES.md`
+itself. `PLATFORM_DIFFERENCES.md` — whose entire subject was the
+claude-vs-codex comparison — is kept rather than deleted outright, but
+reduced to a short historical pointer at git history for anyone who
+needs the detailed comparison later; deleting it outright would have
+orphaned the several other documents (including this journal) that
+still reference it by name, and a pointer costs nothing to maintain
+going forward. This entry is that record: unlike `PLATFORM_DIFFERENCES.md`,
+this journal is never rewritten to erase what Iteration 12 through 23
+actually did — Codex existed, had a real design rationale, and is being
+retired deliberately, not quietly.
+
+> **Key decision:** parity discipline maintained by prose instruction
+> across two trees is the same category of soft dependency this journal
+> has rejected in every other context (shared skill preloads in
+> Iteration 19, a shared orient-skill in Iteration 23's addendum). The
+> fix there was routing mechanism through something the runtime cannot
+> skip. Here, with no shared runtime primitive available to make
+> cross-tree parity mechanical, the fix is to stop needing it: one tree,
+> reliably maintained, beats two trees where only one is.
+
+---
+
 ## 3. Final Architecture
 
 ### Squad Overview
@@ -919,7 +975,8 @@ The harness spectrum, cheapest first:
 
 ## 7. Skill and Agent Definitions
 
-Canonical definitions live in the platform-specific trees of this repository:
+Canonical definitions live in `claude/`, the sole distribution tree since
+Iteration 24 dropped the parallel Codex tree:
 
 ```
 claude/
@@ -938,26 +995,10 @@ claude/
     lore.md
   hooks/
     path-resolve.sh
-    lore-orient.sh
-    chisel-config-validate.py
-codex/
-  skills/
-    forge/SKILL.md
-    archy/SKILL.md
-    chisel/SKILL.md
-    seed/SKILL.md
-    ralph/SKILL.md
-    sidecar/SKILL.md
-    reven/SKILL.md
-    lore/SKILL.md
-  agents/
-    cody.toml
-    reven.toml
-    lore.toml
-  hooks/
-    path-resolve.sh
+    worktree.sh
     lore-orient.sh
     chisel-config-validate.py
 ```
 
-For exact format and behavior differences between the two trees, see `PLATFORM_DIFFERENCES.md`.
+`PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no
+longer documents an active second tree.

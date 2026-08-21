@@ -5,8 +5,8 @@ the squad's lifecycle — Chisel creates issues, Cody claims and opens
 PRs, Ralph orchestrates and escalates, and `.github/workflows/issue-lifecycle.yml`
 reconciles state on PR close. Four label families are in play, three
 configured under `chisel.state_labels` and one under `chisel.review_label`
-in `chisel-config.json` (see `claude/skills/chisel/SKILL.md` /
-`codex/skills/chisel/SKILL.md` for the config shape):
+in `chisel-config.json` (see `claude/skills/chisel/SKILL.md` for the
+config shape):
 
 - `review_label` (default `needs-review`) — connected mode only. Applied
   by Chisel to every issue (and its parent, if any) at creation. Means
@@ -103,28 +103,20 @@ deliberately avoided:
 
 ## Files carrying this state machine
 
-Both trees, kept in parity (grep for `add-label`/`remove-label` to
-verify claim, review-swap, and escalation commands match this table):
+Grep for `add-label`/`remove-label` to verify the claim, review-swap and
+escalation commands match this table:
 
-- `claude/skills/chisel/SKILL.md` / `codex/skills/chisel/SKILL.md` —
-  applies `review_label` at creation; verifies/creates all configured
-  labels on first connected run.
-- `claude/agents/cody.md` / `codex/agents/cody.toml` — claims
-  (`in_progress`); on PR-open, swaps `in_progress` → `in_review` and
-  removes `review_label` if configured.
-- `claude/skills/ralph/SKILL.md` / `codex/skills/ralph/SKILL.md` —
-  batch-discovery review gate (claude only — see note below); escalation
-  swaps `in_progress` → `blocked`, never leaving both attached at once.
-- `.github/workflows/issue-lifecycle.yml` — single shared file, not
-  duplicated per tree; clears all three `state_labels` plus
-  `review_label` on merge, and clears `in_review` on a non-merge PR
-  close.
+- `claude/skills/chisel/SKILL.md` — applies `review_label` at creation;
+  verifies/creates all configured labels on first connected run.
+- `claude/agents/cody.md` — claims (`in_progress`); on PR-open, swaps
+  `in_progress` → `in_review` and removes `review_label` if configured.
+- `claude/skills/ralph/SKILL.md` — batch-discovery review gate;
+  escalation swaps `in_progress` → `blocked`, never leaving both
+  attached at once.
+- `.github/workflows/issue-lifecycle.yml` — clears all three
+  `state_labels` plus `review_label` on merge, and clears `in_review` on
+  a non-merge PR close.
 
-**Known asymmetry, out of scope here:** `codex/skills/ralph/SKILL.md`'s
-batch discovery does not implement the `review_label` exclusion at all
-(claude's does — see `claude/skills/ralph/SKILL.md`'s "Review gate").
-That is a pre-existing gap distinct from the three defects this file's
-history (issue #114) fixes, and both codex defects it does fix (escalation
-leaving `in_progress` attached, and Chisel never verifying/creating
-configured labels) are contingent on the pending decision about whether
-the codex distribution is kept at all.
+The Codex distribution was dropped on 2026-08-21 (#148), so the
+asymmetries this file previously recorded between the two trees no
+longer exist — `claude/` is the only tree.
