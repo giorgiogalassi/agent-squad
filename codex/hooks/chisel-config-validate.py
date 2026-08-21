@@ -76,13 +76,25 @@ def fail(message):
 
 
 def find_skill_md(project_root):
-    """Locate the Chisel SKILL.md that is the schema's source of truth."""
+    """Locate the Chisel SKILL.md that is the schema's source of truth.
+
+    Checked in order: PROJECT_ROOT first, so a developer working inside a
+    checkout always validates against their working tree rather than a
+    possibly stale installed copy. Only after that do we fall back to the
+    checkout implied by this script's own location, then the documented
+    installed layouts (Claude and Codex), so the validator also works when
+    run outside any git repository with only the installed files present.
+    """
     candidates = []
     if project_root:
         candidates.append(Path(project_root) / SKILL_MD_RELATIVE)
     # Fall back to resolving relative to this script's own repo checkout,
     # in case PROJECT_ROOT points somewhere unexpected.
     candidates.append(Path(__file__).resolve().parents[2] / SKILL_MD_RELATIVE)
+    # Documented installed layouts (README): hook under ~/.claude/hooks or
+    # ~/.codex/hooks, skill under ~/.claude/skills or ~/.agents/skills.
+    candidates.append(Path.home() / ".claude" / "skills" / "chisel" / "SKILL.md")
+    candidates.append(Path.home() / ".agents" / "skills" / "chisel" / "SKILL.md")
 
     for candidate in candidates:
         if candidate.is_file():

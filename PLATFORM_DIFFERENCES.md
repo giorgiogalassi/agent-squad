@@ -180,6 +180,21 @@ and a live Codex run on this machine, which attempted to load user skills from
 Same script content, same read-only orientation behavior. Only the
 config mechanism differs. Both inject stdout as session context.
 
+### chisel-config-validate.py
+
+| Concern | Claude | Codex |
+|---------|--------|-------|
+| `SKILL_MD_RELATIVE` | `claude/skills/chisel/SKILL.md` | `codex/skills/chisel/SKILL.md` |
+| `path-resolve.sh` location | `~/.claude/hooks/path-resolve.sh` | `~/.codex/hooks/path-resolve.sh` |
+
+Both copies otherwise run identical logic, including `find_skill_md`'s
+candidate order (`PROJECT_ROOT` first, then the checkout implied by the
+script's own location, then the installed Claude layout
+`~/.claude/skills/chisel/SKILL.md`, then the installed Codex layout
+`~/.agents/skills/chisel/SKILL.md`). Both files check both installed
+layouts regardless of which distribution they ship in, so the validator
+still finds the schema if only one of the two is installed on a machine.
+
 ---
 
 ## Verification Status
