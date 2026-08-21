@@ -91,8 +91,11 @@ the session.
 
 1. **Discover** every `node_modules` in the source checkout (project
    root), without recursing into one once found — nested copies come
-   along with their parent. Prune both distributions' worktrees so
-   another worktree's deps are never mistaken for project deps:
+   along with their parent. Prune known worktree directories so another
+   worktree's deps are never mistaken for project deps. `.codex/worktrees`
+   is pruned too even though the Codex distribution was removed (#148):
+   a project that used Codex before the removal may still have a stale
+   `.codex/worktrees/` directory on disk, and pruning it costs nothing.
 
    ```bash
    find . \( -name .git -o -path './.claude/worktrees' -o -path './.codex/worktrees' \) -prune \

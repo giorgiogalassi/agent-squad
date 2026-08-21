@@ -22,8 +22,7 @@
 # Output: three KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
-# Install (Claude Code): copy to ~/.claude/hooks/path-resolve.sh, chmod +x.
-# Install (Codex): copy to ~/.codex/hooks/path-resolve.sh, chmod +x.
+# Install: copy to ~/.claude/hooks/path-resolve.sh, chmod +x.
 # Every skill and agent's "Path resolution protocol" runs this via Bash
 # as its first step instead of re-deriving the algorithm inline.
 

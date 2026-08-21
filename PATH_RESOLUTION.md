@@ -79,9 +79,8 @@ file does not exist, continue without it").
 
 ## The script
 
-`claude/hooks/path-resolve.sh` and `codex/hooks/path-resolve.sh` (kept
-identical apart from a comment) implement the algorithm above plus the
-`lore-config.json` lookup, and print three lines to stdout:
+`claude/hooks/path-resolve.sh` implements the algorithm above plus the
+`lore-config.json` lookup, and prints three lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
@@ -100,9 +99,8 @@ as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent's protocol now reads:
 
-> Run `~/.claude/hooks/path-resolve.sh` (Codex: `~/.codex/hooks/path-resolve.sh`)
-> and read its three output lines: `VAULT_PATH`, `PROJECT_ROOT`,
-> `DISPLAY_NAME`.
+> Run `~/.claude/hooks/path-resolve.sh` and read its three output lines:
+> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`.
 
 ## What does NOT change
 
@@ -132,23 +130,17 @@ every skill's first step calls it. It installs alongside `lore-orient.sh`
 somehow missing — see the hook's own comments):
 
 ```bash
-# Claude Code
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
-
-# Codex
-cp codex/hooks/path-resolve.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/path-resolve.sh
 ```
 
 See `README.md`'s Installation section for the full install sequence.
 
 ## Files carrying this fix
 
-Both trees, kept in parity (grep for `path-resolve.sh` to verify):
+Grep for `path-resolve.sh` to verify:
 
-- `claude/skills/{forge,archy,chisel,ralph,seed,sidecar}/SKILL.md` and
-  the `codex/` equivalents
-- `claude/agents/{cody,reven,lore}.md` and the `codex/` equivalents
-  (`.toml` for Codex)
-- `claude/hooks/lore-orient.sh` and `codex/hooks/lore-orient.sh`
-- `claude/hooks/path-resolve.sh` and `codex/hooks/path-resolve.sh` — the
-  actual implementation; everything else calls these two.
+- `claude/skills/{forge,archy,chisel,ralph,seed,sidecar}/SKILL.md`
+- `claude/agents/{cody,reven,lore}.md`
+- `claude/hooks/lore-orient.sh`
+- `claude/hooks/path-resolve.sh` — the actual implementation; everything
+  else calls it.

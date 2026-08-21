@@ -1,7 +1,6 @@
 # Agent Squad
 
-A personal multi-agent development workflow with separate Claude Code and
-Codex distributions.
+A personal multi-agent development workflow for Claude Code.
 
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
@@ -94,7 +93,8 @@ agent-squad/
                     chisel-config.json, which lives outside this repo.
   JOURNAL.md        Design journal: iterations, decisions, open points
   PLATFORM_DIFFERENCES.md
-                    Semantic and technical differences between trees
+                    Historical note: this repo maintained a parallel Codex
+                    distribution until #148 removed it.
   PATH_RESOLUTION.md
                     Algorithm and rationale behind path-resolve.sh. Docs
                     only — never read at runtime; the script is what runs.
@@ -116,23 +116,6 @@ agent-squad/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
       lore-orient.sh   SessionStart read-only orientation script (optional)
-  codex/
-    skills/
-      forge/        Codex skill variants
-      archy/
-      chisel/
-      seed/
-      ralph/
-      sidecar/      Worktree-backed iterative fix session on an existing branch
-      lore/         Wrapper delegating to the Lore agent
-    agents/
-      cody.toml     Codex custom agent
-      reven.toml    Codex custom agent
-      lore.toml     Codex custom agent for second-brain
-    hooks/
-      path-resolve.sh Shared vault/project-root resolution. Required —
-                       every skill and agent calls it as step one.
-      lore-orient.sh   SessionStart read-only orientation script (optional)
 ```
 
 ## Installation
@@ -141,26 +124,15 @@ Squad is installed globally. No files need to be added to any host project.
 After install, Squad is available in every project immediately.
 
 > Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
-> `archy`, `chisel`, `seed`, or `ralph` in `~/.claude/agents/`,
-> `~/.claude/skills/`, `~/.codex/agents/`, or `~/.agents/skills/`, they will
-> be overwritten by the commands below.
+> `archy`, `chisel`, `seed`, or `ralph` in `~/.claude/agents/` or
+> `~/.claude/skills/`, they will be overwritten by the commands below.
 
 ```bash
-# Claude Code
 cp -r claude/agents/* ~/.claude/agents/
 cp -r claude/skills/* ~/.claude/skills/
 mkdir -p ~/.claude/hooks
 cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
 cp claude/hooks/chisel-config-validate.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/chisel-config-validate.py
-```
-
-```bash
-# Codex
-cp -r codex/agents/* ~/.codex/agents/
-cp -r codex/skills/* ~/.agents/skills/
-mkdir -p ~/.codex/hooks
-cp codex/hooks/path-resolve.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/path-resolve.sh
-cp codex/hooks/chisel-config-validate.py ~/.codex/hooks/ && chmod +x ~/.codex/hooks/chisel-config-validate.py
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
@@ -170,7 +142,7 @@ resolve which vault project it's talking to.
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
 every `chisel-config.json` in the vault against the schema documented in
-that platform's own `chisel/SKILL.md`. It is not invoked automatically
+`claude/skills/chisel/SKILL.md`. It is not invoked automatically
 by any skill or agent — run it manually (`--prune` to remove flagged
 keys; read-only otherwise).
 
@@ -181,25 +153,12 @@ session, so you do not have to ask. It never writes and never blocks. It
 also calls `path-resolve.sh`, so install that first if you haven't.
 
 ```bash
-# Claude Code
 cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-orient.sh
 ```
 Then add to `~/.claude/settings.json`:
 ```json
 { "hooks": { "SessionStart": [ { "hooks": [
   { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
-```
-
-```bash
-# Codex
-cp codex/hooks/lore-orient.sh ~/.codex/hooks/ && chmod +x ~/.codex/hooks/lore-orient.sh
-```
-Then add to `~/.codex/config.toml`:
-```toml
-[[hooks.SessionStart]]
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = '"$HOME/.codex/hooks/lore-orient.sh"'
 ```
 
 The hook orients (read-only); `/lore start` still handles the write and
@@ -210,22 +169,15 @@ setup path (first-time naming, migration, session-log reset).
 Once installed, open any project and run:
 
 ```bash
-# Claude Code
 /lore start          # or skip if the SessionStart hook is installed (it auto-orients)
 /seed
 /clear
 /forge <your idea>
 ```
 
-```text
-# Codex
-Invoke the lore agent with `lore start`, then use the `seed` skill, then
-start a fresh session if desired, then use the `forge` skill.
-```
-
 ## Vault setup
 
-On the first `/lore start` (Claude Code) or `lore start` (Codex), Lore creates the vault automatically.
+On the first `/lore start`, Lore creates the vault automatically.
 
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
@@ -247,8 +199,7 @@ files are written to the project itself.
 ## Workflow data
 
 All runtime files live in the vault, not in your project directory.
-`.squad/` is tool-agnostic and works with both Claude Code and Codex.
-Agent Squad does not modify `AGENTS.md` or `CLAUDE.md`; skills and agents read
+Agent Squad does not modify `CLAUDE.md`; skills and agents read
 vault files directly when needed.
 
 ```text
@@ -273,10 +224,9 @@ vault files directly when needed.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
-git worktree (`.claude/worktrees/<branch>/` on the Claude side,
-`.codex/worktrees/<branch>/` on Codex) lives inside the host project
-itself, git-ignored there, and is removed when the session closes. The
-Claude path matches Claude Code's own native worktree convention
+git worktree (`.claude/worktrees/<branch>/`) lives inside the host project
+itself, git-ignored there, and is removed when the session closes. This
+path matches Claude Code's own native worktree convention
 (`--worktree`, `EnterWorktree`, subagent `isolation: worktree`), so it
 lands exactly where most Claude Code users already expect worktree
 content, and often where their `.gitignore` already excludes. It is a
@@ -309,11 +259,6 @@ vault per domain via `SECOND_BRAIN_PATH`, for example with direnv or a
 shell profile on the work machine. Do not share a vault between domains:
 INDEX.md and preferences are written on every session and would carry
 work context into a personal remote.
-
-## Claude vs Codex
-
-See `PLATFORM_DIFFERENCES.md` for the exact semantic and technical
-differences between the `claude/` and `codex/` sets.
 
 ## Further reading
 

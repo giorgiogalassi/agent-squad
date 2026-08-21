@@ -6,14 +6,13 @@ and is a soft, easily-skipped dependency, which is exactly what got
 removed in Iteration 19. Path resolution is the one deliberate exception,
 and it resolves the tension by being a *script*, not a shared skill or
 doc: every skill and agent's "Path resolution protocol" runs
-`~/.claude/hooks/path-resolve.sh` (Codex: `~/.codex/hooks/path-resolve.sh`)
-via Bash as its first step and reads three output lines
-(`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`) — an ordinary, unambiguous
-shell call each skill already makes dozens of per session, not a new
-category of soft dependency. `PATH_RESOLUTION.md` at the repo root
-documents the algorithm and its rationale but is itself never read at
-runtime by anything — only `path-resolve.sh` is. If you change how
-project-root resolution works, edit `path-resolve.sh` (both trees), then
+`~/.claude/hooks/path-resolve.sh` via Bash as its first step and reads
+three output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`) — an
+ordinary, unambiguous shell call each skill already makes dozens of per
+session, not a new category of soft dependency. `PATH_RESOLUTION.md` at
+the repo root documents the algorithm and its rationale but is itself
+never read at runtime by anything — only `path-resolve.sh` is. If you
+change how project-root resolution works, edit `path-resolve.sh`, then
 update `PATH_RESOLUTION.md` to match.
 
 Second-brain: a SessionStart hook auto-orients (read-only); run
@@ -26,21 +25,11 @@ Only load squad and second-brain context for active project work.
 Skip both for quick questions, one-off tasks, or anything unrelated
 to the current project.
 
-## Squad Distribution
-
-This project maintains parallel distributions in `claude/` AND `codex/`.
-Any change to skills, agents, or workflows must be applied to both
-directories unless the task is explicitly scoped to one distribution.
-
-Before declaring a refactor or update complete, always grep both `claude/`
-and `codex/` to confirm the change has been mirrored. Leaving one
-distribution out of sync is a defect.
-
 ## Scope Boundaries
 
 - **Global promotion**: When promoting items to global config (e.g.,
-  `~/.claude/` or `~/.codex/`), only promote squad-specific items such as
-  skills and agents. Never promote `CLAUDE.md`, workspace-level config, or
+  `~/.claude/`), only promote squad-specific items such as skills and
+  agents. Never promote `CLAUDE.md`, workspace-level config, or
   project-specific files unless the user explicitly requests it.
 - **No workspace artifacts**: Do not create symlinks or `.squad/`
   directories inside the host project workspace. Vault-based state lives
