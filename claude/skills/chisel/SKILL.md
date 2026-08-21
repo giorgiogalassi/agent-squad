@@ -33,10 +33,16 @@ configuration flow first.
 
 **Preflight (connected mode, before the first `gh` call).** `which gh`;
 `gh auth status`; `gh --version` ≥ 2.95.0 (required for
-`--parent`/`--blocked-by`). On failure print the error and stop before
-creating anything — never fail mid-batch leaving a partial issue graph.
-If creation still fails partway, list what was and wasn't created before
-stopping.
+`--parent`/`--blocked-by`). If `chisel.project` is configured, extend
+this same preflight before creating anything: confirm the `project`
+scope is present in the `gh auth status` token-scopes line (if missing,
+tell the user to run `gh auth refresh -s project`), then confirm the
+project exists and is reachable with
+`gh project view <project.number> --owner <project.owner>`. On any
+preflight failure print the error and stop before creating anything —
+never fail mid-batch leaving a partial issue graph or a project half
+populated. If creation still fails partway, list what was and wasn't
+created before stopping.
 
 ## Configuration flow
 
@@ -52,9 +58,14 @@ your own; defaults to SQ)" and write:
 { "chisel": { "mode": "detached", "issue_prefix": "SQ" } }
 ```
 
-**Connected** → ask "What label should I apply to issues waiting for
-your review? (e.g. 'needs-review'; reply 'none' for no label)" and
-write:
+**Connected** → ask, one at a time:
+1. "What label should I apply to issues waiting for your review?
+   (e.g. 'needs-review'; reply 'none' for no label)"
+2. "Should new issues be added to a GitHub Project automatically? Give
+   the project owner (user or org login) and number, e.g. 'octocat 2'
+   (reply 'none' to skip)."
+
+and write:
 
 ```json
 {
@@ -65,13 +76,20 @@ write:
       "in_progress": "in-progress",
       "in_review": "in-review",
       "blocked": "blocked"
+    },
+    "project": {
+      "owner": "octocat",
+      "number": 2
     }
   }
 }
 ```
 
 `state_labels` gets these defaults without asking (hand-editable, like
-`review_label`). GitHub is the only connected tracker — the config
+`review_label`). `project` is optional — omit the key entirely when the
+answer is 'none'; only prompted for as part of this connected-mode
+configuration flow above, never as a stand-alone question when a config
+already exists. GitHub is the only connected tracker — the config
 carries no `tracker` field; if found, report `tracker` by name as
 disavowed, not as a generic unknown key. A config without `mode` is
 connected (backward compatibility).
@@ -127,6 +145,22 @@ context, acceptance criteria, notes; never a `Blocked by:` line
    entirely when `none`. Chisel is the only place that ever adds
    `review_label` — see `LABEL_STATE_MACHINE.md` for where and why it
    is removed later.
+5. If `chisel.project` is configured, add every created issue (parent
+   included) to it as a separate step right after that issue is
+   created — capture the issue's URL from the `gh issue create` output
+   and run:
+   ```bash
+   gh project item-add <project.number> --owner <project.owner> --url <issue-url>
+   ```
+   Do not use `gh issue create --project`: on gh 2.95.0 that flag takes
+   a project **title**, not the stable owner+number pair Chisel already
+   verified in preflight, and folding it into issue creation would mean
+   a project-side failure surfaces as a `gh issue create` failure —
+   muddying whether the issue itself was created. Keeping it separate
+   means an `item-add` failure never loses or retries the issue: report
+   it inline (`WARNING: could not add #<n> to project: <error>`) and
+   continue creating the rest of the batch. Skip this step entirely
+   when `chisel.project` is absent.
 
 ## Issue creation (detached mode)
 
@@ -219,6 +253,13 @@ Connected (parent included when created):
   - #<parent-number> <parent title> (parent)
   - #<issue-number> <title>
   Review them on GitHub before invoking /ralph.
+
+If `chisel.project` is configured and any `item-add` call failed, list
+those failures immediately after the created-issues list — the issues
+still exist, they just aren't on the board yet:
+
+  Could not add to project (issue created, add manually):
+  - #<issue-number> <title> — <error>
 
 ## Rules
 
