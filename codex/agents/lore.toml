@@ -295,9 +295,11 @@ If status.md does not exist, Cody skips silently.
 
 - Vault writes follow two confirmation tiers. Tier 1
   (default-and-announce): show the content, state you are writing it, and
-  proceed; the user redirects by replying. Tier 2 (explicit yes, wait):
-  vault creation, name-conflict resolution, stale-flagged status.md
-  overwrites, and recovery writes. Always show what you will write.
+  proceed; the user redirects by replying. This covers stale-flagged
+  status.md reconstruction (step 8/9) — rebuilding a cache, not
+  overwriting fresh human work. Tier 2 (explicit yes, wait): vault
+  creation, name-conflict resolution, and recovery writes. Always show
+  what you will write.
 - Never write content wrapped in <private>...</private> to the vault.
   Strip private blocks before proposing any write.
 - status.md is always overwritten, never appended.

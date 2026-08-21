@@ -170,7 +170,7 @@ Once the dependency graph is built (from either path above):
 
 If a cycle is detected:
 
-  Cycle detected: GG-12 -> GG-14 -> GG-12
+  Cycle detected: #12 -> #14 -> #12
   Cannot resolve. Fix the dependency manually on GitHub (connected mode)
   or in the batch file (detached mode). Stop.
 
@@ -451,7 +451,7 @@ counter, per 2b):
   human eyes.
 - Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
   to the handoff file
-- Print: `GG-12 failed after 3 attempts. Escalating to you.`
+- Print: `#12 failed after 3 attempts. Escalating to you.`
 - Continue with the next issue. Do not stop the entire batch.
 
 ### 2d. Adopt native GitHub stacks (`tracker: github` only, best-effort)
@@ -478,6 +478,9 @@ gh stack init <branch-1> <branch-2> ... <branch-N>
   branch/PR, skip `gh stack init` for that chain entirely and log one
   line: `Skipped stack adoption for chain <lead-issue-id>: <issue-id> escalated`.
   Do not attempt a partial stack.
+- The `gh-stack` CLI extension is required and is neither installed
+  automatically nor checked by the Preflight checks section above — the
+  first sign of a missing extension is the failed run here.
 - If `gh stack init` itself fails for any reason (extension missing,
   incompatible branch topology, or any other error), log one line:
   `gh stack init failed for chain <lead-issue-id>: <error>` and continue
@@ -499,9 +502,9 @@ include the handoff file in the report:
   Ralph complete.
   Handoff:   <path to handoff file> (detached mode only — replay into your tracker)
   Resolved:  N issues
-  In review: [GG-12, GG-14, ...]
-  Escalated: [GG-13] -- <reason>
-  Skipped:   [GG-15] -- blocked by escalated issue
+  In review: [#12, #14, ...]
+  Escalated: [#13] -- <reason>
+  Skipped:   [#15] -- blocked by escalated issue
 
 ## Context between iterations
 
@@ -509,9 +512,9 @@ Each Cody invocation is a fresh context. Persist knowledge in
 `<vault>/projects/<project>/.squad/progress.txt`. Append one line per
 resolved issue. Format:
 
-  [GG-12] 2026-04-08 committed on GG-12-reservations. Added table.
-  [GG-13] 2026-04-08 resolved. PR: #41 (chain GG-12-reservations).
-           Covers GG-12, GG-13. Migration in db/migrations/.
+  [#12] 2026-04-08 committed on 12-reservations. Added table.
+  [#13] 2026-04-08 resolved. PR: #41 (chain 12-reservations).
+           Covers #12, #13. Migration in db/migrations/.
 
 ## Rules
 

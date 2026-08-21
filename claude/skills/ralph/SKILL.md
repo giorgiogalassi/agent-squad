@@ -260,8 +260,10 @@ in bottom-to-top topological order:
 gh stack init <branch-1> ... <branch-N>
 ```
 
-Requires the `gh-stack` CLI extension; if it is missing or the command
-fails for any reason, log one line
+Requires the `gh-stack` CLI extension. It is not installed
+automatically and not checked by the Preflight section above — the
+first sign of a missing extension is the failed run here. If it is
+missing or the command fails for any reason, log one line
 (`gh stack init failed for chain <lead-id>: <error>`) and continue — no
 retry, no effect on recorded results. If any issue in the chain
 escalated, skip the chain entirely and log
