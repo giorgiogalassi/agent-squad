@@ -46,8 +46,7 @@ Read every changed file in full, not just the diff.
 
 Review criteria:
 1. Correctness: acceptance criteria met, edge cases handled, no regressions.
-2. Conventions: matches `architecture.md` patterns; correct TypeScript,
-   no `any`, no implicit types.
+2. Conventions: matches `architecture.md` and the surrounding codebase.
 3. Scope: PR changes only what the issue requires.
 4. Tests: changed behavior has adequate coverage when the project supports it.
 5. Security: no secrets, no unsafe shortcuts, no disabled checks.
