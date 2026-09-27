@@ -942,6 +942,75 @@ The harness spectrum, cheapest first:
 
 > Sentry makes sense only after Ralph is well-established. Without Sentry, you are still the orchestrator for routing decisions.
 
+### Iteration 25: Challenge — Stress-Testing Before Committing
+
+Both Forge and ad-hoc conversation had a gap: a plan or a piece of
+writing could go straight from proposed to acted-on with no adversarial
+pass in between. Reven reviews code after it is written; nothing
+pushed back on an idea before that. Challenge (#153) fills that gap as
+a pair — a stateless `challenge` agent plus a thin `/challenge` skill —
+rather than a single component, for the same reason Lore's start
+skill is a thin wrapper around the Lore agent: an agent invoked via
+`Task` returns a structured result the caller can act on, while loading
+another skill's prose into context has no return-value semantics (the
+soft-dependency failure mode Iteration 19 already rejected). The skill's
+one job is assembling a self-contained brief — Challenge cannot see the
+caller's conversation, so nothing not put in the brief exists for it.
+
+**Explicit-ask triggers only.** `/challenge` fires on a direct ask —
+"challenge this," "push back," "poke holes," "what do you think about
+it?" — never automatically on every plan or draft. An agent that
+second-guesses unprompted is friction, not judgment; the user decides
+when a proposal is worth stress-testing.
+
+**Challenge first, hold.** When a request bundles a change with a
+challenge ask ("split slides 4–6 into two sections, what do you
+think?"), the skill shows the challenge result and waits rather than
+applying the change first and asking after the fact — a challenge that
+runs after the fact cannot change the outcome. An explicit override
+("just do it") ends the discussion without re-litigating.
+
+**Web search only for checkable claims.** Challenge searches when a
+point rests on a checkable factual or empirical claim (a statistic, a
+library's documented behavior, precedent), and cites a source for every
+claim it treats as evidence. It never searches to challenge a
+taste-based point — tone, structure, wording — since those have no
+factual answer to look up; an empty or contradictory search is reported
+as unverified, never quietly dropped or fabricated.
+
+**Model and scope.** Challenge runs on `opus`, consistent with Archy's
+similarly judgment-heavy architectural analysis, not the `sonnet` used
+by execution-focused agents like Cody. It is deliberately scoped as
+non-development-agnostic: the brief format (proposal, goal, excerpt)
+and the four angles (counter-arguments, probing questions, pre-mortem,
+alternatives) apply identically to a code change, a PRD, or a speech
+draft, so the same agent serves `/challenge` standalone and Forge's
+challenge step without a code-specific mode.
+
+**Stateless by design.** Like the `challenge` agent it wraps, the skill
+never runs `path-resolve.sh` and never touches the vault or `.squad/`
+state — every invocation is a self-contained brief in, a structured
+verdict out, with no record kept that a challenge happened. This keeps
+`/challenge` usable from any directory, squad project or not, with
+nothing to reconcile or clean up later. A challenge history is a
+deliberate future addition if a project ever wants one, not an implicit
+side effect of this design.
+
+**Forge integration.** `/forge` now always runs a challenge step before
+a draft scope closes — via `Task`, never by loading the skill's prose —
+with no `--no-challenge` escape hatch: the cost of one extra round is
+small next to the cost of chiseling a weak plan into issues. The
+challenge round is an ordinary Forge round for every other purpose
+(the user can still revise scope in response to it); it is a required
+gate, not a follow-up.
+
+> **Key decision:** an agent-plus-thin-skill pair for return-value
+> semantics, explicit-ask triggers rather than automatic invocation,
+> challenge-first-and-hold over challenge-after-applying, web search
+> reserved for checkable claims only, `opus` for judgment quality, and
+> full statelessness so the same agent serves standalone use and the
+> Forge gate without a vault dependency.
+
 ### Add Qugh when:
 - Reven approves PRs that later turn out to have behavioral bugs that tests did not catch.
 - You are spending more than 15 minutes per PR on manual testing of UI or API behavior.
@@ -989,10 +1058,12 @@ claude/
     sidecar/SKILL.md
     reven/SKILL.md
     lore/SKILL.md
+    challenge/SKILL.md
   agents/
     cody.md
     reven.md
     lore.md
+    challenge.md
   hooks/
     path-resolve.sh
     worktree.sh
