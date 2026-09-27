@@ -99,9 +99,26 @@ entirely (snapshot, not history):
 Generated: [YYYY-MM-DD]
 ## Module map      (max 15 entries)
 ## Entry points    (main files, paths only)
+## Shared kit      (max 15 entries)
 ## Active patterns (max 10 items)
 ## Known constraints (max 8 items)
 ```
+
+**Shared kit** is the section implementers reach for most and the one a
+module map cannot replace. Name the components, helpers and tokens a new
+feature is expected to reuse rather than reinvent — the dialog, the
+search input, the avatar, the list/pagination widgets, the empty state,
+the button, the design tokens and where they are defined — each with its
+selector or import name, not just its directory. Include the traps that
+are invisible from a call site: a component whose selector is an
+attribute rather than an element, a slot that content must be tagged
+with to project into, a token namespace where an unknown name fails
+silently instead of erroring.
+
+Getting this section right is what stops every implementer from
+rediscovering the same twenty facts. Derive it from the project's own
+UI library and its existing feature code, never from a framework's
+generic documentation.
 
 ## Phase 5: ensure vault .squad directories
 
