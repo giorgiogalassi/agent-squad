@@ -1084,14 +1084,15 @@ dropped to `open_questions`.
 **Neither step counts toward the round cap.** The four-round cap and
 the session log's `rounds` count still mean exactly what they meant
 before — the number of `AskUserQuestion` calls — so a fully-specified
-input can still close with `rounds: 0` even with both challenge steps
-run in full.
+input can still close with `rounds: 0` even with the opening challenge
+run in full (the delta check has nothing to examine then and is
+skipped).
 
 **Trivial-input skip, defined concretely.** Iteration 25 had no
 skip at all; this iteration adds one, scoped narrowly: the input names a
-single file or module, introduces no new dependency, and requires no
-design or architectural decision, with every required slot's value
-already stated or trivially inferable from the input. All three must
+single file or module, introduces no new dependency, requires no
+design or architectural decision, and every required slot's value is
+already stated or trivially inferable from the input. All four must
 hold, not just a subjective "looks simple" — a wrong call is visible in
 `notes` (`challenge skipped: trivial input`) so the reader can run
 `/challenge` manually if the skip turns out to have been wrong. There is

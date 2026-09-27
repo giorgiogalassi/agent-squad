@@ -41,10 +41,9 @@ later session.
 
 Right after reading `architecture.md`, check whether the raw input is
 **fully specified and obviously low complexity**: it names a single file
-or module, introduces no new dependency, and requires no design or
-architectural decision — every required slot's value is already stated
-or trivially inferable from the input itself, with nothing left for a
-challenge to usefully probe. When all three hold, skip both the opening
+or module, introduces no new dependency, requires no design or
+architectural decision, and every required slot's value is already
+stated or trivially inferable from the input itself. When all four hold, skip both the opening
 challenge and the delta check for this session, and write
 `challenge skipped: trivial input` to `notes`. There is still no
 user-facing `--no-challenge` flag — this is a heuristic check Forge
@@ -88,7 +87,10 @@ time — it is never asked as a bolted-on extra question of its own.
 This attaching step happens *inside* step 3 of the question dependency
 protocol, after roots are identified — held findings never change which
 questions are roots, they only enrich a root's options once it is
-already a root. See "Question dependency protocol" below for how roots
+already a root. The one exception is a `reconsider` part: it adds a
+direction question, which is then treated like any other question by
+the protocol — it is a root in the first round, and every question
+whose premise depends on that direction is held until it is answered. See "Question dependency protocol" below for how roots
 are found; this section only governs what happens to a root once one is
 identified.
 
@@ -96,9 +98,9 @@ identified.
 2–4 options each): when a round's fully-enriched root list would exceed
 four questions, order them `reconsider`-derived questions first, then
 findings that would change a required slot, then the rest; take the
-first four. The overflow is not dropped — it remains a root and is
-asked in the next round like any other held-back root under the
-dependency protocol's four-roots-per-call rule.
+first four. The overflow is not dropped — it is re-derived in the next
+round like any other root beyond the four-per-call limit (and asked
+there unless the answers made it moot).
 
 **Recording overrides.** If the user picks an option other than the one
 the challenge recommended, record the override and the challenge's
@@ -291,6 +293,7 @@ timestamps via `date "+%Y-%m-%d %H:%M"`):
 Neither the opening challenge nor the delta check calls
 `AskUserQuestion`, so neither counts toward `rounds` or the four-round
 cap — a fully-specified input can still close with `rounds: 0` even
-though both challenge steps ran. Always written, trace or not — it is
+though the opening challenge ran (the delta check is skipped in that
+case: there are no decisions beyond the input). Always written, trace or not — it is
 the durable evidence the dependency protocol ran, and what makes a
 regression to single-batch questioning visible from the log alone.
