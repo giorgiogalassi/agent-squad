@@ -1040,6 +1040,81 @@ gate, not a follow-up.
 
 > Do not activate Agent Teams until both Qugh and Reven are individually calibrated.
 
+### Iteration 26: Moving the Forge Challenge to the Opening
+
+A real session (visual-check planning) showed the pre-close challenge
+step from Iteration 25 landing too late: it overturned two round-1
+answers and burned the last of the four rounds, leaving eight findings
+stranded in `open_questions` with no round left to resolve them through
+questions. A standalone `/challenge` run on the same raw idea, done
+before any rounds started, had already surfaced nearly all the same
+material. The value of a challenge is in shaping the questions the user
+answers, not in critiquing a plan that is already fully baked; putting
+it before the rounds lets its findings become part of the questions
+themselves instead of a rushed extra round competing for a shrinking
+cap.
+
+**Opening challenge, plus a lighter delta check.** `/forge` now
+delegates to the `challenge` agent twice instead of once: an **opening
+challenge** on the user's raw input, right after reading
+`architecture.md` and before any question is asked, and a **delta
+check** right before the close gate, scoped only to decisions made
+during the rounds that were not in the raw input (for example, a
+credentials-in-vault issue that only surfaces once the rounds get
+there). The delta check is deliberately thin — no `AskUserQuestion`
+call, no reopening of an earlier answer — because by that point the
+user has already committed to those decisions; its findings go straight
+to `open_questions` and `notes` for Cody or Archy to see.
+
+**Findings attach to questions, they don't become questions.** The
+opening challenge's findings are held, keyed to the question they bear
+on, and fold into that question's options once the question dependency
+protocol determines it is a root — never asked as separate bolted-on
+questions of their own. This keeps the two mechanisms cleanly layered:
+the dependency protocol still decides which questions are roots; the
+challenge only decides what a root's options look like once it is one.
+A `reconsider` verdict is the one exception that creates a question
+outright — a proposal judged not to serve the goal needs a root
+question on its direction regardless of what else is open. Ordering
+under `AskUserQuestion`'s four-question limit puts `reconsider`-derived
+questions first, then required-slot-changing findings, then the rest;
+overflow waits for the next round as an ordinary root rather than being
+dropped to `open_questions`.
+
+**Neither step counts toward the round cap.** The four-round cap and
+the session log's `rounds` count still mean exactly what they meant
+before — the number of `AskUserQuestion` calls — so a fully-specified
+input can still close with `rounds: 0` even with both challenge steps
+run in full.
+
+**Trivial-input skip, defined concretely.** Iteration 25 had no
+skip at all; this iteration adds one, scoped narrowly: the input names a
+single file or module, introduces no new dependency, and requires no
+design or architectural decision, with every required slot's value
+already stated or trivially inferable from the input. All three must
+hold, not just a subjective "looks simple" — a wrong call is visible in
+`notes` (`challenge skipped: trivial input`) so the reader can run
+`/challenge` manually if the skip turns out to have been wrong. There is
+still no user-facing `--no-challenge` flag; this is Forge's own
+heuristic, not an escape hatch the user can reach for.
+
+**`--trace` prints attachment, not just rounds and holds.** Since
+`--trace` already exists to make the dependency protocol's reasoning
+visible rather than silently correct, extending it to print which held
+finding attached to which question (`attached: <finding> → <question>`)
+was the consistent choice — the alternative (leaving attachment
+invisible even in trace mode) would have made the one part of this
+change most likely to look wrong in practice the one part `--trace`
+couldn't show.
+
+> **Key decision:** challenge moves from a single pre-close gate to an
+> opening challenge plus a lighter pre-close delta check; challenge
+> findings attach to questions rather than spawning their own; a
+> concretely-worded trivial-input skip replaces the old
+> always-runs-no-matter-what stance; and `--trace` reports finding
+> attachment for the same transparency reason it already reports rounds
+> and holds.
+
 ---
 
 ## 7. Skill and Agent Definitions

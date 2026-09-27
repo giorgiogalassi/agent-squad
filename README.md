@@ -114,9 +114,17 @@ The `challenge` agent is stateless: it never touches the vault or
 `.squad/` state, so it works identically inside a squad project or in
 any other directory, with no history kept of that a challenge happened.
 
-`/forge` also invokes the same agent as a required step before a draft
-scope closes — there is no flag to skip it — so plans get the same
-scrutiny before they are chiseled into issues.
+`/forge` also invokes the same agent, twice: an **opening challenge** on
+the raw input right after reading `architecture.md`, before any question
+is asked, and a lighter **delta check** on just the decisions made
+during the rounds, right before the close gate. Findings from the
+opening challenge attach to whichever question they bear on once that
+question becomes a root, rather than being asked as separate bolted-on
+questions; the delta check never reopens a round — its findings go
+straight to `open_questions` and `notes`. Fully-specified, low-complexity
+input skips both steps (noted in `notes`) — there is still no
+user-facing flag to skip it otherwise, so plans get the same scrutiny
+before they are chiseled into issues.
 
 ## What's in this repo
 

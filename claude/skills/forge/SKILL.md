@@ -37,6 +37,82 @@ it — never ask about things it already establishes.
 debugging aid only, never persisted to any config, never carried into a
 later session.
 
+## Trivial-input skip
+
+Right after reading `architecture.md`, check whether the raw input is
+**fully specified and obviously low complexity**: it names a single file
+or module, introduces no new dependency, and requires no design or
+architectural decision — every required slot's value is already stated
+or trivially inferable from the input itself, with nothing left for a
+challenge to usefully probe. When all three hold, skip both the opening
+challenge and the delta check for this session, and write
+`challenge skipped: trivial input` to `notes`. There is still no
+user-facing `--no-challenge` flag — this is a heuristic check Forge
+makes itself, not an opt-out. If the input turns out not to be as
+trivial as it looked, the skip is visible in `notes` so the reader can
+run `/challenge` manually.
+
+## Opening challenge
+
+When the input is not skipped above, delegate to the `challenge` agent
+(via `Task`) once, right after the trivial-input check and before the
+first dependency pass — before any question is asked. Forge never loads
+the challenge skill's prose itself; it only invokes the agent with a
+self-contained brief:
+
+- **Proposal** ← the user's raw input, quoted verbatim.
+- **Goal** ← the underlying goal behind the input, labeled `(inferred)`
+  and quoting the user's own wording wherever any exists.
+- **Excerpt** ← the relevant `architecture.md` section(s), plus any
+  files or issues the input names.
+
+If the agent fails or times out, proceed and note
+`opening challenge unavailable` in `notes` — this never blocks the
+session from starting. If it reports the brief is too vague to
+challenge meaningfully, proceed and note that too.
+
+**Findings are held, keyed to the question they bear on**, not asked
+immediately and not discarded. A `reconsider` verdict on any part always
+yields a root question on that part's direction in the first
+dependency-pass round. Other findings (counter-arguments, probing
+questions, pre-mortem points, alternatives) sit held until the question
+dependency protocol below produces a root question they bear on — at
+that point the finding's substance folds into that question's options,
+and if the finding supports one option over the others, that option
+becomes the recommended one, carrying the challenge's one-line reasoning
+and cited source (if any). A finding that never matches any question
+(no root ever asks about what it addresses) goes to `open_questions`
+(if it names an open question) or `notes` (if it's editorial) at close
+time — it is never asked as a bolted-on extra question of its own.
+
+This attaching step happens *inside* step 3 of the question dependency
+protocol, after roots are identified — held findings never change which
+questions are roots, they only enrich a root's options once it is
+already a root. See "Question dependency protocol" below for how roots
+are found; this section only governs what happens to a root once one is
+identified.
+
+**Ordering under `AskUserQuestion`'s limits** (max 4 questions per call,
+2–4 options each): when a round's fully-enriched root list would exceed
+four questions, order them `reconsider`-derived questions first, then
+findings that would change a required slot, then the rest; take the
+first four. The overflow is not dropped — it remains a root and is
+asked in the next round like any other held-back root under the
+dependency protocol's four-roots-per-call rule.
+
+**Recording overrides.** If the user picks an option other than the one
+the challenge recommended, record the override and the challenge's
+original reasoning in `notes` — never re-argue the point afterward.
+
+**Trace mode**, when opening challenge findings attach to a root
+question this round, prints one additional line per attachment
+alongside the existing round/held lines:
+
+  attached: <finding> → <question>
+
+so `--trace` shows not just which questions are asked and which are
+held, but why a question's options look the way they do.
+
 ## Question dependency protocol
 
 Questions are asked in rounds; run this pass before every round:
@@ -90,45 +166,35 @@ look thorough; never compress a genuinely dependent question into an
 earlier round to look efficient. Vague answers get a focused follow-up;
 thorough answers are not re-asked.
 
-## Challenge step
+## Delta check
 
-Once every required slot is filled and before the close gate, delegate
-to the `challenge` agent (via `Task`) to stress-test the draft scope.
-This always runs — there is no `--no-challenge` flag: the cost of one
-delegation is low next to the cost of closing on an unexamined plan, so
-skipping it would need a signal stronger than "this looks trivial."
-Forge never loads the challenge skill's prose itself; it only invokes
-the agent with a self-contained brief.
+Once every required slot is filled and a fresh dependency pass comes
+back empty, and before the close gate, delegate to the `challenge`
+agent (via `Task`) one more time — unless the trivial-input skip
+applied for this session (see above), or the session made no decisions
+beyond the raw input (e.g. it is closing with `rounds: 0`), in which
+case skip the delta check and note `delta check skipped: no decisions
+beyond input`.
 
-Map the draft onto the brief's three fields exactly:
+Scope the brief to **only what the rounds decided that was not already
+in the raw input** — the delta, not the whole draft:
 
-- **Proposal** ← the draft `scope`.
-- **Goal** ← the user's underlying goal for this change (not the
-  mechanics of `scope` restated — what they're actually trying to
-  achieve).
-- **Excerpt** ← `acceptance_criteria` plus `constraints`.
+- **Proposal** ← the decisions made during the rounds that go beyond the
+  raw input (e.g. a chosen approach among options, a constraint the user
+  added).
+- **Goal** ← the same underlying goal used in the opening challenge.
+- **Excerpt** ← the draft's `acceptance_criteria` and `constraints` as
+  they now stand, so the agent can judge the delta in context.
 
-Read the agent's verdict(s) per part:
+If the agent fails or times out, proceed and note
+`delta check unavailable` in `notes` — this never blocks the close.
 
-- **`go` with nothing material** (no counter-argument, probing question,
-  or pre-mortem point that would change a required slot or the plan's
-  direction): close normally, no extra round.
-- **Material findings, round cap not yet reached**: surface them to the
-  user in **one** `AskUserQuestion` call — this round counts toward the
-  four-round cap and toward the session log's `rounds` count like any
-  other. Whatever remains unresolved after the user answers goes into
-  `open_questions` in the output YAML.
-- **Material findings, round cap already exhausted**: still run the
-  challenge (it always runs), but do not ask an extra round — write the
-  findings straight to `open_questions` (and `notes` for anything more
-  editorial than a question) so Cody or Archy sees them. The cap is
-  never exceeded to accommodate this step.
-
-The challenge round is an ordinary round for every other purpose: after
-it resolves (or is skipped for cap reasons), re-run the dependency pass
-in "Question dependency protocol" from scratch before the close gate —
-its answers can fill, reword, or invalidate required slots exactly like
-any other round's.
+Unlike the opening challenge, the delta check never opens a new round:
+its findings go straight to `open_questions` (anything phrased as a
+question) and `notes` (anything more editorial) in the output YAML.
+There is no `AskUserQuestion` call here and no reopening of any earlier
+answer — a round-1 decision stands even if the delta check would have
+argued for something else at the time.
 
 ## Closing the session
 
@@ -138,9 +204,10 @@ Close when all hold:
 2. **A fresh dependency pass comes back empty** — actually re-run steps
    1–2; do not assume. If it surfaces a question, ask the next round
    (cap permitting) and the close waits.
-3. **The challenge step has run** (see "Challenge step" above) and any
-   material findings from it are either resolved or filed under
-   `open_questions`.
+3. **The opening challenge and delta check have been attempted** (or
+   skipped as trivial input / no post-input decisions — see "Trivial-
+   input skip" and "Delta check" above), so an agent failure on either
+   step never blocks closing.
 
 **Round cap: four.** At the cap, close regardless: carry unresolved
 questions into `open_questions`; leave any unfilled required slot
@@ -221,6 +288,9 @@ timestamps via `date "+%Y-%m-%d %H:%M"`):
   [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>, rounds: <N>
 
 `rounds` = number of `AskUserQuestion` calls actually made (0 is legal).
-Always written, trace or not — it is the durable evidence the dependency
-protocol ran, and what makes a regression to single-batch questioning
-visible from the log alone.
+Neither the opening challenge nor the delta check calls
+`AskUserQuestion`, so neither counts toward `rounds` or the four-round
+cap — a fully-specified input can still close with `rounds: 0` even
+though both challenge steps ran. Always written, trace or not — it is
+the durable evidence the dependency protocol ran, and what makes a
+regression to single-batch questioning visible from the log alone.
