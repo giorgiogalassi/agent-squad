@@ -5,7 +5,7 @@ description: >
   before writing any code. Triggers: /forge, "let's plan", "I want to build",
   "I need to add", "help me think through". Do NOT trigger on direct code
   requests like "write a function" or "fix this bug".
-allowed-tools: Read, Glob, Write, Bash, AskUserQuestion
+allowed-tools: Read, Glob, Write, Bash, AskUserQuestion, Task
 ---
 
 # Forge
@@ -90,14 +90,57 @@ look thorough; never compress a genuinely dependent question into an
 earlier round to look efficient. Vague answers get a focused follow-up;
 thorough answers are not re-asked.
 
+## Challenge step
+
+Once every required slot is filled and before the close gate, delegate
+to the `challenge` agent (via `Task`) to stress-test the draft scope.
+This always runs — there is no `--no-challenge` flag: the cost of one
+delegation is low next to the cost of closing on an unexamined plan, so
+skipping it would need a signal stronger than "this looks trivial."
+Forge never loads the challenge skill's prose itself; it only invokes
+the agent with a self-contained brief.
+
+Map the draft onto the brief's three fields exactly:
+
+- **Proposal** ← the draft `scope`.
+- **Goal** ← the user's underlying goal for this change (not the
+  mechanics of `scope` restated — what they're actually trying to
+  achieve).
+- **Excerpt** ← `acceptance_criteria` plus `constraints`.
+
+Read the agent's verdict(s) per part:
+
+- **`go` with nothing material** (no counter-argument, probing question,
+  or pre-mortem point that would change a required slot or the plan's
+  direction): close normally, no extra round.
+- **Material findings, round cap not yet reached**: surface them to the
+  user in **one** `AskUserQuestion` call — this round counts toward the
+  four-round cap and toward the session log's `rounds` count like any
+  other. Whatever remains unresolved after the user answers goes into
+  `open_questions` in the output YAML.
+- **Material findings, round cap already exhausted**: still run the
+  challenge (it always runs), but do not ask an extra round — write the
+  findings straight to `open_questions` (and `notes` for anything more
+  editorial than a question) so Cody or Archy sees them. The cap is
+  never exceeded to accommodate this step.
+
+The challenge round is an ordinary round for every other purpose: after
+it resolves (or is skipped for cap reasons), re-run the dependency pass
+in "Question dependency protocol" from scratch before the close gate —
+its answers can fill, reword, or invalidate required slots exactly like
+any other round's.
+
 ## Closing the session
 
-Close when both hold:
+Close when all hold:
 
 1. Every required slot is filled.
 2. **A fresh dependency pass comes back empty** — actually re-run steps
    1–2; do not assume. If it surfaces a question, ask the next round
    (cap permitting) and the close waits.
+3. **The challenge step has run** (see "Challenge step" above) and any
+   material findings from it are either resolved or filed under
+   `open_questions`.
 
 **Round cap: four.** At the cap, close regardless: carry unresolved
 questions into `open_questions`; leave any unfilled required slot
