@@ -7,6 +7,10 @@ Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 Sidecar -> Cody, on an existing branch, once (a companion entry point for
 iterative fixes — see "Sidecar" below)
 
+/challenge -> Challenge, standalone, any time (stress-tests a proposal or
+piece of writing before you commit to it — see "Challenge" below); also
+runs as a required step inside `/forge` before a draft scope closes.
+
 ## MVP Flow
 
 ```text
@@ -80,6 +84,40 @@ not one per fix, since issues at this stage are small enough that a
 session-level summary is enough. Reven is never invoked automatically;
 run it yourself when you're ready for another review pass.
 
+## Challenge: stress-testing a proposal before you commit to it
+
+`/challenge` invokes the `challenge` agent to poke holes in an idea,
+plan, or piece of writing before you act on it: counter-arguments,
+probing questions, a pre-mortem, at least one alternative, and a
+`go` / `revise` / `reconsider` verdict per part. It only fires on an
+explicit ask — "challenge this," "push back," "poke holes," "what do
+you think about it?" — never automatically on every plan or draft.
+
+It is not scoped to code or planning documents. The brief format
+(proposal, goal, excerpt) and the four angles apply just as well to
+non-development work — a speech draft, a pricing pitch, an email you're
+about to send — as to a technical plan. Use it standalone any time,
+in or out of a squad project:
+
+```
+/challenge   the pricing section of this proposal — does the discount
+             structure actually make sense for the audience?
+```
+
+If the request bundles a change alongside the challenge ask ("split
+slides 4–6 into two sections, what do you think?"), the skill shows the
+challenge result and holds the change until you respond — agree,
+revise, pick an alternative, or explicitly override ("just do it"),
+which applies the change without re-arguing the points.
+
+The `challenge` agent is stateless: it never touches the vault or
+`.squad/` state, so it works identically inside a squad project or in
+any other directory, with no history kept of that a challenge happened.
+
+`/forge` also invokes the same agent as a required step before a draft
+scope closes — there is no flag to skip it — so plans get the same
+scrutiny before they are chiseled into issues.
+
 ## What's in this repo
 
 ```text
@@ -113,10 +151,12 @@ agent-squad/
       sidecar/      Worktree-backed iterative fix session on an existing branch
       reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
+      challenge/    Slash-command wrapper delegating to the Challenge agent
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
+      challenge.md  Stateless agent that stress-tests a proposal or draft
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
@@ -135,8 +175,8 @@ Squad is installed globally. No files need to be added to any host project.
 After install, Squad is available in every project immediately.
 
 > Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
-> `archy`, `chisel`, `seed`, or `ralph` in `~/.claude/agents/` or
-> `~/.claude/skills/`, they will be overwritten by the commands below.
+> `archy`, `chisel`, `seed`, `ralph`, or `challenge` in `~/.claude/agents/`
+> or `~/.claude/skills/`, they will be overwritten by the commands below.
 
 ```bash
 cp -r claude/agents/* ~/.claude/agents/
