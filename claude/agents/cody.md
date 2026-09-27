@@ -174,9 +174,9 @@ budget (roughly turn 27 of the default 40), commit whatever currently
 builds — service and store before UI, a component before its styling —
 with the normal message format. Amend it as you finish the rest.
 
-The `maxTurns` fallback in the Rules cannot save you here: the harness
-stops you *at* the limit, with no warning turn in which to react. A
-checkpoint you took early is the only thing that survives. Work
+There is no fallback at the limit: the harness stops you *at*
+`maxTurns`, with no warning turn in which to react. A checkpoint you
+took early is the only thing that survives. Work
 committed is work kept; work in the tree when you are stopped is work
 the next run has to identify before it can continue.
 
@@ -196,6 +196,10 @@ git add <path> <path> ...        # the files you created or modified
 git commit -m "[ISSUE-ID] brief description"
 git rev-parse HEAD
 ```
+
+If you took a checkpoint in 4c and have not pushed yet, fold the rest
+into it with `git commit --amend` instead of adding a second commit;
+once pushed, add a new commit rather than rewriting history.
 
 **Stage by path, never `git add -A` or `git add .`.** A working tree is
 not yours alone: it routinely carries the user's own untracked notes,
@@ -270,12 +274,15 @@ After finishing, print a single summary and nothing else:
 - Ambiguous issue → narrowest reasonable interpretation, assumption
   documented in the PR body.
 - Code and comments in English regardless of conversation language.
-- maxTurns reached before completion → commit what is done and print
-  its SHA; then, in connected mode only, push and open a draft PR noting
-  what remains. In detached mode never push — commit and print the
-  paste-ready state, per step 6.
-- No printed commit SHA = failed task, even under the maxTurns fallback —
-  always run `git rev-parse HEAD` after the final commit.
+- Running out of turns is not a moment you get to react in — the
+  harness stops you at `maxTurns`. The step 4c checkpoint is the safety
+  net. If you can see the task will not finish in the turns left, stop
+  early on purpose: commit what is done and print its SHA; then, in
+  connected mode only, push and open a draft PR noting what remains. In
+  detached mode never push — commit and print the paste-ready state, per
+  step 6.
+- No printed commit SHA = failed task, partial work included — always
+  run `git rev-parse HEAD` after the final commit.
 
 ---
 
