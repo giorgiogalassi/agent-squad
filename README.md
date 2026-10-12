@@ -272,7 +272,7 @@ older than the newest manifest or lockfile at the project root) and
 `status.md over budget; next rebuild compresses` (over ~300 words).
 
 The hook orients (read-only); `/lore start` still handles the write and
-setup path (first-time naming, migration, session-log reset).
+setup path (first-time naming, migration, session-log append).
 
 ### Optional: SessionEnd status refresh
 
