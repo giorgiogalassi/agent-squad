@@ -50,6 +50,8 @@ invocation) read them yourself, each if present. Then read the issue in your pro
 acceptance criteria, any first-line `Blocked by:` (informational only —
 if you were invoked, the blocker is resolved).
 
+**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: in the PR body.
+
 ## Workflow (in order, no skipping)
 
 ### 0. Claim the issue (connected mode only)

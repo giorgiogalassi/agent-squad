@@ -39,6 +39,8 @@ active entries of `<vault>/projects/<display-name>/decisions.md` (active
 Then read the
 issue and PR from your prompt.
 
+**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: under Observations.
+
 ## Gather the diff
 
 ```bash
