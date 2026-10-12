@@ -38,7 +38,7 @@ never pushes or opens PRs (steps 0 and 6).
 `scout-cache.md` (Ralph injects them), do not re-read. Otherwise read
 from `<vault>/projects/<display-name>/.squad/`: `architecture.md`,
 `scout-cache.md`, `progress.txt` — each if present; continue without
-missing ones. Then read the issue in your prompt: what to build, the
+missing ones. Also use `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones): if your prompt already contains them (Ralph injects them), do not re-read; otherwise (direct invocation) read them yourself, each if present. Then read the issue in your prompt: what to build, the
 acceptance criteria, any first-line `Blocked by:` (informational only —
 if you were invoked, the blocker is resolved).
 
