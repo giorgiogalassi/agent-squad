@@ -23,6 +23,7 @@ if [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       VAULT_PATH) VAULT="$_value" ;;
       PROJECT_ROOT) ROOT="$_value" ;;
       DISPLAY_NAME) DISPLAY="$_value" ;;
+      SQUAD_DIR) SQUAD_DIR="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else
@@ -78,6 +79,9 @@ fi
 [ -z "$DISPLAY" ] && DISPLAY="$(basename "$ROOT")"
 
 PROJ="$VAULT/projects/$DISPLAY"
+# Project knowledge location (vault or repo); progress.txt and session.log
+# stay under the vault .squad/ regardless.
+[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$PROJ/.squad"
 STATUS="$PROJ/status.md"
 
 NL=$'\n'

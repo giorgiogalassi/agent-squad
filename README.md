@@ -285,6 +285,12 @@ On the first `/lore start`, Lore creates the vault automatically.
   by default).
 - Per-project `.squad/` state lives inside the vault at
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
+- Optional per-project `context` in `lore-config.json`
+  (`"context": {"<project root>": "repo"}`, default `vault`) moves project
+  knowledge (`architecture.md`, `scout-cache.md`, `forge/`, `prd/`) to
+  `<project>/.squad/` so it is versioned with the code. `path-resolve.sh`
+  reports the choice as `SQUAD_DIR`. Status, decisions, preferences and
+  session log stay in the vault. Never both; keep client repos on `vault`.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
@@ -293,7 +299,7 @@ On the first `/lore start`, Lore creates the vault automatically.
   before starting work when using multiple machines.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
-files are written to the project itself.
+files are written to the project itself — unless configured `context: repo`.
 
 ## Workflow data
 

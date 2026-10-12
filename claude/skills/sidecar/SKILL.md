@@ -25,8 +25,13 @@ not route sidecar requests through Ralph.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Git and source files use CWD — except in the fix
 loop, where Cody's working directory is the worktree.
