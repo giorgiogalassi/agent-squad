@@ -137,7 +137,7 @@ else.
 ## Phase 5: ensure .squad directories
 
 ```bash
-mkdir -p <SQUAD_DIR>/forge <SQUAD_DIR>/prd/archive
+mkdir -p <SQUAD_DIR>/forge/archive <SQUAD_DIR>/prd/archive
 ```
 
 Idempotent; lets Forge and Chisel write on first run.
@@ -349,7 +349,7 @@ reflecting only what actually changed):
     <SQUAD_DIR>/scout-cache.md
     <vault>/projects/<name>/golden.md (only if absent)
   Directories ensured:
-    <SQUAD_DIR>/forge/
+    <SQUAD_DIR>/forge/archive/
     <SQUAD_DIR>/prd/archive/
   Second-brain (if new project):
     <vault>/projects/<name>/status.md

@@ -107,7 +107,7 @@ Grep for `add-label`/`remove-label` to verify the claim, review-swap and
 escalation commands match this table:
 
 - `claude/skills/chisel/SKILL.md` — applies `review_label` at creation;
-  verifies/creates all configured labels on first connected run.
+  verifies/creates all configured labels on every connected run.
 - `claude/agents/cody.md` — claims (`in_progress`); on PR-open, swaps
   `in_progress` → `in_review` and removes `review_label` if configured.
 - `claude/skills/ralph/SKILL.md` — batch-discovery review gate;

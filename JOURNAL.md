@@ -787,7 +787,7 @@ retired deliberately, not quietly.
 
 | File | Purpose |
 |------|---------|
-| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
+| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Archived to `forge/archive/` once Chisel consumes it. |
 | `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow. Written by Seed. Read by Forge, Archy, Cody, Reven; data flow is Lex's future input. |
 | `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
 | `<vault>/projects/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |

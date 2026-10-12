@@ -354,6 +354,7 @@ vault files directly when needed.
       scout-cache.md               written by Seed
       decisions.md                 maintained by you
       forge/output.yaml            written by Forge
+      forge/archive/               archived by Chisel
       prd/current.md               written by Archy
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
@@ -409,7 +410,7 @@ if the issue is later reopened) in your own project:
 1. Copy `.github/workflows/issue-lifecycle.yml` from this repository
    into your project's `.github/workflows/`.
 2. Create the labels it expects to exist, if they don't already (Chisel
-   creates these for you on its first connected run in your project, so
+   creates these for you on every connected run in your project, so
    if Chisel has already run there you can skip this step):
    - `in-progress`
    - `in-review`
