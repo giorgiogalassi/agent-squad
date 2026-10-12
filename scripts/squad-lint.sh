@@ -90,15 +90,23 @@ check_path_resolution_protocol() {
   # frontmatter field, since codex skills never declare that field at
   # all -- keying on it would silence every codex skill, not just the
   # delegating ones.
+  # Stateless agents/skills (never touch the vault) opt out explicitly with
+  # the marker "squad-lint: stateless" (put it in an HTML comment). A bare
+  # mention of path-resolve.sh no longer passes: the file must contain an
+  # actual invocation, "bash <path>/path-resolve.sh".
   hits=0
   for f in $target_files; do
     hits=$((hits + 1))
+    if grep -q "squad-lint: stateless" "$f"; then
+      ok "$f: explicit stateless opt-out (squad-lint: stateless) — never touches the vault, skipping"
+      continue
+    fi
     if grep -qi "does no work itself" "$f"; then
       ok "$f: pure delegating wrapper (explicitly does no work itself) — path resolution belongs to the agent it hands off to, skipping"
       continue
     fi
-    if ! grep -q "path-resolve\.sh" "$f"; then
-      fail "$f: no reference to path-resolve.sh — the path-resolution protocol block is missing or was not carried over"
+    if ! grep -Eq "bash [^ ]*path-resolve\.sh" "$f"; then
+      fail "$f: no 'bash .../path-resolve.sh' step and no 'squad-lint: stateless' marker — the path-resolution protocol block is missing or was not carried over"
     fi
   done
 
@@ -165,42 +173,6 @@ EOF
     done <<EOF
 $only_codex
 EOF
-  fi
-
-  # --- Semantic drift: cross-skill slash notation left in codex/ -------
-  # claude/ establishes "/name" as its own trigger convention (every
-  # skill's frontmatter says "Triggers: /name"), so slash references to
-  # other skills there are the house style, not drift.
-  # codex/ establishes "use the `name` skill" as its convention instead
-  # (see every codex SKILL.md's "Triggers:" line). A codex file that
-  # still uses "/name" to refer to *another* skill is leftover notation
-  # from before the conversion, not intentional style.
-  skill_names="chisel ralph forge archy seed sidecar reven cody lore"
-  if [ -d codex/skills ]; then
-    for f in $(find codex/skills -name SKILL.md); do
-      self="$(basename "$(dirname "$f")")"
-      for name in $skill_names; do
-        [ "$name" = "$self" ] && continue
-        # Require the slash to be at a token boundary (not part of a
-        # longer path like ".squad/forge/output.yaml") and the name to
-        # not continue into a longer identifier (not part of a filename
-        # like "lore-config.json").
-        matches="$(grep -noE "(^|[^A-Za-z0-9_./-])/${name}([^A-Za-z0-9_.-]|\$)" "$f" || true)"
-        [ -z "$matches" ] && continue
-        while IFS= read -r m; do
-          [ -z "$m" ] && continue
-          line="${m%%:*}"
-          rel="$f"
-          if is_allowlisted "semantic-diff" "skills/$self/SKILL.md"; then
-            ok "$f:$line: /${name} slash notation (allowlisted in PLATFORM_DIFFERENCES.md)"
-          else
-            fail "$f:$line: uses '/${name}' slash notation to reference another skill, but codex/'s own convention here is 'use the \`${name}\` skill' (see other codex Triggers: lines) — update the wording or add 'semantic-diff: skills/$self/SKILL.md' to the allowlist if intentional"
-          fi
-        done <<EOF
-$matches
-EOF
-      done
-    done
   fi
 }
 

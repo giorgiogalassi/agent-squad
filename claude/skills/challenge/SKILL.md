@@ -19,6 +19,7 @@ has responded to the result.
 
 ## On start
 
+<!-- squad-lint: stateless -->
 **Path resolution: not applicable.** This skill never runs
 `~/.claude/hooks/path-resolve.sh` and never reads or writes `.squad/`
 state or touches the vault — see "Statelessness" below. It works
