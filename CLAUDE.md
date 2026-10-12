@@ -16,10 +16,11 @@ change how project-root resolution works, edit `path-resolve.sh`, then
 update `PATH_RESOLUTION.md` to match.
 
 Second-brain: a SessionStart hook auto-orients (read-only); run
-`/lore start` when beginning real squad work to handle naming,
-migration, and session-log reset. Command surface: `lore start`,
+`/seed` on first contact with a project (it records the vault mapping);
+the hooks handle each session. `/lore start` is setup and repair only
+(legacy `.squad/` migration, re-mapping a moved checkout). Command surface: `lore start`,
 `lore prefer`, `lore recover` (no session-end command — status
-reconstructs on the next start).
+is rebuilt by the SessionEnd hook or `lore recover`).
 
 Only load squad and second-brain context for active project work.
 Skip both for quick questions, one-off tasks, or anything unrelated

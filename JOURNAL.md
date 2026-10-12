@@ -818,7 +818,7 @@ retired deliberately, not quietly.
 | **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
 | **Sidecar** | Companion entry point for fixes on an existing branch. Opens a worktree, invokes Cody once per fix, tears down and writes one summary line on close. Does not touch Forge/Archy/Chisel/Ralph. |
 | **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
-| **Lore** | Manages second-brain vault. `lore start` orients and reconstructs status; `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
+| **Lore** | Manages second-brain vault. `lore start` is setup/repair only (naming, migration, re-mapping); `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
 
 ### What is out of the MVP
 
@@ -1141,6 +1141,30 @@ is untouched.
 > **Key decision:** Sidecar is a worktree opener and closer, not a fix
 > loop; Cody is an explicit one-shot opt-in rather than the default
 > per-fix executor.
+
+---
+
+### Iteration 28: Seed Owns First Contact
+
+After #170 the SessionStart hook orients and the SessionEnd hook
+rebuilds `status.md`, so `lore start` no longer earns a place in a
+normal session. Yet docs and hook hints still presented it as the
+opener, and Seed refused to run until it had recorded the vault mapping.
+
+**Seed owns first contact.** Seed now resolves the display name with
+Lore's rule (no conflict: silent; conflict: prompt once, default
+`<name>-2`), creates `projects/<name>/`, and records the mapping in
+`lore-config.json`. A legacy in-repo `.squad/` is not migrated by Seed;
+it points to `lore start`. `lore start` keeps steps 1-6 (vault, naming,
+session log, migration, INDEX) as setup and repair; reconstruction lives
+in `lore recover`. `lore-orient.sh` says "run /seed" when the mapping is
+missing and prints nothing about `lore start` otherwise. The auto-load of
+`## Context refs` that `lore start` steps 7-11 used to do moved into
+`lore-orient.sh` (read-only; 5 refs, 60 lines each, 2400 chars total).
+
+> **Key decision:** keep the name `lore start`, no rename to `lore init`.
+> A rename needs an alias release and touches every reference for a
+> wording gain; the docs now say what it is for.
 
 ---
 
