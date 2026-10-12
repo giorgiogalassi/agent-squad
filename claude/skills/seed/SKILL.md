@@ -123,7 +123,7 @@ generic documentation.
 ## Phase 5: ensure vault .squad directories
 
 ```bash
-mkdir -p <vault>/projects/<project-name>/.squad/forge <vault>/projects/<project-name>/.squad/prd/archive
+mkdir -p <vault>/projects/<project-name>/.squad/forge/archive <vault>/projects/<project-name>/.squad/prd/archive
 ```
 
 Idempotent; lets Forge and Chisel write on first run.

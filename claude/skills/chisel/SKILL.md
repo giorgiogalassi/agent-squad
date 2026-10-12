@@ -47,7 +47,7 @@ created before stopping.
 ## Configuration flow
 
 Ask one at a time:
-0. "Connected mode (issues created in a tracker via MCP) or detached
+0. "Connected mode (issues created in a tracker) or detached
    mode (issues written to a local batch file, you create them in the
    tracker yourself)?"
 
@@ -94,7 +94,7 @@ carries no `tracker` field; if found, report `tracker` by name as
 disavowed, not as a generic unknown key. A config without `mode` is
 connected (backward compatibility).
 
-On first connected run, verify every configured label (`review_label`
+On every connected run, verify every configured label (`review_label`
 unless `none`, and all three `state_labels`) exists in the target repo
 (`gh label list`); create missing ones with `gh label create` and say
 so — downstream label swaps by Cody and Ralph fail otherwise.
@@ -107,7 +107,8 @@ Confirm with one line and proceed:
 
 If `.squad/prd/current.md` exists, read it (its existence always means a
 pending PRD — Chisel archives after consumption). Otherwise read
-`.squad/forge/output.yaml`. Existence decides; never ask.
+`.squad/forge/output.yaml`. Existence decides; never ask. Neither
+exists → say "No PRD or Forge output to consume" and stop.
 
 ## Issue granularity
 
@@ -271,6 +272,11 @@ still exist, they just aren't on the board yet:
 - If the PRD was the input, archive it after creation:
   `.squad/prd/current.md` → `.squad/prd/archive/current-YYYYMMDD-HHMMSS.md`
   (applies in both modes).
+- If `forge/output.yaml` was the input, archive it after creation the
+  same way: `.squad/forge/output.yaml` →
+  `.squad/forge/archive/output-YYYYMMDD-HHMMSS.yaml` (`mkdir -p` the
+  archive dir; both modes). A second `/chisel` then never recreates
+  the batch.
 
 ## Session log
 
