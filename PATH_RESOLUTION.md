@@ -96,13 +96,26 @@ not attempt to resolve.
 ## The script
 
 `claude/hooks/path-resolve.sh` implements the algorithm above plus the
-`lore-config.json` lookup, and prints three lines to stdout:
+`lore-config.json` lookup, and prints four lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
 PROJECT_ROOT=<resolved project root, correct even inside a linked worktree>
 DISPLAY_NAME=<mapped display name, or empty if none exists yet>
+SQUAD_DIR=<where project knowledge lives>
 ```
+
+`SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default, or
+`<PROJECT_ROOT>/.squad` when `lore-config.json` has
+`"context": {"<project root>": "repo"}` (a top-level map keyed by project
+root, like `projects`; absent or any other value means `vault`). Only
+`architecture.md`, `scout-cache.md`, `forge/` and `prd/` follow it;
+`status.md`, `decisions.md`, `preferences/`, `session.log`,
+`chisel-config.json`, `progress.txt` and `issues/` always stay in the
+vault. Exactly one location per project, never mirrored. The script only
+reports the path; Seed creates a missing `SQUAD_DIR`, every other skill
+stops with a clear error instead of falling back to the vault. Reading
+`context` needs `jq`; without it the default (vault) applies.
 
 It reports facts, not policy. What a caller does with an empty
 `DISPLAY_NAME` differs by skill — Seed stops and tells the user to run
@@ -115,8 +128,8 @@ as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent's protocol now reads:
 
-> Run `~/.claude/hooks/path-resolve.sh` and read its three output lines:
-> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`.
+> Run `~/.claude/hooks/path-resolve.sh` and read its four output lines:
+> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`.
 
 ## What does NOT change
 

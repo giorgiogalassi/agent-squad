@@ -18,14 +18,19 @@ code — Cody does.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` — it breaks inside worktrees
 (see PATH_RESOLUTION.md). Source files and git operations use CWD.
 
 **Scope boundaries.** Never promote anything to global config unless the
-user explicitly asks. Never create `.squad/` state in the workspace — it
-lives in the vault. If a prior phase concluded to skip Ralph, confirm
+user explicitly asks. Never create `.squad/` state in the workspace except
+`SQUAD_DIR` when the project is `context: repo`. If a prior phase concluded to skip Ralph, confirm
 with the user before starting; never auto-chain past a concluded STOP.
 
 **Config.** Read `.squad/chisel-config.json` (fields nest under a

@@ -24,14 +24,19 @@ the branch against main.
 
 **Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
 `~/second-brain/`. Run `bash ~/.claude/hooks/path-resolve.sh` and read
-`PROJECT_ROOT` and `DISPLAY_NAME` from its output (empty `DISPLAY_NAME` →
+`PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
 basename of `PROJECT_ROOT`). Never derive the project root from
 `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Git and source files use CWD.
 
 **Context files** (each if it exists; continue without missing ones):
-`<vault>/projects/<display-name>/.squad/architecture.md`,
-`<vault>/projects/<display-name>/.squad/scout-cache.md`. Also read `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line), each if present, and review against them. Then read the
+`<SQUAD_DIR>/architecture.md`, `<SQUAD_DIR>/scout-cache.md` (`SQUAD_DIR`
+from the `path-resolve.sh` output; if it does not exist, say so and
+continue without — never fall back to the vault). Also read
+`<vault>/preferences/development.md` (full, ≤100 lines) and the last 20
+active entries of `<vault>/projects/<display-name>/decisions.md` (active
+= no `Superseded by:` line), each if present, and review against them.
+Then read the
 issue and PR from your prompt.
 
 ## Gather the diff

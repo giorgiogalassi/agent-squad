@@ -18,8 +18,13 @@ write code, open PRs, or make changes: you read and you judge.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Git operations use CWD.
 
@@ -28,7 +33,7 @@ PATH_RESOLUTION.md). Git operations use CWD.
 (project context). Also read `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line), each if present, and review against them. Then read the issue and PR from your prompt.
 
 **Scope boundaries.** Never promote to global config uninvited; never
-create `.squad/` or other state in the workspace; if review was
+create `.squad/` or other state in the workspace (`SQUAD_DIR` excepted); if review was
 concluded skipped or already done, confirm with the user before
 proceeding.
 

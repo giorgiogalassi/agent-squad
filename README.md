@@ -4,8 +4,8 @@ A personal multi-agent development workflow for Claude Code.
 
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
-Sidecar -> Cody, on an existing branch, once (a companion entry point for
-iterative fixes — see "Sidecar" below)
+Sidecar, on an existing branch: opens a worktree and stops (Cody only on
+explicit opt-in — see "Sidecar" below)
 
 /challenge -> Challenge, standalone, any time (stress-tests a proposal or
 piece of writing before you commit to it — see "Challenge" below); also
@@ -69,8 +69,9 @@ but hasn't closed), it:
    disturbing your main checkout.
 2. Orients from the diff against the branch's base, not from a full
    re-read of prior planning docs.
-3. Invokes Cody once per fix you describe, committing each one in the
-   worktree.
+3. Stops. You iterate with the model directly in the worktree, or in a
+   separate session opened there. Cody runs only if you say "hand this to
+   Cody", once, with `open pr: no`.
 4. On "done": pushes and opens/updates the PR (or prints the paste-ready
    description in detached mode), writes one summary line to
    `progress.txt`, and removes the worktree.
@@ -81,7 +82,10 @@ an ordinary disposable checkout, git-ignored in the host project and
 gone by the time Sidecar closes. The evidence trail lands in the same
 `progress.txt` Ralph already writes to — one line per Sidecar session,
 not one per fix, since issues at this stage are small enough that a
-session-level summary is enough. Reven is never invoked automatically;
+session-level summary is enough. Sidecar is deliberately just open and
+close: a Cody cold start per fix is the wrong granularity for iterative
+tweaks, and a separate session per worktree already gives isolation
+while keeping the conversational thread. Reven is never invoked automatically;
 run it yourself when you're ready for another review pass.
 
 ## Challenge: stress-testing a proposal before you commit to it
@@ -173,6 +177,8 @@ agent-squad/
                        mode will consume it too — see the "Worktree
                        hook" section below).
       lore-orient.sh   SessionStart read-only orientation script (optional)
+      lore-checkpoint.sh
+                       SessionEnd status.md refresh (optional)
       chisel-config-validate.py
                        Validates chisel-config.json shape
 ```
@@ -260,8 +266,37 @@ Then add to `~/.claude/settings.json`:
   { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
 ```
 
+It also prints up to two signal lines, omitted when not applicable:
+`Architecture snapshot older than <file>; run /seed` (architecture.md is
+older than the newest manifest or lockfile at the project root) and
+`status.md over budget; next rebuild compresses` (over ~300 words).
+
 The hook orients (read-only); `/lore start` still handles the write and
 setup path (first-time naming, migration, session-log reset).
+
+### Optional: SessionEnd status refresh
+
+`status.md` otherwise rebuilds only inside `lore start`. This hook keeps
+it current when a session ends. It never blocks exit; any failure prints
+one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
+
+- Session in a linked worktree: appends one checkpoint line for the
+  branch (capped to the last 3), never rebuilds.
+- Session on the main checkout: if status is stale (checkpoint newer than
+  Last updated, or Last updated older than 7 days), runs a headless
+  `claude -p` reconstruct from git evidence. `## Blocked` is preserved
+  verbatim, checkpoints capped to 3, output rejected if over budget
+  (~400 tokens). Fresh status: no write. Commits the vault if it is a git repo.
+- Model: `SQUAD_LORE_MODEL` (default `haiku`).
+
+```bash
+cp claude/hooks/lore-checkpoint.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-checkpoint.sh
+```
+Then add to `~/.claude/settings.json`:
+```json
+{ "hooks": { "SessionEnd": [ { "hooks": [
+  { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
+```
 
 ## Quick start
 
@@ -285,6 +320,12 @@ On the first `/lore start`, Lore creates the vault automatically.
   by default).
 - Per-project `.squad/` state lives inside the vault at
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
+- Optional per-project `context` in `lore-config.json`
+  (`"context": {"<project root>": "repo"}`, default `vault`) moves project
+  knowledge (`architecture.md`, `scout-cache.md`, `forge/`, `prd/`) to
+  `<project>/.squad/` so it is versioned with the code. `path-resolve.sh`
+  reports the choice as `SQUAD_DIR`. Status, decisions, preferences and
+  session log stay in the vault. Never both; keep client repos on `vault`.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
@@ -293,7 +334,7 @@ On the first `/lore start`, Lore creates the vault automatically.
   before starting work when using multiple machines.
 
 Host projects have zero Squad footprint — no `.squad/` directory, no config
-files are written to the project itself.
+files are written to the project itself — unless configured `context: repo`.
 
 ## Workflow data
 
@@ -318,6 +359,7 @@ vault files directly when needed.
       chisel-config.json           written on first Chisel run
       issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
+    golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
     decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. Fed back: Forge reads the last 20 active decisions, Ralph injects `development.md` plus that tail into every Cody prompt, and Reven reads both before reviewing.
 ```

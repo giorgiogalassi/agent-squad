@@ -18,13 +18,18 @@ decision points before writing anything.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files use CWD.
 
 **Scope boundaries.** Never promote to global config uninvited; never
-create `.squad/` state in the workspace (vault only); if Forge concluded
+create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
 complexity was not high, confirm with the user before proceeding.
 
 **Read first** (each if it exists — never ask the user to provide one):
@@ -71,7 +76,7 @@ and can rerun Archy.
 
 Write `.squad/prd/current.md` and confirm with exactly:
 
-  PRD written to <vault>/projects/<display-name>/.squad/prd/current.md
+  PRD written to <SQUAD_DIR>/prd/current.md
 
 Structure (exact):
 
