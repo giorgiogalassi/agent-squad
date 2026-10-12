@@ -273,7 +273,7 @@ reflecting only what actually changed):
     <vault>/projects/<project-name>/.squad/architecture.md
     <vault>/projects/<project-name>/.squad/scout-cache.md
   Directories ensured:
-    <vault>/projects/<project-name>/.squad/forge/
+    <vault>/projects/<project-name>/.squad/forge/archive/
     <vault>/projects/<project-name>/.squad/prd/archive/
   Second-brain (if new project):
     <vault>/projects/<name>/status.md
