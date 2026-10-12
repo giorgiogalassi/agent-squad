@@ -37,7 +37,16 @@
 # worktree is not resolved correctly (an unsupported combination); plain
 # submodule checkouts resolve correctly.
 #
-# Output: three KEY=VALUE lines on stdout, always in this order. Read
+# SQUAD_DIR is where project knowledge lives (architecture.md,
+# scout-cache.md, forge/, prd/). lore-config.json may carry an optional
+# top-level `context` map keyed by project root, like `projects`:
+# `"context": {"/abs/root": "repo"}`. `repo` -> <PROJECT_ROOT>/.squad;
+# anything else or absent -> <vault>/projects/<name>/.squad (default).
+# status.md, decisions.md, preferences/, session.log, chisel-config.json,
+# progress.txt and issues/ always stay in the vault regardless.
+# SQUAD_DIR is a path only; callers check that it exists.
+#
+# Output: four KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
 # Install: copy to ~/.claude/hooks/path-resolve.sh, chmod +x.
@@ -65,6 +74,18 @@ if [ -n "$ROOT" ] && [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
   DISPLAY="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$CONFIG" 2>/dev/null)"
 fi
 
+CONTEXT=""
+if [ -n "$ROOT" ] && [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
+  CONTEXT="$(jq -r --arg k "$ROOT" '.context[$k] // empty' "$CONFIG" 2>/dev/null)"
+fi
+NAME="${DISPLAY:-$(basename "$ROOT")}"
+if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
+  SQUAD_DIR="$ROOT/.squad"
+else
+  SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+fi
+
 echo "VAULT_PATH=$VAULT"
 echo "PROJECT_ROOT=$ROOT"
 echo "DISPLAY_NAME=$DISPLAY"
+echo "SQUAD_DIR=$SQUAD_DIR"

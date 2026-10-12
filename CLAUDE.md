@@ -7,7 +7,7 @@ removed in Iteration 19. Path resolution is the one deliberate exception,
 and it resolves the tension by being a *script*, not a shared skill or
 doc: every skill and agent's "Path resolution protocol" runs
 `~/.claude/hooks/path-resolve.sh` via Bash as its first step and reads
-three output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`) — an
+four output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`/`SQUAD_DIR`) — an
 ordinary, unambiguous shell call each skill already makes dozens of per
 session, not a new category of soft dependency. `PATH_RESOLUTION.md` at
 the repo root documents the algorithm and its rationale but is itself
@@ -34,7 +34,12 @@ to the current project.
 - **No workspace artifacts**: Do not create symlinks or `.squad/`
   directories inside the host project workspace. Vault-based state lives
   outside the workspace at `~/second-brain/` (or `$SECOND_BRAIN_PATH`).
-  Per-project `.squad/` directories belong in the vault, not in the repo.
+  Per-project `.squad/` directories belong in the vault, not in the repo,
+  unless the project is configured `context: repo` in `lore-config.json`
+  (personal repos only); then `<PROJECT_ROOT>/.squad` holds
+  `architecture.md`, `scout-cache.md`, `forge/` and `prd/` (the
+  `SQUAD_DIR` line of `path-resolve.sh`), and everything else stays in the
+  vault.
 - **Skipped phases**: When a prior phase (e.g., forge) concluded to skip a
   step, do not re-invoke that step automatically. Confirm with the user
   before invoking any phase that was previously marked as skipped or
