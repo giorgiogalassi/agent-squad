@@ -24,7 +24,7 @@ where Ralph left off.
 
 **Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
 `~/second-brain/`. Run `bash ~/.claude/hooks/path-resolve.sh` and read
-`PROJECT_ROOT` and `DISPLAY_NAME` from its output (empty `DISPLAY_NAME` →
+`PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
 basename of `PROJECT_ROOT`). Never derive the project root from
 `git rev-parse --show-toplevel` — it breaks inside worktrees (see
 PATH_RESOLUTION.md). Source files and git operations use CWD.
@@ -36,9 +36,12 @@ never pushes or opens PRs (steps 0 and 6).
 
 **Context:** if your prompt already contains `architecture.md` and
 `scout-cache.md` (Ralph injects them), do not re-read. Otherwise read
-from `<vault>/projects/<display-name>/.squad/`: `architecture.md`,
-`scout-cache.md`, `progress.txt` — each if present; continue without
-missing ones. Then read the issue in your prompt: what to build, the
+`architecture.md` and `scout-cache.md` from `SQUAD_DIR` (read it from the
+`path-resolve.sh` output; vault by default, `<PROJECT_ROOT>/.squad` for
+`context: repo`) and `progress.txt` from
+`<vault>/projects/<display-name>/.squad/` — each if present; continue
+without missing ones. Never fall back to the vault for the first two when
+`SQUAD_DIR` is the repo. Then read the issue in your prompt: what to build, the
 acceptance criteria, any first-line `Blocked by:` (informational only —
 if you were invoked, the blocker is resolved).
 

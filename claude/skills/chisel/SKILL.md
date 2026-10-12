@@ -18,13 +18,18 @@ about the feature: read, decompose, create.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files and git use CWD.
 
 **Scope boundaries.** Never promote to global config uninvited; never
-create `.squad/` state in the workspace (vault only); if Forge concluded
+create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
 to skip Chisel, confirm with the user before proceeding.
 
 **Config check.** If `.squad/chisel-config.json` exists with valid
@@ -221,7 +226,7 @@ Rules:
 
 Then print:
 
-  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
+  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md  (issues/ stays in the vault: tracker handoff state, not project knowledge)
   Create the issues in your tracker (CSV import available), optionally
   fill the key mapping, then invoke Ralph. If your tracker supports
   parent/sub-issue links, create the parent entry first so sub-issues can
