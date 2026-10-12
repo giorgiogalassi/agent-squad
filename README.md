@@ -416,8 +416,14 @@ Seed) in a cold headless `claude -p` session that sees only the
 SessionStart orientation, stores the answers in
 `<vault>/projects/<name>/golden-runs/<date>.md`, and prints per-question
 changed/unchanged against the previous run (the first run reports no
-baseline). Regression-based, no score. Read-only outside `golden-runs/`;
-model via `SQUAD_LORE_MODEL` (default `haiku`).
+baseline) with an `N changed / M unchanged / K errors` summary; a failed
+call is stored as `(error)`. The headless session is isolated (neutral cwd,
+no settings/hooks, tools, skills or MCP servers), so it sees only the
+orientation. Run it from the project's own checkout: `--project <name>` is
+only a guard and exits 2 if it names a different project. The orientation
+includes the current branch and recent commits, so a new commit can flip
+answers without any skill change. Regression-based, no score. Read-only
+outside `golden-runs/`; model via `SQUAD_LORE_MODEL` (default `haiku`).
 
 ## Further reading
 
