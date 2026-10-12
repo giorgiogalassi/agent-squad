@@ -59,12 +59,26 @@ error and stop:
 
 ### Connected mode: batch discovery
 
-- **No issue ID given:**
+- **No issue ID given** (optionally `--parent <n>`):
   ```bash
-  gh issue list -R <owner>/<repo> --state open --json number,title,labels,subIssuesSummary
+  gh issue list -R <owner>/<repo> --state open -L 200 --json number,title,labels,subIssuesSummary,parent,createdAt
   ```
-  Exclude every issue with `subIssuesSummary.total > 0` — containers are
-  never executable work; each is excluded independently on its own field.
+  Always pass `-L 200` (the default is 30 and truncates silently). If the
+  result has 200 entries, warn that the backlog may be truncated.
+  Containers are issues with `subIssuesSummary.total > 0` — never
+  executable work; each is excluded independently on its own field.
+  **Scope:** the batch is the sub-issues of one container, selected by
+  filtering `parent.number == <parent>` on the list above.
+  `--parent <n>` names the container (it must be a container, else refuse
+  as below). With no `--parent`, default to the most recently created open
+  container (max `createdAt`) and announce it:
+  `No parent given — using #<n> "<title>" (most recent open container).`
+  No open container: stop and ask for an explicit ID or `--parent`.
+  If `parent` is not returned by `gh issue list`, fall back to the
+  `gh api graphql` `subIssues` query on the container.
+  **Blocked gate:** exclude issues carrying `state_labels.blocked` — an
+  escalated issue stays out until a human clears the label or names it
+  explicitly. Report: `Skipped N issue(s) labeled <blocked>.`
   **Review gate:** if `review_label` is configured (not `none`), also
   exclude issues still carrying it — the label means "awaiting human
   review", and Ralph executes only reviewed work. Nothing in this phase
@@ -72,18 +86,19 @@ error and stop:
   label lifecycle and why removal happens later, not here. Report the
   exclusion:
   `Skipped N issue(s) still labeled <review_label> — review them or remove the label to include.`
-  The remaining issues are the batch.
-- **Specific issue ID given:**
-  `gh issue view <n> -R <owner>/<repo> --json subIssuesSummary,labels`.
-  If it is a container, refuse:
+  The remaining issues are the batch. Report the count:
+  `Found N open sub-issue(s) of #<parent>; batch: M.`
+- **Specific issue ID(s) given** (`/ralph #171 #172`, space-separated):
+  for each, `gh issue view <n> -R <owner>/<repo> --json subIssuesSummary,labels`.
+  If any is a container, refuse:
 
     <n> is a parent/container issue (N sub-issues). Ralph does not
     execute containers directly. Invoke it on one of the sub-issues, or
-    with no issue ID to run the whole open batch.
+    use `--parent <n>` to run its sub-issues.
 
-  Stop. If it still carries `review_label`, note that and proceed — an
-  explicit ID is a user override of the review gate. Otherwise the batch
-  is that one issue.
+  Stop. If one still carries `review_label` or `blocked`, note that and
+  proceed — an explicit ID is a user override of both gates. Otherwise the
+  batch is exactly the named issues.
 
 **Dependency graph:** per issue,
 `gh issue view <n> -R <owner>/<repo> --json blockedBy,blocking`; edges from `blockedBy`
@@ -143,6 +158,7 @@ context; an auto-compaction mid-batch would reset the retry budget. Run
 state is persisted in the vault `.squad/`, next to `progress.txt`:
 
   Batch: [#12, #14, #15]
+  Parent: #10   (omit when explicit IDs were given)
   Started: 2026-04-08 10:30
   Status: running
 

@@ -21,6 +21,8 @@ runs as a required step inside `/forge` before a draft scope closes.
 /archy          (HIGH only) Create PRD.
 /chisel         Create tracker issues (GitHub in connected mode, a local batch file in detached mode).
 /ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+                `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
+                Skips `blocked` and `needs-review` issues unless named explicitly.
                 Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
