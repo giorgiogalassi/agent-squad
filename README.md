@@ -177,6 +177,8 @@ agent-squad/
                        mode will consume it too — see the "Worktree
                        hook" section below).
       lore-orient.sh   SessionStart read-only orientation script (optional)
+      lore-checkpoint.sh
+                       SessionEnd status.md refresh (optional)
       chisel-config-validate.py
                        Validates chisel-config.json shape
 ```
@@ -266,6 +268,30 @@ Then add to `~/.claude/settings.json`:
 
 The hook orients (read-only); `/lore start` still handles the write and
 setup path (first-time naming, migration, session-log reset).
+
+### Optional: SessionEnd status refresh
+
+`status.md` otherwise rebuilds only inside `lore start`. This hook keeps
+it current when a session ends. It never blocks exit; any failure prints
+one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
+
+- Session in a linked worktree: appends one checkpoint line for the
+  branch (capped to the last 3), never rebuilds.
+- Session on the main checkout: if status is stale (checkpoint newer than
+  Last updated, or Last updated older than 7 days), runs a headless
+  `claude -p` reconstruct from git evidence. `## Blocked` is preserved
+  verbatim, checkpoints capped to 3, output rejected if over budget
+  (~400 tokens). Fresh status: no write. Commits the vault if it is a git repo.
+- Model: `SQUAD_LORE_MODEL` (default `haiku`).
+
+```bash
+cp claude/hooks/lore-checkpoint.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-checkpoint.sh
+```
+Then add to `~/.claude/settings.json`:
+```json
+{ "hooks": { "SessionEnd": [ { "hooks": [
+  { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
+```
 
 ## Quick start
 

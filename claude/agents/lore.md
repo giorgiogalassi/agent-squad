@@ -217,6 +217,13 @@ When Cody opens a PR (or commits a chain branch detached), it appends
 one line under `## Last checkpoint` — the only non-Lore vault write.
 `lore start` reads it as staleness evidence. No status.md → Cody skips.
 
+## SessionEnd hook (primary update path)
+
+`hooks/lore-checkpoint.sh` applies the staleness rule above at session end
+and rebuilds status.md headlessly (main checkout only; worktree sessions
+append a checkpoint line). `lore start` is the fallback when the hook is
+not installed.
+
 ## Rules
 
 - Two confirmation tiers for vault writes. Tier 1 (default-and-announce):
