@@ -403,6 +403,22 @@ shell profile on the work machine. Do not share a vault between domains:
 INDEX.md and preferences are written on every session and would carry
 work context into a personal remote.
 
+## Golden-set check
+
+After editing any skill, agent, hook or rule file, run it by hand:
+
+```bash
+scripts/golden-check.sh [--project <name>]
+```
+
+It asks each question in `<vault>/projects/<name>/golden.md` (created by
+Seed) in a cold headless `claude -p` session that sees only the
+SessionStart orientation, stores the answers in
+`<vault>/projects/<name>/golden-runs/<date>.md`, and prints per-question
+changed/unchanged against the previous run (the first run reports no
+baseline). Regression-based, no score. Read-only outside `golden-runs/`;
+model via `SQUAD_LORE_MODEL` (default `haiku`).
+
 ## Further reading
 
 `JOURNAL.md` contains the full design history: why each component exists,
