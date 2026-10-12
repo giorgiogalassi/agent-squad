@@ -261,12 +261,14 @@ skipped-for-none. Then:
 - **Committed, PR not opened** (detached non-last issue only —
   connected always opens): connected n/a; detached append
   `- [ ] (committed on <branch>) <KEY>` to handoff. `progress.txt`:
-  `[ID] committed on <branch>. Notes: <summary>`
+  `[ID] committed on <branch> (base: <base>). Notes: <summary>`
 - **Committed and PR opened:** connected: nothing further — Cody already
   swapped `in_progress` → `in_review` (from `state_labels`) when it
   opened the PR; do not duplicate. Detached: append
   `- [ ] Move <KEY> to In Review` per issue on the branch. `progress.txt`:
-  `[ID] resolved. PR: #N (or Branch: <branch> detached). Notes: <summary>`
+  `[ID] resolved. PR: #N (base: <base>) (or Branch: <branch> (base: <base>)
+  detached). Notes: <summary>` — the `(base: …)` token is what Reven reads
+  to diff a stacked branch against its real base.
 - Both: mark unblocking, next issue.
 
 **Retryable failure** (counter, max 3): build/compile failure, test
@@ -338,8 +340,8 @@ Each Cody invocation is a fresh context. Persist in
 `.squad/progress.txt`, one line per resolved issue (Ralph injects only
 its last 30 lines into Cody; the file itself is never truncated):
 
-  [#12] 2026-04-08 committed on 12-reservations. Added table.
-  [#13] 2026-04-08 resolved. PR: #41. Migration in db/migrations/.
+  [#12] 2026-04-08 committed on 12-reservations (base: main). Added table.
+  [#13] 2026-04-08 resolved. PR: #41 (base: 12-reservations). Migration in db/migrations/.
 
 ## Rules
 
