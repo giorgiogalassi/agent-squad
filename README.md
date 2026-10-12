@@ -21,6 +21,7 @@ runs as a required step inside `/forge` before a draft scope closes.
 /archy          (HIGH only) Create PRD.
 /chisel         Create tracker issues (GitHub in connected mode, a local batch file in detached mode).
 /ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+                Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement issue, commit to the chain branch, open one PR per chain.
 Reven           Review PR.
 (no session-end command) status.md reconstructs from evidence on the next /lore start; run /lore recover to rebuild it explicitly.

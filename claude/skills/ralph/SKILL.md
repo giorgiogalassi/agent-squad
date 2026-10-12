@@ -136,13 +136,45 @@ Splitting a large chain into stacked PRs is a deliberate per-batch
 decision, not the default (deferred until Journal 5.3 validates chain
 granularity).
 
+## Run state: `.squad/ralph-run.md`
+
+Ralph's order and attempt counters would otherwise live only in its
+context; an auto-compaction mid-batch would reset the retry budget. Run
+state is persisted in the vault `.squad/`, next to `progress.txt`:
+
+  Batch: [#12, #14, #15]
+  Started: 2026-04-08 10:30
+  Status: running
+
+  | Issue | Branch | Base | Attempts | State |
+  |-------|--------|------|----------|-------|
+  | #12 | 12-reservations | main | 1 | resolved |
+  | #14 | 14-api | 12-reservations | 2 | running |
+  | #15 | 15-ui | 14-api | 0 | pending |
+
+Rows are in execution order. State: `pending|running|resolved|escalated|skipped`.
+Detached mode uses the same file (branch = chain branch).
+
+- **Write** it at the end of Phase 1b, once order and branches are
+  known; **update** the affected row after every 2b classification
+  (attempt counter, state). Set `Status: complete` at Phase 3.
+- **On start,** before computing the order: if `ralph-run.md` exists with
+  `Status: running` and at least one issue not `resolved`/`escalated`/
+  `skipped`, compare its `Batch:` with the current batch. Same batch =
+  identical sorted issue-ID set. Same: ask the user whether to resume.
+  Yes: reuse order, branches, bases, and counters; start at the first
+  unfinished issue (a `running` row resumes with its stored counter).
+  No: recompute and overwrite. Different batch: ignore it with a one-line
+  notice (`Ignoring ralph-run.md for batch [#..] — different batch.`) and
+  overwrite it at the end of Phase 1b.
+
 ## Phase 2: execute in order
 
 ### 2a. Invoke Cody
 
 Spawn Cody as a subagent with: the full issue description, acceptance
 criteria, contents of `.squad/architecture.md`, `scout-cache.md`, and
-`progress.txt` (if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones) — superseded entries are never injected; bounded at 100 lines + 20 entries. Missing files are skipped. Plus per Phase 1b:
+the last 30 lines of `progress.txt` (`tail -n 30`, if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones) — superseded entries are never injected; bounded at 100 lines + 20 entries. Missing files are skipped. Plus per Phase 1b:
 
 - `mode: connected` or `mode: detached`
 - `branch: <branch>` — the issue's own branch (connected); its chain's
@@ -184,6 +216,9 @@ git -C <wd> branch --show-current
    (pre-existing user WIP that is unchanged also passes — only nothing
    *new* may be uncommitted).
 3. **Branch check:** current branch equals the assigned `branch`.
+
+After classifying, update the issue's row in `ralph-run.md` (Attempts,
+State) before moving on.
 
 **Branch mismatch stops the batch.** Never commit, reset, or stash to
 repair another branch. Print
@@ -272,7 +307,7 @@ Skip this step in detached mode.
 
 ## Phase 3: end of batch report
 
-Detached: first set `Status: executed` in the batch file.
+Detached: first set `Status: executed` in the batch file. Set `Status: complete` in `ralph-run.md`.
 
   Ralph complete.
   Handoff:   <path> (detached only — replay into your tracker)
@@ -284,7 +319,8 @@ Detached: first set `Status: executed` in the batch file.
 ## Context between iterations
 
 Each Cody invocation is a fresh context. Persist in
-`.squad/progress.txt`, one line per resolved issue:
+`.squad/progress.txt`, one line per resolved issue (Ralph injects only
+its last 30 lines into Cody; the file itself is never truncated):
 
   [#12] 2026-04-08 committed on 12-reservations. Added table.
   [#13] 2026-04-08 resolved. PR: #41. Migration in db/migrations/.
