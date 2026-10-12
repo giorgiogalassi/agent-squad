@@ -7,7 +7,7 @@ description: >
   <branch>", "let's iterate on <branch>", "small fixes on <branch>",
   "this UI piece is wrong on <branch>". Do NOT trigger when there is no
   existing branch to attach to — use /forge to start new work instead.
-allowed-tools: Read, Write, Bash
+allowed-tools: Read, Write, Bash, Agent
 ---
 
 # Sidecar

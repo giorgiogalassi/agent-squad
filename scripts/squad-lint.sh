@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Four checks, each independent and each able to fail
+# done") into a gate. Five checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -11,6 +11,8 @@
 #   3. chisel-config.json field cross-references (a field read somewhere
 #      must be written somewhere)
 #   4. dangling documentation pointers (referenced files must exist)
+#   5. delegation tool: a SKILL.md whose body delegates to an agent must list
+#      `Agent` in allowed-tools, and no skill may use the legacy `Task` name
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -284,10 +286,32 @@ EOF
   done
 }
 
+# Check 5: a skill that delegates must pre-approve the Agent tool (renamed
+# from Task in Claude Code 2.1.63); without it the delegation prompts.
+check_delegation_tool() {
+  local f tools body before="$VIOLATIONS"
+  section "5. delegation tool in allowed-tools"
+  for f in claude/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    tools="$(grep -m1 '^allowed-tools:' "$f" || true)"
+    body="$(awk '/^---$/{n++; next} n>=2' "$f")"
+    if printf '%s\n' "$tools" | grep -qE '(:|,) *Task *(,|$)'; then
+      fail "$f: allowed-tools uses legacy name \"Task\"; use \"Agent\""
+    fi
+    if printf '%s\n' "$body" | grep -qE 'Agent tool|Task tool|\(Task\)|\(Agent\)|`Task`|`Agent`|subagent|[Ss]pawn(s|ed|ing)? (Cody|Ralph)'; then
+      if ! printf '%s\n' "$tools" | grep -qE '(:|,) *Agent *(,|$)'; then
+        fail "$f: body delegates to an agent but allowed-tools does not list \"Agent\""
+      fi
+    fi
+  done
+  [ "$VIOLATIONS" -eq "$before" ] && ok "delegating skills declare Agent"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
 check_dangling_doc_pointers
+check_delegation_tool
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

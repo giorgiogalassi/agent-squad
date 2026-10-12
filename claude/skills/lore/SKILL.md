@@ -6,7 +6,7 @@ description: >
   This skill exists so Lore's subcommands work as slash-commands; it
   delegates immediately to the Lore agent and does no work itself.
   Do NOT use for planning, implementation, architecture, or code review.
-allowed-tools: Task
+allowed-tools: Agent
 ---
 
 # Lore (entrypoint)

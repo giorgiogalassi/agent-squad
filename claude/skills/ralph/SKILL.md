@@ -5,7 +5,7 @@ description: >
   issues. Triggers: /ralph, /ralph <issue-id>, "start working on issues",
   "resolve the issues". Do NOT trigger on feature planning, code review
   requests, or documentation tasks.
-allowed-tools: Read, Write, Bash
+allowed-tools: Read, Write, Bash, Agent
 ---
 
 # Ralph
