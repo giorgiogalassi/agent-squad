@@ -325,7 +325,7 @@ vault files directly when needed.
       issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Append-only. Written by Lore on both platforms.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its

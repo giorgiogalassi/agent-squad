@@ -48,7 +48,9 @@ project workspace.
 
 **Loading discipline.** Never load the full vault: INDEX.md + active
 project status.md by default; decisions.md only on explicit request;
-preferences/development.md only during `lore prefer`.
+preferences/development.md only during `lore prefer`. Superseded entries
+and `decisions-archive.md` are never injected by default; load them only
+when explicitly requested or named by a context ref.
 
 ---
 
@@ -153,11 +155,30 @@ every session start.
 ## `lore prefer "<decision>"`
 
 1. Read `preferences/development.md`; check the line count.
-2. Adding would exceed 100 lines → propose a consolidation and apply it
-   (Tier 1; reversible via vault git).
-3. Append `- [YYYY-MM-DD] [<project>] <decision>`; also append to
+2. Ask once before writing: "Does this replace an existing decisions.md
+   entry? [n / <entry>]". On an entry, apply both markers to
+   `decisions.md` (see Decision format). `development.md` bullets carry
+   no markers: when a new bullet replaces an old one, delete the old
+   bullet in the same write.
+3. Adding would exceed 100 lines → propose a consolidation and apply it
+   (Tier 1; reversible via vault git); drop bullets whose decision is
+   superseded in `decisions.md` first, then consolidate the rest.
+4. Append `- [YYYY-MM-DD] [<project>] <decision>`; also append to
    `projects/<n>/decisions.md` with project context; commit the vault.
-4. Output: `Lore: preference recorded.`
+5. Output: `Lore: preference recorded.`
+
+**Decision format.** `decisions.md` entries are
+`## [YYYY-MM-DD] <title>`. A reversing entry may add
+`Supersedes: [YYYY-MM-DD] <title>`; the replaced entry gets
+`Superseded by: [YYYY-MM-DD] <title>`. Both markers sit on the line
+directly under the entry heading. Never delete a superseded entry in
+place. Cap: 60 active entries (no `Superseded by:` line), checked at
+every `lore prefer` write; at the cap, move superseded entries to
+`projects/<n>/decisions-archive.md` (same format, never loaded by
+default). At the cap with nothing superseded, append anyway and print
+`Lore: decisions.md over cap (N active) — supersede or archive manually.`
+A superseded entry named by a context ref stays loadable on explicit
+request.
 
 Record only preferences that are cross-tool, philosophy-level
 (architecture, patterns, decision style), and validated by

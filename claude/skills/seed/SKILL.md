@@ -179,7 +179,11 @@ project: <project-name>
 # Decisions — <project-name>
 
 > Key architectural decisions made during development.
-> Append-only. Format: `## [YYYY-MM-DD] <decision title>`
+> Format: `## [YYYY-MM-DD] <decision title>`
+> A reversing entry may add `Supersedes: [YYYY-MM-DD] <title>`; the replaced
+> entry gets `Superseded by: [YYYY-MM-DD] <title>`.
+> Cap: 60 active entries; at the cap superseded entries move to
+> `decisions-archive.md` (never loaded by default).
 > Managed by Lore.
 ```
 
@@ -222,7 +226,8 @@ tags: [preferences]
 # Development Preferences
 
 > Cross-tool preferences validated by implementation.
-> Cap: 100 lines. Managed by Lore via `lore prefer`.
+> Cap: 100 lines; curation demotes superseded entries first.
+> Managed by Lore via `lore prefer`.
 > Format: `- [YYYY-MM-DD] [project] <preference>`
 ```
 
