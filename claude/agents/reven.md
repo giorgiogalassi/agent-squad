@@ -31,7 +31,7 @@ PATH_RESOLUTION.md). Git and source files use CWD.
 
 **Context files** (each if it exists; continue without missing ones):
 `<vault>/projects/<display-name>/.squad/architecture.md`,
-`<vault>/projects/<display-name>/.squad/scout-cache.md`. Then read the
+`<vault>/projects/<display-name>/.squad/scout-cache.md`. Also read `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line), each if present, and review against them. Then read the
 issue and PR from your prompt.
 
 ## Gather the diff

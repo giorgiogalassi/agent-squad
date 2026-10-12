@@ -25,7 +25,7 @@ PATH_RESOLUTION.md). Git operations use CWD.
 
 **Context files** (each if it exists; continue without missing ones):
 `.squad/architecture.md` (conventions to enforce), `.squad/scout-cache.md`
-(project context). Then read the issue and PR from your prompt.
+(project context). Also read `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line), each if present, and review against them. Then read the issue and PR from your prompt.
 
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` or other state in the workspace; if review was
