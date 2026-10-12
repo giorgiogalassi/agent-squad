@@ -116,7 +116,7 @@ which applies the change without re-arguing the points.
 
 The `challenge` agent is stateless: it never touches the vault or
 `.squad/` state, so it works identically inside a squad project or in
-any other directory, with no history kept of that a challenge happened.
+any other directory, with no history kept that a challenge happened.
 
 `/forge` also invokes the same agent, twice: an **opening challenge** on
 the raw input right after reading `architecture.md`, before any question

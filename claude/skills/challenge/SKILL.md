@@ -75,7 +75,7 @@ Do not append anything to a vault `session.log` or any other `.squad/`
 file, even when this runs inside a resolved squad project with a vault
 available. This skill and the agent it calls are stateless by design:
 every invocation is a self-contained brief in, a structured verdict out,
-with no record kept of that a challenge happened. This keeps `/challenge`
+with no record kept that a challenge happened. This keeps `/challenge`
 usable from any directory, squad project or not, without a vault to
 write to and without state that would need to be reconciled or cleaned
 up later. If a project ever wants a challenge history, that is a
