@@ -9,12 +9,26 @@
 #   than Last updated, or Last updated older than 7 days). Stale -> headless
 #   `claude -p` reconstruct of status.md from git evidence. Fresh -> no write.
 #
+# Claude Code gives SessionEnd hooks a shared 1.5 s budget, so the foreground
+# part only does file edits and git reads; the model rebuild is spawned
+# detached (re-running this script with --rebuild) and logs to
+# <vault>/projects/<name>/.lore-checkpoint.log. A mkdir lock allows one rebuild
+# per project.
+#
+# Entry point for other writers (Cody, Ralph): `lore-checkpoint.sh --note "<line>"`
+# inserts a line inside `## Last checkpoint` (3-line cap). Never `>>` status.md:
+# the last section is `## Context refs`, so appended lines land outside it.
+# A note is ONE line starting with "[" (e.g. "[2026-10-12 15:00] [cody] msg"):
+# other lines are dropped by the `^\[` filter, and a multi-line note counts
+# against the 3-line cap.
+#
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
 # Install (Claude Code): copy to ~/.claude/hooks/lore-checkpoint.sh, chmod +x,
 # and add to ~/.claude/settings.json:
 #   { "hooks": { "SessionEnd": [ { "hooks": [
 #     { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
+# Optional: add "timeout": <seconds> to the hook entry to raise the 1.5 s budget.
 
 # Recursion guard: the headless `claude -p` below is itself a session and may
 # fire SessionEnd; it runs with SQUAD_LORE_HOOK=1 so that nested run exits here.
@@ -22,10 +36,17 @@
 
 bail() { echo "lore-checkpoint: $1"; exit 0; }
 
+MODE=hook; NOTE=""
+case "${1:-}" in
+  --note) MODE=note; NOTE="${2:-}"; [ -n "$NOTE" ] || bail "--note needs a line, skipped" ;;
+  --rebuild) MODE=rebuild ;;
+esac
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SELF="$HOOK_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
 
 # Hook input: JSON on stdin; `cwd` is the session's working directory.
-INPUT="$(cat 2>/dev/null)"
+INPUT=""
+[ "$MODE" = hook ] && INPUT="$(cat 2>/dev/null)"
 CWD=""
 if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
   CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
@@ -78,21 +99,53 @@ replace_section() {
     !skip { print }' "$1"
 }
 TMPC="$(mktemp)"; TMPB="$(mktemp)"
-trap 'rm -f "$TMPC" "$TMPB"' EXIT
+LOCK="$VAULT/projects/$DISPLAY/.lore-rebuild.lock"
+trap 'rm -f "$TMPC" "$TMPB"; [ "${HOLD_LOCK:-}" = 1 ] && rmdir "$LOCK" 2>/dev/null' EXIT
+
+# add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
+# Also moves stray dated "[...]" lines found under ## Context refs (appended
+# there by plain `>>` writers) into the section.
+add_checkpoint() {
+  local strays out="$STATUS.tmp.$$"
+  # Stray = line starting with "[YYYY-MM-DD"; wikilinks "[[...]]" never match.
+  strays="$(section "$STATUS" "Context refs" | grep -E '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}')"
+  if ! grep -q '^## Last checkpoint' "$STATUS"; then
+    # Missing section: insert before ## Context refs (it must stay last), else append.
+    if grep -q '^## Context refs' "$STATUS"; then
+      awk '/^## Context refs/ && !done { print "## Last checkpoint"; done = 1 } { print }' "$STATUS" > "$out.i" \
+        && mv "$out.i" "$STATUS" || { rm -f "$out.i"; return 1; }
+    else
+      printf '\n## Last checkpoint\n' >> "$STATUS" || return 1
+    fi
+  fi
+  # Existing + strays sorted by the leading [timestamp] (stable), so a repaired
+  # old stray cannot evict a newer real checkpoint; the new line goes last.
+  { { section "$STATUS" "Last checkpoint" | grep '^\['; [ -n "$strays" ] && printf '%s\n' "$strays"; } \
+      | sort -s -t']' -k1,1
+    [ -n "${1:-}" ] && printf '%s\n' "$1"; } | tail -n 3 > "$TMPC"
+  if [ -n "$strays" ]; then
+    awk '/^## /{ctx = (index($0, "## Context refs") == 1)}
+         !(ctx && /^\[[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) {print}' "$STATUS" > "$out.s" \
+      && replace_section "$out.s" "Last checkpoint" "$TMPC" > "$out" || { rm -f "$out" "$out.s"; return 1; }
+    rm -f "$out.s"
+  else
+    replace_section "$STATUS" "Last checkpoint" "$TMPC" > "$out" || { rm -f "$out"; return 1; }
+  fi
+  mv "$out" "$STATUS"
+}
+
+if [ "$MODE" = note ]; then
+  add_checkpoint "$NOTE" || bail "append failed"
+  commit_vault "checkpoint"
+  exit 0
+fi
 
 # --- Worktree session: checkpoint line only -------------------------------
 if [ "$TOP" != "$ROOT" ]; then
   LINE="[$NOW] [claude-code] Session ended on worktree branch $BRANCH @ $SHA."
   # Idempotent: same branch at same commit already recorded -> nothing new.
   if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
-  if grep -q '^## Last checkpoint' "$STATUS"; then
-    CPS="$( { section "$STATUS" "Last checkpoint" | grep '^\['; echo "$LINE"; } | tail -n 3)"
-    printf '%s\n' "$CPS" > "$TMPC"
-    replace_section "$STATUS" "Last checkpoint" "$TMPC" > "$STATUS.tmp.$$" \
-      && mv "$STATUS.tmp.$$" "$STATUS" || { rm -f "$STATUS.tmp.$$"; bail "append failed"; }
-  else
-    printf '\n## Last checkpoint\n%s\n' "$LINE" >> "$STATUS" || bail "append failed"
-  fi
+  add_checkpoint "$LINE" || bail "append failed"
   commit_vault "checkpoint"
   exit 0
 fi
@@ -108,8 +161,32 @@ if [ -z "$UPDATED" ]; then STALE=1
 elif [ -n "$LATEST_CP" ] && [[ "$LATEST_CP" > "$UPDATED" ]]; then STALE=1
 elif [ -n "$WEEK_AGO" ] && [[ "$UPDATED" < "$WEEK_AGO" ]]; then STALE=1
 fi
-[ "$STALE" = "1" ] || exit 0
+if [ "$MODE" = hook ]; then
+  # Repair strays on every main-checkout exit (cheap awk, no model).
+  if section "$STATUS" "Context refs" | grep -qE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}'; then
+    add_checkpoint "" && commit_vault "repair checkpoint"
+  fi
+  [ "$STALE" = "1" ] || exit 0
+  command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
+  # No commits since Last updated -> a model call would add nothing.
+  if [ -n "$UPDATED" ] && [ -z "$(git log --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
+  # Fresh lock held -> a rebuild is already running (stale after 10 min).
+  if [ -d "$LOCK" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then exit 0; fi
+  # Detach fully: own session when possible, all stdio redirected, so Claude
+  # Code is not kept waiting on an open pipe.
+  LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
+  DETACH=""
+  command -v setsid >/dev/null 2>&1 && DETACH="setsid"
+  [ -z "$DETACH" ] && command -v perl >/dev/null 2>&1 && DETACH="perl -MPOSIX -e POSIX::setsid();exec(@ARGV) --"
+  ( cd "$CWD" && $DETACH nohup bash "$SELF" --rebuild >"$LOG" 2>&1 </dev/null & ) >/dev/null 2>&1
+  exit 0
+fi
 
+# --- Rebuild mode (detached) ----------------------------------------------
+if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; fi
+mkdir "$LOCK" 2>/dev/null || bail "rebuild already running, skipped"
+HOLD_LOCK=1
+[ "$STALE" = "1" ] || exit 0
 command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
 
 SINCE="${UPDATED:-7 days ago}"
@@ -123,36 +200,43 @@ $(git log --oneline -10 2>/dev/null)
 Existing status.md:
 $(cat "$STATUS")"
 
-PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file, no code fences, no commentary. Keep the exact schema: YAML front matter (title, tags [status, active], project), '# Status — <project>', 'Last updated: $NOW by claude-code', then sections Goal, Done (under 5 lines, distilled), Next (ACTION: / CONTEXT:), Blocked, Last checkpoint, Context refs. Total under 400 tokens. Mark inferences as inferred. Copy Blocked and Context refs from the existing file."
+PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file, no code fences, no commentary. Keep the exact schema: YAML front matter (title, tags [status, active], project), '# Status — <project>', 'Last updated: $NOW by claude-code', then sections Goal, Done (under 5 lines, distilled), Next (ACTION: / CONTEXT:), Blocked, Last checkpoint, Context refs. Goal, Done and Next together under 400 tokens. Mark inferences as inferred. Copy Blocked and Context refs from the existing file."
 
+# Hard 90 s cap; macOS has no `timeout`, so fall back to a perl alarm.
 TMO=""
-command -v timeout >/dev/null 2>&1 && TMO="timeout 90"
+if command -v timeout >/dev/null 2>&1; then TMO="timeout 90"
+elif command -v perl >/dev/null 2>&1; then TMO="perl -e alarm(90);exec(@ARGV) --"; fi
 NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 $TMO claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
   || bail "headless rebuild failed, status unchanged"
 
-# Strip stray code fences, then validate shape and size (~4 chars/token: 400 tokens = 1600 bytes).
+# Strip stray code fences, then validate shape. Size is measured on the
+# model-authored sections only (~4 chars/token: 400 tokens = 1600 bytes);
+# measuring the whole file bailed on every run, since Blocked/checkpoints/refs
+# are copied verbatim and alone can exceed the cap.
 NEW="$(printf '%s\n' "$NEW" | sed '/^```/d')"
 printf '%s\n' "$NEW" | head -n 1 | grep -q '^---$' || bail "rebuild output invalid, status unchanged"
-for h in '^# Status' '^Last updated:' '^## Goal' '^## Done' '^## Next' '^## Blocked' '^## Last checkpoint'; do
+for h in '^# Status' '^Last updated:' '^## Goal' '^## Done' '^## Next' '^## Blocked' '^## Last checkpoint' '^## Context refs'; do
   printf '%s\n' "$NEW" | grep -q "$h" || bail "rebuild output missing section, status unchanged"
 done
 
-# Deterministic enforcement: Blocked verbatim from the old file, Last
+# Deterministic enforcement: Blocked and Context refs verbatim from the old file, Last
 # checkpoint = last 3 existing lines, Last updated stamped here. No rebuild
 # checkpoint line is added: it would read as newer than Last updated.
 section "$STATUS" Blocked > "$TMPB"
+TMPR="$TMPB.r"; section "$STATUS" "Context refs" > "$TMPR"
 # Intentional: under Last checkpoint only lines starting with "[" are kept;
 # any other text in that section is dropped.
 section "$STATUS" "Last checkpoint" | grep '^\[' | tail -n 3 > "$TMPC"
+MODEL_BYTES="$( { for h in Goal Done Next; do printf '%s\n' "$NEW" > "$TMPB.n"; section "$TMPB.n" "$h"; done; } | wc -c | tr -d ' ')"
+rm -f "$TMPB.n"
+[ "$MODEL_BYTES" -gt 1600 ] && bail "rebuild over 400-token budget, status unchanged"
 OUT="$STATUS.tmp.$$"
 printf '%s\n' "$NEW" | sed "s/^Last updated:.*/Last updated: $NOW by claude-code/" > "$OUT.1"
 replace_section "$OUT.1" Blocked "$TMPB" > "$OUT.2"
-replace_section "$OUT.2" "Last checkpoint" "$TMPC" > "$OUT"
-rm -f "$OUT.1" "$OUT.2"
+replace_section "$OUT.2" "Last checkpoint" "$TMPC" > "$OUT.3"
+replace_section "$OUT.3" "Context refs" "$TMPR" > "$OUT"
+rm -f "$OUT.1" "$OUT.2" "$OUT.3" "$TMPR"
 
-if [ "$(wc -c < "$OUT" | tr -d ' ')" -gt 1600 ]; then
-  rm -f "$OUT"; bail "rebuild over 400-token budget, status unchanged"
-fi
 mv "$OUT" "$STATUS" || { rm -f "$OUT"; bail "write failed"; }
 commit_vault "rebuild status"
 exit 0
