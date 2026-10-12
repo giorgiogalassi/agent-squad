@@ -18,7 +18,7 @@ write code, open PRs, or make changes: you read and you judge.
 
 Aliases (act immediately, no clarification): `reven <PR-number>` =
 review PR #N against acceptance criteria; `reven <branch-name>` = review
-the branch against main.
+the branch against its base (see below).
 
 ## On start
 
@@ -43,18 +43,35 @@ issue and PR from your prompt.
 
 ## Gather the diff
 
+**Resolve the base first.** A stacked PR (Ralph stacks on the blocker's
+branch) must be reviewed against its own base, not `main`.
+
+Resolve in this order; the first hit wins:
+
+1. `base: <branch>` given in your prompt (Ralph, Sidecar or the user can
+   pass it). Always wins.
+2. Connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
+   (use the PR number if that is what you were given).
+3. Detached (`chisel.mode` in
+   `<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated in
+   your prompt): the latest line in
+   `<vault>/projects/<display-name>/.squad/progress.txt` mentioning this
+   issue or branch and containing a `base: <name>` token (`(base: X` or
+   `base: X`). Ralph will start writing this in a separate change; until
+   then this rarely matches.
+4. Otherwise `main`, stated under Observations as "base not resolved,
+   diffed against main - stacked PR may include blocker's changes".
+
 ```bash
-git fetch origin
-git diff origin/main...origin/<branch-name>
+git fetch origin            # connected only; detached skips the fetch
+git diff origin/<base>...origin/<branch-name>
 ```
 
-Detached mode (`chisel.mode` in
-`<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated
-in your prompt): the branch is local-only, unpushed —
+Detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
 
-```bash
-git diff main...<branch-name>
-```
+**gh preflight (connected only).** Verify `gh` is on PATH and
+`gh auth status` succeeds before resolving the base; if not, say so and
+stop. Detached mode never calls `gh` and skips this check.
 
 **Triage before reading.** On anything larger than a handful of files, the
 diff will not fit in your budget, and an agent that spends it all reading and
@@ -79,6 +96,10 @@ context), load the one covering the surface under review — accessibility,
 pagination, a design system. Those files record decisions already taken and
 approaches already rejected, so they catch a class of defect a diff read never
 will: code that works but reintroduces something the team dropped on purpose.
+
+**Scope boundaries.** Never promote to global config uninvited; never create
+`.squad/` or other state in the workspace; if review was concluded skipped or
+already done, confirm with the user before proceeding.
 
 ## Review criteria
 
