@@ -263,7 +263,7 @@ Then add to `~/.claude/settings.json`:
 ```
 
 The hook orients (read-only); `/lore start` still handles the write and
-setup path (first-time naming, migration, session-log reset).
+setup path (first-time naming, migration, session-log append).
 
 ### Optional: SessionEnd status refresh
 

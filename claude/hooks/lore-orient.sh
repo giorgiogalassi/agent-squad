@@ -114,7 +114,7 @@ if [ -f "$PROJ/.squad/session.log" ]; then
 fi
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
-OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log reset)."
+OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log append)."
 
 # Export final JSON — systemMessage shows in UI, additionalContext is injected as prompt context
 emit_json "$OUTPUT"

@@ -57,7 +57,7 @@ preferences/development.md only during `lore prefer`.
 > The optional SessionStart hook (`~/.claude/hooks/lore-orient.sh`)
 > injects read-only orientation automatically; it never writes.
 > `lore start` remains the write/setup path: naming, migration,
-> session-log reset, INDEX update.
+> session-log append, INDEX update.
 
 1. Resolve the vault path (above); missing → ask to create and wait.
 2. Deduce the candidate project: run `bash ~/.claude/hooks/path-resolve.sh`,
@@ -78,9 +78,15 @@ preferences/development.md only during `lore prefer`.
      already exists. Display name for this project [`<candidate>-2`]:";
      use the answer (default `<candidate>-2`), create, record. Later
      starts from the same path never prompt again.
-4. Reset the session log: overwrite `.squad/session.log` with
-   `[YYYY-MM-DD HH:MM] [lore] start — session opened` — each session
-   gets a clean log; skills append to it.
+4. Open the session log: append
+   `[YYYY-MM-DD HH:MM] [lore] start — session opened (<branch>)` to
+   `.squad/session.log` (create if missing), `<branch>` from
+   `git branch --show-current` (`detached` if empty). Never truncate or
+   overwrite: concurrent sessions (main checkout plus worktrees) share
+   the log. Only if it already exceeds 200 lines, first rename it to
+   `session-YYYYMMDD.log` in the same directory (if that name exists,
+   append to it instead of replacing), then start a fresh log with the
+   new start line.
 5. Migration check (only on first encounter of this cwd, i.e. step 3
    created a mapping): if `<cwd_path>/.squad/` exists, ask
    `Found .squad/ in this project. Move it to the vault? [Y/n]`. Y →
