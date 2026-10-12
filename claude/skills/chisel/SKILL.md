@@ -276,7 +276,8 @@ still exist, they just aren't on the board yet:
   same way: `.squad/forge/output.yaml` →
   `.squad/forge/archive/output-YYYYMMDD-HHMMSS.yaml` (`mkdir -p` the
   archive dir; both modes). A second `/chisel` then never recreates
-  the batch.
+  the batch. A batch that stops partway leaves `output.yaml` in place
+  on purpose: the next run re-reads it.
 
 ## Session log
 
