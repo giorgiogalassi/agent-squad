@@ -4,8 +4,8 @@ A personal multi-agent development workflow for Claude Code.
 
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
-Sidecar -> Cody, on an existing branch, once (a companion entry point for
-iterative fixes — see "Sidecar" below)
+Sidecar, on an existing branch: opens a worktree and stops (Cody only on
+explicit opt-in — see "Sidecar" below)
 
 /challenge -> Challenge, standalone, any time (stress-tests a proposal or
 piece of writing before you commit to it — see "Challenge" below); also
@@ -69,8 +69,9 @@ but hasn't closed), it:
    disturbing your main checkout.
 2. Orients from the diff against the branch's base, not from a full
    re-read of prior planning docs.
-3. Invokes Cody once per fix you describe, committing each one in the
-   worktree.
+3. Stops. You iterate with the model directly in the worktree, or in a
+   separate session opened there. Cody runs only if you say "hand this to
+   Cody", once, with `open pr: no`.
 4. On "done": pushes and opens/updates the PR (or prints the paste-ready
    description in detached mode), writes one summary line to
    `progress.txt`, and removes the worktree.
@@ -81,7 +82,10 @@ an ordinary disposable checkout, git-ignored in the host project and
 gone by the time Sidecar closes. The evidence trail lands in the same
 `progress.txt` Ralph already writes to — one line per Sidecar session,
 not one per fix, since issues at this stage are small enough that a
-session-level summary is enough. Reven is never invoked automatically;
+session-level summary is enough. Sidecar is deliberately just open and
+close: a Cody cold start per fix is the wrong granularity for iterative
+tweaks, and a separate session per worktree already gives isolation
+while keeping the conversational thread. Reven is never invoked automatically;
 run it yourself when you're ready for another review pass.
 
 ## Challenge: stress-testing a proposal before you commit to it
