@@ -18,6 +18,9 @@
 # Entry point for other writers (Cody, Ralph): `lore-checkpoint.sh --note "<line>"`
 # inserts a line inside `## Last checkpoint` (3-line cap). Never `>>` status.md:
 # the last section is `## Context refs`, so appended lines land outside it.
+# A note is ONE line starting with "[" (e.g. "[2026-10-12 15:00] [cody] msg"):
+# other lines are dropped by the `^\[` filter, and a multi-line note counts
+# against the 3-line cap.
 #
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
@@ -38,9 +41,8 @@ case "${1:-}" in
   --note) MODE=note; NOTE="${2:-}"; [ -n "$NOTE" ] || bail "--note needs a line, skipped" ;;
   --rebuild) MODE=rebuild ;;
 esac
-SELF="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/$(basename "${BASH_SOURCE[0]:-$0}")"
-
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SELF="$HOOK_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
 
 # Hook input: JSON on stdin; `cwd` is the session's working directory.
 INPUT=""
@@ -105,11 +107,21 @@ trap 'rm -f "$TMPC" "$TMPB"; [ "${HOLD_LOCK:-}" = 1 ] && rmdir "$LOCK" 2>/dev/nu
 # there by plain `>>` writers) into the section.
 add_checkpoint() {
   local strays out="$STATUS.tmp.$$"
+  # Stray = line starting with "[YYYY-MM-DD"; wikilinks "[[...]]" never match.
   strays="$(section "$STATUS" "Context refs" | grep -E '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}')"
   if ! grep -q '^## Last checkpoint' "$STATUS"; then
-    printf '\n## Last checkpoint\n' >> "$STATUS" || return 1
+    # Missing section: insert before ## Context refs (it must stay last), else append.
+    if grep -q '^## Context refs' "$STATUS"; then
+      awk '/^## Context refs/ && !done { print "## Last checkpoint"; done = 1 } { print }' "$STATUS" > "$out.i" \
+        && mv "$out.i" "$STATUS" || { rm -f "$out.i"; return 1; }
+    else
+      printf '\n## Last checkpoint\n' >> "$STATUS" || return 1
+    fi
   fi
-  { section "$STATUS" "Last checkpoint" | grep '^\['; [ -n "$strays" ] && printf '%s\n' "$strays"
+  # Existing + strays sorted by the leading [timestamp] (stable), so a repaired
+  # old stray cannot evict a newer real checkpoint; the new line goes last.
+  { { section "$STATUS" "Last checkpoint" | grep '^\['; [ -n "$strays" ] && printf '%s\n' "$strays"; } \
+      | sort -s -t']' -k1,1
     [ -n "${1:-}" ] && printf '%s\n' "$1"; } | tail -n 3 > "$TMPC"
   if [ -n "$strays" ]; then
     awk '/^## /{ctx = (index($0, "## Context refs") == 1)}
@@ -203,14 +215,15 @@ NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 $TMO claude -p "$PROMPT" --mo
 # are copied verbatim and alone can exceed the cap.
 NEW="$(printf '%s\n' "$NEW" | sed '/^```/d')"
 printf '%s\n' "$NEW" | head -n 1 | grep -q '^---$' || bail "rebuild output invalid, status unchanged"
-for h in '^# Status' '^Last updated:' '^## Goal' '^## Done' '^## Next' '^## Blocked' '^## Last checkpoint'; do
+for h in '^# Status' '^Last updated:' '^## Goal' '^## Done' '^## Next' '^## Blocked' '^## Last checkpoint' '^## Context refs'; do
   printf '%s\n' "$NEW" | grep -q "$h" || bail "rebuild output missing section, status unchanged"
 done
 
-# Deterministic enforcement: Blocked verbatim from the old file, Last
+# Deterministic enforcement: Blocked and Context refs verbatim from the old file, Last
 # checkpoint = last 3 existing lines, Last updated stamped here. No rebuild
 # checkpoint line is added: it would read as newer than Last updated.
 section "$STATUS" Blocked > "$TMPB"
+TMPR="$TMPB.r"; section "$STATUS" "Context refs" > "$TMPR"
 # Intentional: under Last checkpoint only lines starting with "[" are kept;
 # any other text in that section is dropped.
 section "$STATUS" "Last checkpoint" | grep '^\[' | tail -n 3 > "$TMPC"
@@ -220,8 +233,9 @@ rm -f "$TMPB.n"
 OUT="$STATUS.tmp.$$"
 printf '%s\n' "$NEW" | sed "s/^Last updated:.*/Last updated: $NOW by claude-code/" > "$OUT.1"
 replace_section "$OUT.1" Blocked "$TMPB" > "$OUT.2"
-replace_section "$OUT.2" "Last checkpoint" "$TMPC" > "$OUT"
-rm -f "$OUT.1" "$OUT.2"
+replace_section "$OUT.2" "Last checkpoint" "$TMPC" > "$OUT.3"
+replace_section "$OUT.3" "Context refs" "$TMPR" > "$OUT"
+rm -f "$OUT.1" "$OUT.2" "$OUT.3" "$TMPR"
 
 mv "$OUT" "$STATUS" || { rm -f "$OUT"; bail "write failed"; }
 commit_vault "rebuild status"
