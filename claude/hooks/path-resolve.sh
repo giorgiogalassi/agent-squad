@@ -75,8 +75,14 @@ if [ -n "$ROOT" ] && [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
 fi
 
 CONTEXT=""
-if [ -n "$ROOT" ] && [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  CONTEXT="$(jq -r --arg k "$ROOT" '.context[$k] // empty' "$CONFIG" 2>/dev/null)"
+if [ -n "$ROOT" ] && [ -f "$CONFIG" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    CONTEXT="$(jq -r --arg k "$ROOT" '.context[$k] // empty' "$CONFIG" 2>/dev/null)"
+  elif grep -q '"context"' "$CONFIG" 2>/dev/null; then
+    # Config declares per-project context but jq is missing: we cannot
+    # read it, so say so instead of silently resolving to the vault.
+    echo "path-resolve: jq not found; 'context' in $CONFIG ignored, SQUAD_DIR defaults to the vault" >&2
+  fi
 fi
 NAME="${DISPLAY:-$(basename "$ROOT")}"
 if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
