@@ -281,7 +281,8 @@ Everything already exists → skip silently.
 
 If `<vault>/projects/<project-name>/golden.md` does not exist, create it
 (never overwrite; the user fills in `Expected:`). Memory about the
-project's Q&A, read by `scripts/golden-check.sh` (not under `SQUAD_DIR`):
+project's Q&A, consumed by the golden-set check script (#182; not under
+`SQUAD_DIR`):
 
 ```markdown
 ---
