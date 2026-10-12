@@ -69,14 +69,17 @@ emit_json() {
 }
 
 if [ ! -d "$VAULT" ]; then
-  emit_json "Lore: no vault at $VAULT. Run /lore start to initialize." msg-only
+  emit_json "Lore: no vault at $VAULT. Run /seed to initialize." msg-only
   exit 0
 fi
 if [ -z "$ROOT" ]; then
   echo "{}"
   exit 0
 fi
-[ -z "$DISPLAY" ] && DISPLAY="$(basename "$ROOT")"
+if [ -z "$DISPLAY" ]; then
+  emit_json "Lore: No vault mapping for this project — run /seed." msg-only
+  exit 0
+fi
 
 PROJ="$VAULT/projects/$DISPLAY"
 # Project knowledge location (vault or repo); progress.txt and session.log
@@ -93,7 +96,7 @@ OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
 if [ -f "$STATUS" ]; then
   OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS")${NL}"
 else
-  OUTPUT="${OUTPUT}No status.md for this project yet. Reconstruct from the evidence below,${NL}or run /lore start to initialize.${NL}"
+  OUTPUT="${OUTPUT}No status.md for this project yet. Reconstruct from the evidence below,${NL}or run /seed.${NL}"
 fi
 
 # Local evidence: cheap, offline, lets the model reconcile a stale status.md
@@ -136,7 +139,6 @@ fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
-OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log append)."
 
 # Export final JSON — systemMessage shows in UI, additionalContext is injected as prompt context
 emit_json "$OUTPUT"

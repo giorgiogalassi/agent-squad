@@ -22,15 +22,24 @@ You never write code, plan features, or make architectural decisions.
    `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`. Never derive the root from
    `git rev-parse --show-toplevel` (breaks in worktrees; see
    PATH_RESOLUTION.md).
-2. If `VAULT_PATH` is not an existing directory, or `DISPLAY_NAME` is
-   empty, stop and print:
-
-     No vault mapping found for this project.
-     Run `lore start` first: Lore creates the vault, resolves the display
-     name, and records the CWD mapping that Seed depends on.
-
-   Never derive the display name yourself — Lore owns naming and
-   conflict resolution; Seed only consumes the mapping.
+2. First contact. Seed owns it; Lore owns repair only.
+   - `VAULT_PATH` is not an existing directory → ask
+     `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
+     Y → create it. n → stop.
+   - `DISPLAY_NAME` non-empty → mapping exists; continue (never overwrite
+     it).
+   - `DISPLAY_NAME` empty → candidate = final component of `PROJECT_ROOT`.
+     `PROJECT_ROOT` equals the vault → stop ("The vault is not a
+     project"); never register it. If `<PROJECT_ROOT>/.squad/` exists and
+     the project is not `context: repo`, tell the user to run `lore start`
+     (setup/repair) to migrate it, then stop; do not migrate here. No
+     `<vault>/projects/<candidate>/` conflict → use `candidate` silently.
+     Conflict → prompt once: "A vault project named `<candidate>` already
+     exists. Display name for this project [`<candidate>-2`]:"; use the
+     answer (default `<candidate>-2`). Create `<vault>/projects/<name>/`
+     and write `projects[<PROJECT_ROOT>] = <name>` into
+     `<vault>/lore-config.json` with jq (create `{"projects": {}}` if the
+     file is missing; keep every other key and entry).
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`
@@ -144,7 +153,7 @@ Idempotent; lets Forge and Chisel write on first run.
 
 ## Phase 6: scaffold second-brain project files
 
-(The vault exists — `lore start` created it.) Ensure `<vault>/projects/`,
+(The vault exists — step 2 of the path protocol ensured it.) Ensure `<vault>/projects/`,
 `<vault>/preferences/`, `<vault>/docs` exist. If
 `<vault>/projects/<project-name>/` is new, create:
 
@@ -263,7 +272,7 @@ using file tools. No MCP required.
 
 Optional: initialize the vault as a private git repository for
 history, backup, and multi-machine sync. When <vault>/.git exists,
-lore start, lore prefer, and lore recover commit after their writes
+lore start (setup), lore prefer, and lore recover commit after their writes
 (commit only, never push). Without a repo, Lore skips this silently.
 
 ## Obsidian
@@ -369,7 +378,7 @@ reflecting only what actually changed):
 ## Session log
 
 When all phases complete, append to `.squad/session.log` (read first,
-append; the file exists — `lore start` created it; timestamp via
+append; create it if missing; timestamp via
 `date "+%Y-%m-%d %H:%M"`):
 
   [YYYY-MM-DD HH:MM] [seed] end — context files written

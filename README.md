@@ -14,8 +14,8 @@ runs as a required step inside `/forge` before a draft scope closes.
 ## MVP Flow
 
 ```text
-/lore start     Orient companion (auto-injected by the SessionStart hook if installed; run manually for setup).
-/seed           Initialize .squad/ AND scaffold second-brain project files.
+/seed           First contact: create the vault mapping, initialize .squad/ AND scaffold second-brain project files.
+                (The SessionStart hook orients each session; `/lore start` is setup/repair only.)
 /clear          Reset session context.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
@@ -271,12 +271,13 @@ It also prints up to two signal lines, omitted when not applicable:
 older than the newest manifest or lockfile at the project root) and
 `status.md over budget; next rebuild compresses` (over ~300 words).
 
-The hook orients (read-only); `/lore start` still handles the write and
-setup path (first-time naming, migration, session-log append).
+The hook orients (read-only). `/lore start` is setup and repair only
+(migrating a legacy `.squad/`, re-mapping a moved checkout, INDEX active
+project); it is not a per-session step.
 
 ### Optional: SessionEnd status refresh
 
-`status.md` otherwise rebuilds only inside `lore start`. This hook keeps
+`status.md` otherwise rebuilds only through `lore recover`. This hook keeps
 it current when a session ends. It never blocks exit; any failure prints
 one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
 
@@ -313,7 +314,6 @@ Then add to `~/.claude/settings.json`:
 Once installed, open any project and run:
 
 ```bash
-/lore start          # or skip if the SessionStart hook is installed (it auto-orients)
 /seed
 /clear
 /forge <your idea>
@@ -321,7 +321,7 @@ Once installed, open any project and run:
 
 ## Vault setup
 
-On the first `/lore start`, Lore creates the vault automatically.
+On the first `/seed`, Seed creates the vault mapping (and the vault, after asking) automatically.
 
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
@@ -339,7 +339,7 @@ On the first `/lore start`, Lore creates the vault automatically.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore start`, `lore prefer`, and `lore recover` commit after their
+  `lore start` (setup), `lore prefer`, and `lore recover` commit after their
   writes (commit only, never push); pulling and pushing stay manual. Pull
   before starting work when using multiple machines.
 
@@ -371,7 +371,7 @@ vault files directly when needed.
       issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
-    status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
+    status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
     decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. Fed back: Forge reads the last 20 active decisions, Ralph injects `development.md` plus that tail into every Cody prompt, and Reven reads both before reviewing.
 ```
 

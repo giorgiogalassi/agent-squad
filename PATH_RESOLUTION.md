@@ -43,7 +43,7 @@ linked toplevel: /tmp/wt-test/linked
 Different absolute path, different basename. A skill invoked from inside
 a Sidecar worktree would fail the `lore-config.json` lookup entirely —
 Seed's own protocol says what happens then: *"No vault mapping found for
-this project. Run lore start first."* Worse, several skills fall back to
+this project. Run /seed first."* Worse, several skills fall back to
 the CWD basename as the project name when no mapping exists, which means
 `progress.txt`, `architecture.md`, `chisel-config.json`, and every other
 vault file would silently read from and write to a namespace named after
@@ -118,11 +118,11 @@ stops with a clear error instead of falling back to the vault. Reading
 `context` needs `jq`; without it the default (vault) applies.
 
 It reports facts, not policy. What a caller does with an empty
-`DISPLAY_NAME` differs by skill — Seed stops and tells the user to run
-`lore start`; Forge, Archy, Chisel, Ralph, and Sidecar fall back to the
-basename of `PROJECT_ROOT` and continue; Lore is the one that creates the
-mapping in the first place, so it reads `PROJECT_ROOT` and proceeds to
-its own naming flow regardless. The script doesn't decide any of that —
+`DISPLAY_NAME` differs by skill — Seed does first contact itself
+(names and records the mapping); Forge, Archy, Chisel, Ralph, and Sidecar fall back to the
+basename of `PROJECT_ROOT` and continue; Lore handles repair (re-mapping,
+migration), so it reads `PROJECT_ROOT` and proceeds to its own naming
+flow regardless. The script doesn't decide any of that —
 every skill's own protocol still states its own policy inline, exactly
 as before. Only the mechanical resolution step moved into the script.
 
