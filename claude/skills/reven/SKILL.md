@@ -5,7 +5,7 @@ description: >
   branch name and the issue it addresses. Reven reads the diff, checks
   it against the acceptance criteria, and produces a structured review.
   Do NOT invoke for planning, implementation, or documentation tasks.
-allowed-tools: Task
+allowed-tools: Agent
 ---
 
 # Reven (entrypoint)
@@ -13,7 +13,7 @@ allowed-tools: Task
 A thin wrapper: it does no work itself. The review runs in the `reven`
 agent's own context so the diff never lands in the main window.
 
-Delegate to the `reven` agent (Task) immediately, passing the PR number
+Delegate to the `reven` agent (Agent) immediately, passing the PR number
 or branch name, the issue it addresses, and any acceptance criteria or
 tracker mode (`connected` / `detached`) stated in the request, exactly
 as received. Return the agent's structured review (`Verdict:` line

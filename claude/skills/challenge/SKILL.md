@@ -6,7 +6,7 @@ description: >
   back", "poke holes", "devil's advocate", "what do you think about it?".
   Do NOT trigger on ordinary edit requests ("fix this typo", "make it
   shorter") — those are not challenge asks.
-allowed-tools: Task
+allowed-tools: Agent
 ---
 
 # Challenge (entrypoint)
@@ -47,7 +47,7 @@ Proposal field.
 
 ## Step 2: delegate
 
-Invoke the `challenge` agent (Task) with the assembled brief and nothing
+Invoke the `challenge` agent (Agent) with the assembled brief and nothing
 else. Do not pre-judge, summarize, or soften its structured result —
 return it to the user as given (per-part `## Verdict: go | revise |
 reconsider` plus its sections).

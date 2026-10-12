@@ -5,7 +5,7 @@ description: >
   before writing any code. Triggers: /forge, "let's plan", "I want to build",
   "I need to add", "help me think through". Do NOT trigger on direct code
   requests like "write a function" or "fix this bug".
-allowed-tools: Read, Glob, Write, Bash, AskUserQuestion, Task
+allowed-tools: Read, Glob, Write, Bash, AskUserQuestion, Agent
 ---
 
 # Forge
@@ -63,7 +63,7 @@ run `/challenge` manually.
 ## Opening challenge
 
 When the input is not skipped above, delegate to the `challenge` agent
-(via `Task`) once, right after the trivial-input check and before the
+(via `Agent`) once, right after the trivial-input check and before the
 first dependency pass — before any question is asked. Forge never loads
 the challenge skill's prose itself; it only invokes the agent with a
 self-contained brief:
@@ -181,7 +181,7 @@ thorough answers are not re-asked.
 
 Once every required slot is filled and a fresh dependency pass comes
 back empty, and before the close gate, delegate to the `challenge`
-agent (via `Task`) one more time — unless the trivial-input skip
+agent (via `Agent`) one more time — unless the trivial-input skip
 applied for this session (see above), or the session made no decisions
 beyond the raw input (e.g. it is closing with `rounds: 0`), in which
 case skip the delta check and note `delta check skipped: no decisions
