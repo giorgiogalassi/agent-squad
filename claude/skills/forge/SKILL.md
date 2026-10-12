@@ -33,6 +33,8 @@ it — never ask about things it already establishes.
 
 Also read the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones). During discovery, cite a decision (by its `## [date] title`) when a question's premise conflicts with it. Missing file → continue.
 
+**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: as an `open_question`.
+
 ## Invocation
 
 `/forge <input> [--trace]` — `--trace` is off by default: a per-session

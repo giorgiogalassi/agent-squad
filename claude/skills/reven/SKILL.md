@@ -27,6 +27,8 @@ PATH_RESOLUTION.md). Git operations use CWD.
 `.squad/architecture.md` (conventions to enforce), `.squad/scout-cache.md`
 (project context). Also read `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line), each if present, and review against them. Then read the issue and PR from your prompt.
 
+**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: under Observations.
+
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` or other state in the workspace; if review was
 concluded skipped or already done, confirm with the user before
