@@ -19,7 +19,7 @@ You never write code, plan features, or make architectural decisions.
 ## Path resolution protocol
 
 1. Run `bash ~/.claude/hooks/path-resolve.sh`; read `VAULT_PATH`,
-   `PROJECT_ROOT`, `DISPLAY_NAME`. Never derive the root from
+   `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`. Never derive the root from
    `git rev-parse --show-toplevel` (breaks in worktrees; see
    PATH_RESOLUTION.md).
 2. If `VAULT_PATH` is not an existing directory, or `DISPLAY_NAME` is
@@ -32,7 +32,11 @@ You never write code, plan features, or make architectural decisions.
    Never derive the display name yourself — Lore owns naming and
    conflict resolution; Seed only consumes the mapping.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
-   `<vault>/projects/<project-name>/.squad/`.
+   `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
+   `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`
+   (the vault path by default; `<PROJECT_ROOT>/.squad` when
+   `lore-config.json` sets `context: repo` for this project). Seed is the
+   one skill that creates a missing `SQUAD_DIR`.
 
 ## Phase 1: read the project
 
@@ -48,6 +52,7 @@ find . -type d -maxdepth 3 \
 ```
 
 Never read source files unless a config file explicitly references them.
+The one exception is the shared kit's bounded read in Phase 4.
 
 ## Phase 2: check existing context files
 
@@ -55,8 +60,8 @@ If both `.squad/architecture.md` and `.squad/scout-cache.md` exist, show
 and wait:
 
   Seed has already run on this project.
-  - <vault>/projects/<project-name>/.squad/architecture.md exists
-  - <vault>/projects/<project-name>/.squad/scout-cache.md exists
+  - <SQUAD_DIR>/architecture.md exists
+  - <SQUAD_DIR>/scout-cache.md exists
   [U] Update both  [S] Skip  [A] architecture.md only  [C] scout-cache.md only
 
 Neither exists → straight to Phase 3, no question.
@@ -86,12 +91,16 @@ evidence; the user completes and verifies manually. Consumers: Archy and
 Reven today; a future Lex agent reads this section for compliance
 audits.
 
+Budget: ≤ 800 words. Over budget → compress (drop prose, merge entries)
+before writing; never truncate mid-section.
+
 Updating an existing file → merge: preserve what you cannot verify
 changed; update only what the current state contradicts or extends.
 
 ## Phase 4: write scout-cache.md
 
-Write `.squad/scout-cache.md`, dense and factual. Updating → replace
+Write `.squad/scout-cache.md`, dense and factual, ≤ 1200 words (over
+budget → compress, never truncate mid-section). Updating → replace
 entirely (snapshot, not history):
 
 ```markdown
@@ -117,13 +126,18 @@ silently instead of erroring.
 
 Getting this section right is what stops every implementer from
 rediscovering the same twenty facts. Derive it from the project's own
-UI library and its existing feature code, never from a framework's
-generic documentation.
+UI library, never from a framework's generic documentation.
 
-## Phase 5: ensure vault .squad directories
+**Bounded read (shared kit only).** To record selectors, import names
+and slot/attribute traps, you may read the UI library's public
+barrel/index plus at most 10 component files. Nothing else outside
+Phase 1 is read; the "never read source" rule holds for everything
+else.
+
+## Phase 5: ensure .squad directories
 
 ```bash
-mkdir -p <vault>/projects/<project-name>/.squad/forge <vault>/projects/<project-name>/.squad/prd/archive
+mkdir -p <SQUAD_DIR>/forge/archive <SQUAD_DIR>/prd/archive
 ```
 
 Idempotent; lets Forge and Chisel write on first run.
@@ -268,6 +282,62 @@ Never overwrite this file — the user may have edited it.
 
 Everything already exists → skip silently.
 
+## Phase 7: golden.md
+
+If `<vault>/projects/<project-name>/golden.md` does not exist, create it
+(never overwrite; the user fills in `Expected:`). Memory about the
+project's Q&A, consumed by the golden-set check script (#182; not under
+`SQUAD_DIR`):
+
+```markdown
+---
+title: <project-name> — Golden set
+tags: [golden]
+---
+
+# Golden set — <project-name>
+
+## Q1
+Which provider or pattern was chosen for <area>, and what was rejected?
+Expected:
+
+## Q2
+Which provider or pattern was chosen for <area>, and what was rejected?
+Expected:
+
+## Q3
+Which provider or pattern was chosen for <area>, and what was rejected?
+Expected:
+
+## Q4
+Which provider or pattern was chosen for <area>, and what was rejected?
+Expected:
+
+## Q5
+What naming conventions apply to <files, components, symbols>?
+Expected:
+
+## Q6
+What naming conventions apply to <files, components, symbols>?
+Expected:
+
+## Q7
+What naming conventions apply to <branches, commits, tests>?
+Expected:
+
+## Q8
+Where did the last session stop?
+Expected:
+
+## Q9
+Why did the last session stop there?
+Expected:
+
+## Q10
+What is the next step, and what blocks it?
+Expected:
+```
+
 ## Output
 
 When all phases complete, print this and nothing else (Written list
@@ -275,11 +345,12 @@ reflecting only what actually changed):
 
   Seed complete.
   Written:
-    <vault>/projects/<project-name>/.squad/architecture.md
-    <vault>/projects/<project-name>/.squad/scout-cache.md
+    <SQUAD_DIR>/architecture.md
+    <SQUAD_DIR>/scout-cache.md
+    <vault>/projects/<name>/golden.md (only if absent)
   Directories ensured:
-    <vault>/projects/<project-name>/.squad/forge/
-    <vault>/projects/<project-name>/.squad/prd/archive/
+    <SQUAD_DIR>/forge/archive/
+    <SQUAD_DIR>/prd/archive/
   Second-brain (if new project):
     <vault>/projects/<name>/status.md
     <vault>/projects/<name>/decisions.md
@@ -290,7 +361,9 @@ reflecting only what actually changed):
 ## Rules
 
 - Never invent stack details not present in the files read.
-- Never read source files unless a config file references them.
+- Never read source files unless a config file references them, except
+  the bounded shared-kit read in Phase 4.
+- architecture.md ≤ 800 words, scout-cache.md ≤ 1200 words.
 - Write in English regardless of project or conversation language.
 
 ## Session log

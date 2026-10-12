@@ -59,7 +59,7 @@ when explicitly requested or named by a context ref.
 > The optional SessionStart hook (`~/.claude/hooks/lore-orient.sh`)
 > injects read-only orientation automatically; it never writes.
 > `lore start` remains the write/setup path: naming, migration,
-> session-log reset, INDEX update.
+> session-log append, INDEX update.
 
 1. Resolve the vault path (above); missing → ask to create and wait.
 2. Deduce the candidate project: run `bash ~/.claude/hooks/path-resolve.sh`,
@@ -80,9 +80,15 @@ when explicitly requested or named by a context ref.
      already exists. Display name for this project [`<candidate>-2`]:";
      use the answer (default `<candidate>-2`), create, record. Later
      starts from the same path never prompt again.
-4. Reset the session log: overwrite `.squad/session.log` with
-   `[YYYY-MM-DD HH:MM] [lore] start — session opened` — each session
-   gets a clean log; skills append to it.
+4. Open the session log: append
+   `[YYYY-MM-DD HH:MM] [lore] start — session opened (<branch>)` to
+   `.squad/session.log` (create if missing), `<branch>` from
+   `git branch --show-current` (`detached` if empty). Never truncate or
+   overwrite: concurrent sessions (main checkout plus worktrees) share
+   the log. Only if it already exceeds 200 lines, first rename it to
+   `session-YYYYMMDD.log` in the same directory (if that name exists,
+   append to it instead of replacing), then start a fresh log with the
+   new start line.
 5. Migration check (only on first encounter of this cwd, i.e. step 3
    created a mapping): if `<cwd_path>/.squad/` exists, ask
    `Found .squad/ in this project. Move it to the vault? [Y/n]`. Y →
@@ -155,10 +161,14 @@ every session start.
 ## `lore prefer "<decision>"`
 
 1. Read `preferences/development.md`; check the line count.
-2. Ask once before writing: "Does this replace an existing entry?
-   [n / <entry>]". On an entry, apply both markers (see Decision format).
+2. Ask once before writing: "Does this replace an existing decisions.md
+   entry? [n / <entry>]". On an entry, apply both markers to
+   `decisions.md` (see Decision format). `development.md` bullets carry
+   no markers: when a new bullet replaces an old one, delete the old
+   bullet in the same write.
 3. Adding would exceed 100 lines → propose a consolidation and apply it
-   (Tier 1; reversible via vault git); demote superseded entries first.
+   (Tier 1; reversible via vault git); drop bullets whose decision is
+   superseded in `decisions.md` first, then consolidate the rest.
 4. Append `- [YYYY-MM-DD] [<project>] <decision>`; also append to
    `projects/<n>/decisions.md` with project context; commit the vault.
 5. Output: `Lore: preference recorded.`
@@ -166,10 +176,14 @@ every session start.
 **Decision format.** `decisions.md` entries are
 `## [YYYY-MM-DD] <title>`. A reversing entry may add
 `Supersedes: [YYYY-MM-DD] <title>`; the replaced entry gets
-`Superseded by: [YYYY-MM-DD] <title>`. Never delete a superseded entry
-in place. Cap: 60 active entries; at the cap, move superseded entries to
-`decisions-archive.md` (same format, never loaded by default). A
-superseded entry named by a context ref stays loadable on explicit
+`Superseded by: [YYYY-MM-DD] <title>`. Both markers sit on the line
+directly under the entry heading. Never delete a superseded entry in
+place. Cap: 60 active entries (no `Superseded by:` line), checked at
+every `lore prefer` write; at the cap, move superseded entries to
+`projects/<n>/decisions-archive.md` (same format, never loaded by
+default). At the cap with nothing superseded, append anyway and print
+`Lore: decisions.md over cap (N active) — supersede or archive manually.`
+A superseded entry named by a context ref stays loadable on explicit
 request.
 
 Record only preferences that are cross-tool, philosophy-level
@@ -208,6 +222,13 @@ succeeded.
 When Cody opens a PR (or commits a chain branch detached), it appends
 one line under `## Last checkpoint` — the only non-Lore vault write.
 `lore start` reads it as staleness evidence. No status.md → Cody skips.
+
+## SessionEnd hook (primary update path)
+
+`hooks/lore-checkpoint.sh` applies the staleness rule above at session end
+and rebuilds status.md headlessly (main checkout only; worktree sessions
+append a checkpoint line). `lore start` is the fallback when the hook is
+not installed.
 
 ## Rules
 

@@ -18,13 +18,18 @@ about the feature: read, decompose, create.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files and git use CWD.
 
 **Scope boundaries.** Never promote to global config uninvited; never
-create `.squad/` state in the workspace (vault only); if Forge concluded
+create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
 to skip Chisel, confirm with the user before proceeding.
 
 **Config check.** If `.squad/chisel-config.json` exists with valid
@@ -47,7 +52,7 @@ created before stopping.
 ## Configuration flow
 
 Ask one at a time:
-0. "Connected mode (issues created in a tracker via MCP) or detached
+0. "Connected mode (issues created in a tracker) or detached
    mode (issues written to a local batch file, you create them in the
    tracker yourself)?"
 
@@ -94,7 +99,7 @@ carries no `tracker` field; if found, report `tracker` by name as
 disavowed, not as a generic unknown key. A config without `mode` is
 connected (backward compatibility).
 
-On first connected run, verify every configured label (`review_label`
+On every connected run, verify every configured label (`review_label`
 unless `none`, and all three `state_labels`) exists in the target repo
 (`gh label list`); create missing ones with `gh label create` and say
 so — downstream label swaps by Cody and Ralph fail otherwise.
@@ -107,7 +112,8 @@ Confirm with one line and proceed:
 
 If `.squad/prd/current.md` exists, read it (its existence always means a
 pending PRD — Chisel archives after consumption). Otherwise read
-`.squad/forge/output.yaml`. Existence decides; never ask.
+`.squad/forge/output.yaml`. Existence decides; never ask. Neither
+exists → say "No PRD or Forge output to consume" and stop.
 
 ## Issue granularity
 
@@ -220,7 +226,7 @@ Rules:
 
 Then print:
 
-  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md
+  Batch written to <vault>/projects/<project>/.squad/issues/batch-<timestamp>.md  (issues/ stays in the vault: tracker handoff state, not project knowledge)
   Create the issues in your tracker (CSV import available), optionally
   fill the key mapping, then invoke Ralph. If your tracker supports
   parent/sub-issue links, create the parent entry first so sub-issues can
@@ -271,6 +277,12 @@ still exist, they just aren't on the board yet:
 - If the PRD was the input, archive it after creation:
   `.squad/prd/current.md` → `.squad/prd/archive/current-YYYYMMDD-HHMMSS.md`
   (applies in both modes).
+- If `forge/output.yaml` was the input, archive it after creation the
+  same way: `.squad/forge/output.yaml` →
+  `.squad/forge/archive/output-YYYYMMDD-HHMMSS.yaml` (`mkdir -p` the
+  archive dir; both modes). A second `/chisel` then never recreates
+  the batch. A batch that stops partway leaves `output.yaml` in place
+  on purpose: the next run re-reads it.
 
 ## Session log
 

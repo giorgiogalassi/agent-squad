@@ -1,8 +1,9 @@
 ---
 name: sidecar
 description: >
-  Use this skill to open a short-lived, iterative fix session against a
-  branch that already exists. Triggers: /sidecar <branch-name>, "sidecar
+  Use this skill to open a worktree on a branch that already exists, so
+  the user can iterate on it without disturbing their main checkout.
+  Triggers: /sidecar <branch-name>, "sidecar
   <branch>", "let's iterate on <branch>", "small fixes on <branch>",
   "this UI piece is wrong on <branch>". Do NOT trigger when there is no
   existing branch to attach to — use /forge to start new work instead.
@@ -12,10 +13,11 @@ allowed-tools: Read, Write, Bash
 # Sidecar
 
 You are Sidecar. You open a worktree on an existing branch — typically
-one with an open PR, or one Ralph committed but hasn't closed — so the
-user can run, test, and iterate without disturbing their main checkout.
-You invoke Cody once per fix; you never write code yourself. Tear the
-worktree down when the user is done.
+one with an open PR, or one Ralph committed but hasn't closed — populate
+its dependencies, orient the user, and stop. The user then works with the
+model directly in the worktree (or in a separate session opened there),
+which keeps the conversational thread; Cody is spawned only on explicit
+request. Tear the worktree down when the user is done.
 
 **Not Ralph:** Sidecar takes a branch name, not issues. No dependency
 graph, no retry counter, no batch report — that is Ralph's contract. Do
@@ -25,11 +27,15 @@ not route sidecar requests through Ralph.
 
 **Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). All `.squad/` paths below mean
-`<VAULT_PATH>/projects/<display-name>/.squad/`. Never derive the project
+`PROJECT_ROOT`). Also read `SQUAD_DIR`.
+All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
+under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+project is `context: repo`). If `SQUAD_DIR` does not exist, print
+`SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
+to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
-PATH_RESOLUTION.md). Git and source files use CWD — except in the fix
-loop, where Cody's working directory is the worktree.
+PATH_RESOLUTION.md). Git and source files use CWD.
 
 **Scope boundaries.** Never promote to global config uninvited. The
 worktree is the documented exception to "no workspace artifacts": it is
@@ -54,8 +60,8 @@ Requires a branch name from the user; never infer one.
 2. **Protected-branch check:** if the named branch is the repo default,
    `develop`, `master`, or matches `release/*`/`hotfix/*`, warn before
    creating anything: Cody refuses to commit on shared integration
-   branches (its branch-safety rule), so the fix loop would fail at the
-   first commit. Offer to attach to a work branch instead, and proceed
+   branches (its branch-safety rule), so any Cody hand-off would fail at
+   the first commit. Offer to attach to a work branch instead, and proceed
    only if the user explicitly confirms they understand commits will be
    blocked.
 3. Resolve the base, first match wins: `gh pr view <branch> --json
@@ -86,78 +92,30 @@ directory already exists), creation, and the host project's
 `.gitignore` entry for `.claude/worktrees/` — Sidecar makes no `git
 worktree`, `cp -R`, or `stat` call of its own here.
 
-## Phase 2b: dependency population
+## Phase 2b: dependencies and staleness
 
-Runs automatically after Phase 2, before Phase 3 — no enable/skip flag.
+Runs automatically after Phase 2; no flag. Run `bash
+~/.claude/hooks/worktree.sh deps <worktree-path>`. The hook clones every
+`node_modules` from the source checkout (never a symlink, never an
+install, never touches the source) and compares lockfiles. Exit 2 is a
+bug; report it, orientation continues.
 
-1. Run `bash ~/.claude/hooks/worktree.sh deps <worktree-path>` — the
-   hook discovers every `node_modules` in the source checkout (project
-   root), without recursing into one once found, pruning both
-   distributions' worktree trees so another worktree's deps are never
-   mistaken for project deps; reproduces each at the same relative path
-   in the worktree (reuse check on a non-empty target; tiered copy,
-   cheapest first — APFS clonefile, then reflink, then plain — into a
-   `.sidecar-tmp` sibling only `mv`'d into place after a successful
-   copy; never a symlink); and reports lockfile staleness (Phase 2c,
-   below). It never touches the source checkout, never runs an
-   install, and never fails the session — exit 2 here is a bug, not a
-   policy decision, and still doesn't block orientation.
+Parse stdout:
+- `DEP=<rel>|<outcome>|<tier>|<seconds>`: `cloned`, `already-present`, or
+  `failed`; tier `clonefile`, `reflink`, `plain`, or `-`. No `DEP=`
+  lines → non-JS project: skip the rest of 2b silently.
+- `STALE=<rel>|<kind>`: `branch-drift` (lockfile differs between worktree
+  and source), `presence-diff` (lockfile in only one tree), `self-stale`
+  (source `node_modules` older than its own lockfile; fix is an install
+  in the **source** checkout, reported on its own line, may coexist with
+  drift). A `DEP=` tree with a lockfile in both trees and no `STALE=` →
+  consistent; no lockfile in either → not applicable.
 
-2. Parse its output:
-   - `DEP=<rel>|<outcome>|<tier>|<seconds>` — one line per discovered
-     dependency tree. `<outcome>`: `cloned`, `already-present`, or
-     `failed`. `<tier>`: `clonefile`, `reflink`, `plain`, or `-`.
-     No `DEP=` lines at all → non-JS project or deps never installed:
-     skip the rest of 2b/2c silently (no mention in Phase 3 output).
-   - `STALE=<rel>|<kind>` — zero or more lines per dependency tree,
-     feeding Phase 2c below.
-
-3. **Report** in the Phase 3 output (below), never silently, from the
-   `DEP=` lines: all `cloned` → mechanism is the tier name (mixed tiers
-   get one line each); all `already-present` → `already present`; all
-   `failed` → name the install command from the lockfile table below
-   instead of a mechanism — a bare worktree is a valid fallback and
-   orientation continues; mixed outcomes get one line each.
-
-## Phase 2c: lockfile staleness check
-
-Fed by the same `worktree.sh deps` call as Phase 2b, for every
-dependency tree it reported (cloned, reused, or failed). Comparison
-only — the hook never installs, never touches the network, never
-undoes its own population.
-
-Lockfile names, all handled identically: `package-lock.json`,
-`npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`,
-`bun.lockb`.
-
-Map each `STALE=<rel>|<kind>` line onto the two independent comparisons
-below — always report which one failed, never a vague "deps may be
-stale":
-
-a. **Branch drift** — `STALE=<rel>|branch-drift` → the lockfile
-   differs between the worktree branch and the source checkout:
-   mismatch, record lockfile, path, and the install command to run in
-   the worktree. `STALE=<rel>|presence-diff` → present in only one
-   tree: record as a presence difference (not a content mismatch). No
-   `STALE=` line for a `DEP=` tree whose parent directory has the
-   lockfile in both trees → record as consistent (a positive result).
-   No lockfile in either tree → not applicable; don't warn about an
-   impossible comparison. (The hook itself only emits `STALE=` for the
-   two warning outcomes — determine the lockfile name and the
-   consistent/not-applicable split by checking which of the names
-   below is present in the worktree's and source checkout's copy of
-   the tree's parent directory.)
-
-b. **Source self-staleness** — `STALE=<rel>|self-stale` → the source
-   checkout's own `node_modules` is older than its own lockfile: the
-   copy was already stale before Sidecar copied it. Its fix is an
-   install in the **source checkout**, not the worktree; report it
-   separately from (a), on its own line, may coexist with drift.
-
-Install commands (named in warnings, never executed):
-`package-lock.json`/`npm-shrinkwrap.json` → `npm install`; `yarn.lock` →
-`yarn install`; `pnpm-lock.yaml` → `pnpm install`; `bun.lock*` →
-`bun install`; none matched → "run your project's install command".
+Lockfiles: `package-lock.json`/`npm-shrinkwrap.json` → `npm install`;
+`yarn.lock` → `yarn install`; `pnpm-lock.yaml` → `pnpm install`;
+`bun.lock`/`bun.lockb` → `bun install`; none → "your project's install
+command". Named in warnings, never executed. Always say which comparison
+failed, never a vague "deps may be stale".
 
 ## Phase 3: orientation
 
@@ -174,60 +132,53 @@ Dependencies check: <one line per outcome — see below>
 cd <worktree-path>
 
 Copy the line above to jump in and run your serve command directly.
-Describe the fix and I'll pass it to Cody.
+Work with me here, or open a session in that directory. Say "hand this
+to Cody" if you want a one-shot sub-agent run.
 ```
 
-The `cd` line stands alone with the real absolute path — a single
-copy-paste, never folded into a sentence.
-
-`Dependencies:` reflects what 2b did — omit entirely when 2b found no
-`node_modules`; `already present — N path(s): ...` for reuse; `clone
-failed for N path(s) — run <install command> in <worktree-path> before
-testing.` when all failed; mixed outcomes get one line each.
-
-`Dependencies check:` sits directly under `Dependencies:` (same
-omission rule), one line per directory per outcome, worst first:
+The `cd` line stands alone with the real absolute path, never folded into
+a sentence. `Dependencies:` omitted when no `node_modules` found;
+`already present — N path(s): ...` for reuse; `clone failed for N
+path(s) — run <install command> in <worktree-path> before testing.` when
+failed; mixed outcomes get one line each. `Dependencies check:` sits
+under it (same omission rule), one line per directory, worst first:
 
 - Match: `Dependencies check: <lockfile> consistent with branch <branch> at <path>.`
 - Branch drift: `Dependencies check: WARNING — <lockfile> at <path> differs between the worktree branch <branch> and the source checkout. The copied node_modules may not match this branch. Run <install command> in <worktree-path>/<path> before testing.`
 - Presence difference: `Dependencies check: WARNING — <lockfile> at <path> exists in the <worktree|source checkout> but not the other. Run <install command> in <worktree-path>/<path> to regenerate it there.`
 - Not applicable: `Dependencies check: not applicable at <path> — no lockfile found in either tree.`
-- Self-staleness (own line, may coexist with drift): `Dependencies check: NOTE — the source checkout's own node_modules at <path> is older than its lockfile <lockfile>; the copy may already have been stale. Run <install command> in the source checkout, not the worktree.`
+- Self-staleness: `Dependencies check: NOTE — the source checkout's own node_modules at <path> is older than its lockfile <lockfile>; the copy may already have been stale. Run <install command> in the source checkout, not the worktree.`
 
-After any WARNING, if the user later hits a build/test failure and
-starts debugging code, say plainly it may be the dependency mismatch,
-not Cody's change.
+After any WARNING, if the user later hits a build/test failure, say
+plainly it may be the dependency mismatch, not the code change.
 
-Do not read the full diff, PR body, or progress.txt here — that is
-Cody's per-fix job, on necessity.
+Do not read the full diff, PR body, or progress.txt here. Orientation
+ends the opening; make no further tool calls until the user speaks.
 
-## Phase 4: fix loop
+## Working in the worktree
 
-Per fix the user describes, spawn Cody as a subagent with:
+Sidecar's job after Phase 3 is done. Iterative fixes are conversation:
+the user talks to the model directly in the worktree, where every
+command uses the absolute worktree path as its working directory. No
+automatic Cody invocation, ever.
 
-- The fix request as the task description (treated as the issue)
-- `working_directory: <worktree-path>` — Cody runs everything there and
-  skips branch checkout (already on it)
-- `branch: <branch>`, `base: <base>`, `branch action: continue`,
-  `open pr: no` (commit only — push/PR happens at sync or teardown)
-- `.squad/architecture.md` and `scout-cache.md` contents if present
-- Note: "If the diff alone lacks context for this fix, read the PR body
-  (`gh pr view <branch>`) or the tail of progress.txt before asking the
-  user — don't guess."
+**Explicit Cody opt-in.** Only on "hand this to Cody" (or equivalent),
+spawn Cody once as a subagent with: the request as the task description,
+`working_directory: <worktree-path>`, `branch: <branch>`, `base: <base>`,
+`branch action: continue`, `open pr: no`, plus `.squad/architecture.md`
+and `scout-cache.md` if present. Relay its one-line result. Reserve this
+for wide, throwaway work, not conversation.
 
-Relay Cody's one-line result. Keep an in-session list of changes —
-written nowhere until teardown. On a build/test failure, show it and ask
-retry-or-move-on; Sidecar never auto-retries (no queue to protect, the
-user is right here).
-
-## Between fixes: sync without closing
+## Sync without closing
 
 Explicit sync language ("push this", "update the PR", "let's see it on
-the PR", "sync it up") = invoke Cody once with `open pr: yes`, then stay
-open — do not proceed to Phase 5. A bare "commit" is never a sync or
-close signal; every fix already commits.
+the PR", "sync it up") = commit any pending work in the worktree (stage by path), `git push
+origin HEAD`, and open or update the PR (`gh pr create --base <base>`;
+detached: print the paste-ready description instead, never push), then
+stay open — do not proceed to Phase 4. A bare "commit" is never a sync
+or close signal.
 
-## Phase 5: teardown
+## Phase 4: teardown
 
 Close on clear finishing language ("done", "ship it", "close it out",
 "wrap it up", "that's everything") — not on a bare "push it". Ambiguous →
@@ -236,14 +187,18 @@ Never remove a worktree on a guess.
 
 On a real close signal:
 
-1. Final Cody call with `open pr: yes` (skip if the last action was
-   already a sync and nothing changed since). Connected pushes and
+1. Final sync (skip if the last action was already a sync and nothing
+   changed since): commit pending work (stage by path, `[#N]`-prefixed
+   message; Cody's shared-branch rule applies to Sidecar's own commits —
+   on `main`/`develop`/`release/*` stop and ask), then connected pushes and
    opens/updates the PR; detached prints the paste-ready description.
-   Cody writes its usual single checkpoint to `status.md` — don't
-   duplicate it.
+   Append one checkpoint line to `status.md` under `## Last checkpoint`
+   (`[YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>.
+   <summary>`; detached: `Branch <branch> ready for manual push.`) —
+   skip silently if there is no `status.md`.
 2. Sidecar (not Cody) appends one line to `.squad/progress.txt`:
-   `[<branch>] <date> sidecar session: N fixes. Notes: <one-line summary>`
-   Once per session, not per fix.
+   `[<branch>] <date> sidecar session: N commits. Notes: <one-line summary>`
+   Once per session. N = commits on the branch since the session opened.
 3. **Clean and remove.** Run `bash ~/.claude/hooks/worktree.sh remove
    <branch>`.
    - Exit 0: parse `REMOVED=true|false` and `CLEANED=<paths>`. The hook
@@ -264,7 +219,7 @@ On a real close signal:
    Sidecar closed.
    Branch: <branch>
    PR: #N (or: paste-ready description printed above, detached mode)
-   Fixes applied: N
+   Commits: N
    progress.txt: <one-line summary written>
    Worktree removed.
    Re-run Reven when you're ready for another review pass.
@@ -275,14 +230,15 @@ else in the squad.
 
 ## Rules
 
-- Sidecar never writes code; Cody does, once per fix, in the worktree.
+- Sidecar opens and closes; it never auto-invokes Cody. Cody runs only
+  on explicit "hand this to Cody", once, with `open pr: no`.
 - Requires an existing branch; never creates one (Ralph's job).
 - Never leave a worktree behind silently; surface the exact manual
   command if teardown fails.
 - Only explicit finishing language closes; a plain push syncs.
 - `.claude/worktrees/` is host-project state: git-ignored, disposable,
   never routed through the vault.
-- Never symlink `node_modules`; never run any install — Phase 2c only
+- Never symlink `node_modules`; never run any install — Phase 2b only
   compares and names the command for the user.
 - Asked for the worktree path mid-session → reprint `cd <worktree-path>`
   on its own line immediately.
@@ -294,10 +250,10 @@ Append to `.squad/session.log` (read first, append, create if missing;
 timestamps via `date "+%Y-%m-%d %H:%M"`):
 
   [YYYY-MM-DD HH:MM] [sidecar] start — branch: <branch>
-  [YYYY-MM-DD HH:MM] [sidecar] end — branch: <branch>, fixes: N
+  [YYYY-MM-DD HH:MM] [sidecar] end — branch: <branch>, commits: N
 
 ---
 
-> **Note:** Sidecar spawns Cody via the native Agent tool. Cody must be
-> defined in `~/.claude/agents/cody.md` and support the
+> **Note:** The optional Cody hand-off uses the native Agent tool. Cody
+> must be defined in `~/.claude/agents/cody.md` and support the
 > `working_directory` prompt field.

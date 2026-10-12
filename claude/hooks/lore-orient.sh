@@ -23,6 +23,7 @@ if [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       VAULT_PATH) VAULT="$_value" ;;
       PROJECT_ROOT) ROOT="$_value" ;;
       DISPLAY_NAME) DISPLAY="$_value" ;;
+      SQUAD_DIR) SQUAD_DIR="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else
@@ -78,6 +79,9 @@ fi
 [ -z "$DISPLAY" ] && DISPLAY="$(basename "$ROOT")"
 
 PROJ="$VAULT/projects/$DISPLAY"
+# Project knowledge location (vault or repo); progress.txt and session.log
+# stay under the vault .squad/ regardless.
+[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$PROJ/.squad"
 STATUS="$PROJ/status.md"
 
 NL=$'\n'
@@ -109,8 +113,30 @@ if [ -f "$PROJ/.squad/session.log" ]; then
   OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$PROJ/.squad/session.log")${NL}"
 fi
 
+# Staleness and budget signals. Each line is omitted when not applicable.
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+SIGNALS=""
+if [ -f "$SQUAD_DIR/architecture.md" ]; then
+  ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"
+  NEWEST_F=""; NEWEST_M=0
+  for _f in package.json package-lock.json pnpm-lock.yaml yarn.lock bun.lockb \
+    pyproject.toml uv.lock poetry.lock Cargo.toml Cargo.lock go.mod go.sum \
+    Gemfile.lock composer.lock; do
+    [ -f "$ROOT/$_f" ] || continue
+    _m="$(mtime "$ROOT/$_f")"
+    if [ -n "$_m" ] && [ "$_m" -gt "$NEWEST_M" ]; then NEWEST_M="$_m"; NEWEST_F="$_f"; fi
+  done
+  if [ -n "$NEWEST_F" ] && [ -n "$ARCH_M" ] && [ "$ARCH_M" -lt "$NEWEST_M" ]; then
+    SIGNALS="${SIGNALS}Architecture snapshot older than $NEWEST_F; run /seed${NL}"
+  fi
+fi
+if [ -f "$STATUS" ] && [ "$(wc -w < "$STATUS" | tr -d ' ')" -gt 300 ]; then
+  SIGNALS="${SIGNALS}status.md over budget; next rebuild compresses${NL}"
+fi
+[ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
+
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
-OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log reset)."
+OUTPUT="${OUTPUT}Run /lore start for setup (first-time naming, migration, session-log append)."
 
 # Export final JSON — systemMessage shows in UI, additionalContext is injected as prompt context
 emit_json "$OUTPUT"

@@ -11,7 +11,8 @@ config shape):
 - `review_label` (default `needs-review`) — connected mode only. Applied
   by Chisel to every issue (and its parent, if any) at creation. Means
   "a human has not yet triaged this issue"; Ralph's batch-discovery gate
-  excludes anything still carrying it.
+  excludes anything still carrying it
+  unless named explicitly.
 - `state_labels.in_progress` (default `in-progress`) — applied by Cody
   when it claims an issue.
 - `state_labels.in_review` (default `in-review`) — applied by Cody when
@@ -90,6 +91,10 @@ deliberately avoided:
   `blocked` is added (both trees, see below), an escalated issue can
   carry at most `blocked` + `review_label` together — never
   `in-progress` + `blocked` + `needs-review` simultaneously.
+- **Batch discovery skips `blocked`.** Ralph's no-ID batch (scoped to one
+  parent's sub-issues via `--parent`) excludes issues carrying `blocked`,
+  so escalated work does not re-enter the next run; naming the issue
+  explicitly overrides it.
 - **Not on manual close without a merge.** `.github/workflows/issue-lifecycle.yml`
   only triggers on `pull_request: closed` and `issues: reopened` — a
   human closing an issue directly (wontfix, duplicate, etc.) fires
@@ -107,7 +112,7 @@ Grep for `add-label`/`remove-label` to verify the claim, review-swap and
 escalation commands match this table:
 
 - `claude/skills/chisel/SKILL.md` — applies `review_label` at creation;
-  verifies/creates all configured labels on first connected run.
+  verifies/creates all configured labels on every connected run.
 - `claude/agents/cody.md` — claims (`in_progress`); on PR-open, swaps
   `in_progress` → `in_review` and removes `review_label` if configured.
 - `claude/skills/ralph/SKILL.md` — batch-discovery review gate;

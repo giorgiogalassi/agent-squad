@@ -24,7 +24,7 @@ where Ralph left off.
 
 **Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
 `~/second-brain/`. Run `bash ~/.claude/hooks/path-resolve.sh` and read
-`PROJECT_ROOT` and `DISPLAY_NAME` from its output (empty `DISPLAY_NAME` →
+`PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
 basename of `PROJECT_ROOT`). Never derive the project root from
 `git rev-parse --show-toplevel` — it breaks inside worktrees (see
 PATH_RESOLUTION.md). Source files and git operations use CWD.
@@ -36,9 +36,17 @@ never pushes or opens PRs (steps 0 and 6).
 
 **Context:** if your prompt already contains `architecture.md` and
 `scout-cache.md` (Ralph injects them), do not re-read. Otherwise read
-from `<vault>/projects/<display-name>/.squad/`: `architecture.md`,
-`scout-cache.md`, `progress.txt` — each if present; continue without
-missing ones. Also use `<vault>/preferences/development.md` (full, ≤100 lines) and the last 20 active entries of `<vault>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones): if your prompt already contains them (Ralph injects them), do not re-read; otherwise (direct invocation) read them yourself, each if present. Then read the issue in your prompt: what to build, the
+`architecture.md` and `scout-cache.md` from `SQUAD_DIR` (read it from the
+`path-resolve.sh` output; vault by default, `<PROJECT_ROOT>/.squad` for
+`context: repo`) and `progress.txt` from
+`<vault>/projects/<display-name>/.squad/` — each if present; continue
+without missing ones. Never fall back to the vault for the first two when
+`SQUAD_DIR` is the repo. Also use `<vault>/preferences/development.md`
+(full, ≤100 lines) and the last 20 active entries of
+`<vault>/projects/<display-name>/decisions.md` (active = no
+`Superseded by:` line; never superseded ones): if your prompt already
+contains them (Ralph injects them), do not re-read; otherwise (direct
+invocation) read them yourself, each if present. Then read the issue in your prompt: what to build, the
 acceptance criteria, any first-line `Blocked by:` (informational only —
 if you were invoked, the blocker is resolved).
 
@@ -76,8 +84,15 @@ and switching inside someone else's worktree corrupts it.
 Otherwise, Ralph supplies `branch`, `base`, `branch action` (direct
 invocation defaults: `create`, `main`, `<issue-id>-<short-description>`):
 
-- `create`: `git checkout <base> && git checkout -b <branch>`. If the
-  branch already exists, check it out instead of failing.
+- `create`, connected: `git fetch origin`, then
+  `git checkout -b <branch> origin/<base>` — a stale local `<base>`
+  would give the PR spurious diffs and conflicts. If `origin/<base>`
+  does not exist after the fetch (base is a local-only stacked branch),
+  fall back to the local `<base>` and say so in the plan output. If the
+  branch already exists, check it out instead of failing, and report
+  the fetch result (success, or the error).
+- `create`, detached: no network. `git checkout <base> && git checkout
+  -b <branch>` from the local base; if the branch exists, check it out.
 - `continue`: `git checkout <branch>` — never a new branch, never off
   main.
 

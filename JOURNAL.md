@@ -787,7 +787,7 @@ retired deliberately, not quietly.
 
 | File | Purpose |
 |------|---------|
-| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Overwritten each session. |
+| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Archived to `forge/archive/` once Chisel consumes it. |
 | `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow. Written by Seed. Read by Forge, Archy, Cody, Reven; data flow is Lex's future input. |
 | `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
 | `<vault>/projects/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
@@ -1115,6 +1115,32 @@ couldn't show.
 > always-runs-no-matter-what stance; and `--trace` reports finding
 > attachment for the same transparency reason it already reports rounds
 > and holds.
+
+---
+
+### Iteration 27: Shrinking Sidecar to Open and Close
+
+Sidecar ran twice against 27 Forge and 18 Ralph runs. Its worktree and
+dependency mechanics proved valuable (native worktrees do not populate
+`node_modules`), but the Cody-per-fix loop was the wrong granularity for
+iterative fixes: three cold starts for "a bit more padding". In practice
+the user opens a separate session per worktree, which already gives
+session-level isolation while keeping the conversational thread.
+Sub-agent isolation suits wide throwaway work, not conversation.
+
+**Open and close only.** `/sidecar <branch>` keeps branch/base
+resolution, `worktree.sh create` and `deps`, the staleness report, and
+the orientation block, then stops. The automatic fix loop is gone;
+"hand this to Cody" spawns Cody once with `working_directory`, `branch`,
+`base`, `open pr: no`. Sync and teardown language are unchanged, but
+with no Cody call to do it, Sidecar now commits, pushes, and opens the
+PR itself at sync or close, and writes the `status.md` checkpoint. The
+`progress.txt` line now counts commits instead of fixes. `worktree.sh`
+is untouched.
+
+> **Key decision:** Sidecar is a worktree opener and closer, not a fix
+> loop; Cody is an explicit one-shot opt-in rather than the default
+> per-fix executor.
 
 ---
 
