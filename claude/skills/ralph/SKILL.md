@@ -147,7 +147,7 @@ granularity).
 
 Spawn Cody as a subagent with: the full issue description, acceptance
 criteria, contents of `.squad/architecture.md`, `scout-cache.md`, and
-`progress.txt` (if present), plus per Phase 1b:
+`progress.txt` (if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones) — superseded entries are never injected; bounded at 100 lines + 20 entries. Missing files are skipped. Plus per Phase 1b:
 
 - `mode: connected` or `mode: detached`
 - `branch: <branch>` — the issue's own branch (connected); its chain's

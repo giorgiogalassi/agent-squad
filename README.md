@@ -362,7 +362,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by Lore on lore start/recover. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. Fed back: Forge reads the last 20 active decisions, Ralph injects `development.md` plus that tail into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
