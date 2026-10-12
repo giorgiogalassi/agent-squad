@@ -26,7 +26,7 @@ runs as a required step inside `/forge` before a draft scope closes.
                 Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base>, with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
-SessionEnd      lore-checkpoint hook rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+SessionEnd      lore-checkpoint hook rebuilds status.md (detached) when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
 scripts/golden-check.sh   Manual regression check after editing any skill, agent, hook or rule file.
 ```
 
@@ -284,9 +284,19 @@ one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the 
   branch (capped to the last 3), never rebuilds.
 - Session on the main checkout: if status is stale (checkpoint newer than
   Last updated, or Last updated older than 7 days), runs a headless
-  `claude -p` reconstruct from git evidence. `## Blocked` is preserved
-  verbatim, checkpoints capped to 3, output rejected if over budget
-  (~400 tokens). Fresh status: no write. Commits the vault if it is a git repo.
+  `claude -p` reconstruct from git evidence (skipped when there are no
+  commits since `Last updated`). `## Blocked` is preserved verbatim,
+  checkpoints capped to 3, Goal/Done/Next rejected if over ~400 tokens.
+  Fresh status: no write. Commits the vault if it is a git repo.
+- Budget: Claude Code gives SessionEnd hooks 1.5 s by default, so the
+  rebuild runs detached (own session, stdio redirected, one lock per
+  project, hard 90 s cap via `timeout` or a perl alarm) and exit is never
+  delayed. Its log is `<vault>/projects/<name>/.lore-checkpoint.log`.
+  To give the synchronous part more time, add `"timeout": <seconds>` to the
+  hook entry (the budget rises to the highest per-hook timeout, up to 60 s).
+- Checkpoint lines: `lore-checkpoint.sh --note "<line>"` inserts one inside
+  `## Last checkpoint` (cap 3); stray dated lines under `## Context refs`
+  are moved there on the next run.
 - Model: `SQUAD_LORE_MODEL` (default `haiku`).
 
 ```bash

@@ -258,8 +258,11 @@ Then act on `open pr` (default `yes` when invoked directly):
   branch, body as above); the user pushes and opens the PR themselves.
 
 **Checkpoint** (only when a branch closes with `open pr: yes`, after PR
-creation or the paste-ready print): append one line to
-`<vault>/projects/<display-name>/status.md` under `## Last checkpoint` —
+creation or the paste-ready print): write one line into
+`<vault>/projects/<display-name>/status.md` under `## Last checkpoint` by
+running `bash ~/.claude/hooks/lore-checkpoint.sh --note "<line>"` from the
+project root. Never `>>` status.md: its last section is `## Context refs`,
+so the line would land outside the checkpoint section —
 
 ```
 [YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>

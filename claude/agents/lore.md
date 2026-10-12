@@ -226,8 +226,9 @@ one line under `## Last checkpoint` — the only non-Lore vault write.
 ## SessionEnd hook (primary update path)
 
 `hooks/lore-checkpoint.sh` applies the staleness rule above at session end
-and rebuilds status.md headlessly (main checkout only; worktree sessions
-append a checkpoint line). `lore start` is the fallback when the hook is
+and rebuilds status.md headlessly in a detached process (main checkout
+only; worktree sessions append a checkpoint line). Other writers add
+checkpoint lines with `lore-checkpoint.sh --note "<line>"`, never `>>`. `lore start` is the fallback when the hook is
 not installed.
 
 ## Rules
