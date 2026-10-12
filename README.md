@@ -30,29 +30,17 @@ SessionEnd      lore-checkpoint hook rebuilds status.md when stale (worktree ses
 scripts/golden-check.sh   Manual regression check after editing any skill, agent, hook or rule file.
 ```
 
+[![Agent Squad flow](docs/flow.png)](https://giorgiogalassi.github.io/agent-squad/flow.html)
+
+The full picture, including the hooks, the side paths and a matrix of
+which step reads and writes which memory file, lives in
+[`docs/flow.html`](docs/flow.html), rendered at
+<https://giorgiogalassi.github.io/agent-squad/flow.html>. The spine is:
+
 ```mermaid
 graph LR
-    S["SessionStart hook<br/>lore-orient: status, signals"] --> A["/seed<br/>Initialize context (SQUAD_DIR)<br/>+ golden.md template"]
-    A --> B["/clear<br/>Reset session context"]
-    B --> C["/forge<br/>Interactive discovery<br/>reads active decisions<br/>Writes output.yaml"]
-    C --> D{"Complexity<br/>confirmed"}
-    D -->|HIGH| E["/archy<br/>Create PRD"]
-
-    F["/chisel<br/>Create tracker issues<br/>parent + sub-issues<br/>archives the input"] --> G["Review issues<br/>remove needs-review"]
-    G --> H["/ralph --parent n<br/>Execute in dependency order<br/>one stacked branch + PR per issue<br/>run state in ralph-run.md"]
-    H --> I["Cody<br/>branch from origin/base<br/>prefs + decisions injected"]
-    I --> J["Reven<br/>diff against the PR base<br/>one review per PR"]
-    J -->|Approved| K["Merge<br/>top-down, retarget children"]
-    J -->|Changes requested| I
-
-    K -.->|"iterate on a branch"| L["/sidecar branch<br/>open worktree, stop"]
-    L -.-> J
-
-    K --> Z["SessionEnd hook<br/>lore-checkpoint: rebuild status.md<br/>(worktree session: checkpoint only)"]
-    Z -.->|"after editing skills/hooks"| Y["scripts/golden-check.sh<br/>regression vs last run"]
-
-    D -->|LOW / MED| F
-    E --> F
+    A["/seed"] --> B["/forge"] --> C["/chisel"] --> D["/ralph"] --> E["Cody"] --> F["Reven"] --> G["Merge"]
+    B -.->|HIGH| H["/archy"] -.-> C
 ```
 
 The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
