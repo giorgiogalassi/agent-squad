@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Squad Flow</title>
+<meta name="description" content="The Agent Squad pipeline, hooks, side paths and a read/write matrix of every memory file.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  html, body { margin: 0; }
+  body { font-size: 14px; }
+  img { max-width: 100%; }
+</style>
+<style>
+  /* Layout: a horizontal pipeline of step cards with hooks as bookends,
+     side paths below, then a memory matrix (which step reads/writes which file). */
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --ink: #1c2230;
+    --muted: #5d6675;
+    --line: #d7dce4;
+    --accent: #0f766e;
+    --accent-soft: #d9f0ec;
+    --hook: #6d4fc2;
+    --hook-soft: #ebe6fb;
+    --side: #b45309;
+    --side-soft: #fdebd0;
+    --read: #2563eb;
+    --write: #b91c1c;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12161d; --surface: #1a2029; --ink: #e8ebf0; --muted: #9aa3b2; --line: #2d3542;
+      --accent: #2dd4bf; --accent-soft: #113b37; --hook: #a78bfa; --hook-soft: #2a2347;
+      --side: #f59e0b; --side-soft: #3d2a0a; --read: #60a5fa; --write: #f87171; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161d; --surface: #1a2029; --ink: #e8ebf0; --muted: #9aa3b2; --line: #2d3542;
+    --accent: #2dd4bf; --accent-soft: #113b37; --hook: #a78bfa; --hook-soft: #2a2347;
+    --side: #f59e0b; --side-soft: #3d2a0a; --read: #60a5fa; --write: #f87171; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 48px; }
+  h1 { font-size: 1.6rem; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 24px; max-width: 70ch; }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin: 32px 0 12px; }
+  code, .cmd { font-family: var(--font-mono); font-size: 0.86em; }
+
+  /* pipeline */
+  .pipe { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
+  .pipe + .pipe { margin-top: 44px; position: relative; }
+  .pipe + .pipe::before { content: "↳ continues"; position: absolute; top: -30px; left: 0; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+  .node.side { border-color: var(--side); background: var(--side-soft); }
+  .node.side .cmd { color: var(--side); }
+  .node.anytime { border-style: dashed; }
+  .node.anytime::before, .node.anytime::after { display: none; }
+  .node { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px 12px; position: relative; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .node .cmd { color: var(--accent); font-weight: 500; }
+  .node.hook { border-color: var(--hook); background: var(--hook-soft); }
+  .node.hook .cmd { color: var(--hook); }
+  .node.gate { border-style: dashed; }
+  .node h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+  .node p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+  .node + .node::before { content: ""; position: absolute; left: -22px; top: calc(50% - 2px); width: 22px; height: 0; border-top: 3px solid var(--accent); }
+  .node + .node::after { content: ""; position: absolute; left: -9px; top: calc(50% - 8px); border: 7px solid transparent; border-left: 9px solid var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 4px; }
+  .chip { font-family: var(--font-mono); font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+  .chip.r { border-color: var(--read); color: var(--read); }
+  .chip.w { border-color: var(--write); color: var(--write); }
+
+  /* branch row under the pipeline */
+  .branches { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+  .branch { grid-column: span 2; border: 1px solid var(--side); background: var(--side-soft); border-radius: 6px; padding: 10px 12px; font-size: 0.82rem; min-width: 0; }
+  .branch .cmd { color: var(--side); font-weight: 500; }
+  .branch b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .branch p { margin: 0; color: var(--muted); }
+  .b-sidecar { grid-column: 3 / span 2; }
+  .b-golden { grid-column: 5 / span 2; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; font-size: 0.8rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); }
+  .sw.hook { background: var(--hook-soft); border-color: var(--hook); }
+  .sw.side { background: var(--side-soft); border-color: var(--side); }
+
+  /* memory matrix */
+  .matrix-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 0.82rem; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+  th { font-weight: 600; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  td:first-child, th:first-child { text-align: left; font-family: var(--font-mono); font-size: 0.78rem; position: sticky; left: 0; background: var(--surface); }
+  td:nth-child(2), th:nth-child(2) { text-align: left; color: var(--muted); font-family: var(--font-body); font-size: 0.78rem; }
+  tr:last-child td { border-bottom: 0; }
+  .R { color: var(--read); font-weight: 600; font-family: var(--font-mono); }
+  .W { color: var(--write); font-weight: 600; font-family: var(--font-mono); }
+  .RW { font-family: var(--font-mono); font-weight: 600; }
+  .RW .R { margin-right: 2px; }
+  td small { display: block; font-family: var(--font-body); font-weight: 400; font-size: 0.68rem; color: var(--muted); line-height: 1.1; }
+  tbody tr.group td { background: var(--bg); color: var(--muted); font-family: var(--font-body); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; padding-block: 5px; }
+
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+  .note { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: var(--surface); font-size: 0.84rem; min-width: 0; }
+  .note b { display: block; margin-bottom: 4px; }
+  .note p { margin: 0; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .pipe, .branches { grid-template-columns: 1fr; gap: 22px; }
+    .node + .node::before { left: calc(50% - 1px); top: -22px; width: 0; height: 22px; border-top: 0; border-left: 3px solid var(--accent); }
+    .node + .node::after { left: calc(50% - 7px); top: -9px; border: 7px solid transparent; border-left: 7px solid transparent; border-top: 9px solid var(--accent); }
+    .branch, .b-sidecar, .b-golden { grid-column: 1; }
+  }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Agent Squad flow</h1>
+  <p class="sub">One batch from orientation to merge, with the hooks that bookend every session and the side paths you take by hand. Chips show what each step reads (<span class="R">R</span>) and writes (<span class="W">W</span>); the matrix below has the full picture.</p>
+
+  <h2>Pipeline</h2>
+  <div class="pipe">
+    <div class="node hook">
+      <span class="cmd">SessionStart</span>
+      <h3>lore-orient</h3>
+      <p>Read-only. Injects status, the last log lines and two signals: stale architecture, status over budget.</p>
+      <div class="chips"><span class="chip r">status.md</span><span class="chip r">session.log</span></div>
+    </div>
+    <div class="node">
+      <span class="cmd">/seed</span>
+      <h3>Seed</h3>
+      <p>Builds project knowledge under SQUAD_DIR (vault or repo, per project). Scaffolds the vault files once.</p>
+      <div class="chips"><span class="chip w">architecture.md</span><span class="chip w">scout-cache.md</span><span class="chip w">golden.md</span></div>
+    </div>
+    <div class="node">
+      <span class="cmd">/forge</span>
+      <h3>Forge</h3>
+      <p>Interactive discovery with an opening challenge. Cites a decision when a premise conflicts with it.</p>
+      <div class="chips"><span class="chip r">decisions.md</span><span class="chip w">forge/output.yaml</span></div>
+    </div>
+    <div class="node side">
+      <span class="cmd">/archy</span>
+      <h3>Archy, HIGH only</h3>
+      <p>Skipped for LOW and MEDIUM. Turns output.yaml into a PRD, which Chisel consumes instead.</p>
+      <div class="chips"><span class="chip r">forge/output.yaml</span><span class="chip w">prd/current.md</span></div>
+    </div>
+    <div class="node">
+      <span class="cmd">/chisel</span>
+      <h3>Chisel</h3>
+      <p>Parent container plus sub-issues with native blocked-by edges. Archives its input after use.</p>
+      <div class="chips"><span class="chip r">output.yaml or PRD</span><span class="chip w">GitHub issues</span></div>
+    </div>
+    <div class="node gate">
+      <span class="cmd">you</span>
+      <h3>Review issues</h3>
+      <p>Remove <code>needs-review</code> from what should run. Nothing else lifts the gate.</p>
+      <div class="chips"><span class="chip">labels</span></div>
+    </div>
+  </div>
+
+  <div class="pipe">
+    <div class="node">
+      <span class="cmd">/ralph --parent n</span>
+      <h3>Ralph</h3>
+      <p>Sub-issues of one container, topologically ordered. One stacked branch and PR per issue. Resumable.</p>
+      <div class="chips"><span class="chip w">ralph-run.md</span><span class="chip w">progress.txt</span></div>
+    </div>
+    <div class="node">
+      <span class="cmd">agent</span>
+      <h3>Cody</h3>
+      <p>Branches from <code>origin/&lt;base&gt;</code>. Gets preferences, active decisions and the last 30 progress lines injected.</p>
+      <div class="chips"><span class="chip r">development.md</span><span class="chip r">decisions.md</span><span class="chip w">PR</span></div>
+    </div>
+    <div class="node">
+      <span class="cmd">agent</span>
+      <h3>Reven</h3>
+      <p>Diffs against the PR's own base, so a stacked PR shows only its change. Authority order on conflicts.</p>
+      <div class="chips"><span class="chip r">development.md</span><span class="chip r">decisions.md</span><span class="chip w">review</span></div>
+    </div>
+    <div class="node gate">
+      <span class="cmd">you</span>
+      <h3>Merge</h3>
+      <p>Top-down through the stack. Retarget children to main before each parent merges; branches auto-delete.</p>
+      <div class="chips"><span class="chip">GitHub</span></div>
+    </div>
+    <div class="node hook">
+      <span class="cmd">SessionEnd</span>
+      <h3>lore-checkpoint</h3>
+      <p>Main checkout: rebuilds a stale status.md headlessly. Worktree session: appends one checkpoint line.</p>
+      <div class="chips"><span class="chip w">status.md</span></div>
+    </div>
+    <div class="node side anytime">
+      <span class="cmd">lore prefer</span>
+      <h3>Record a preference</h3>
+      <p>Any time. Asks whether it replaces an entry and applies the supersede markers.</p>
+      <div class="chips"><span class="chip w">development.md</span><span class="chip w">decisions.md</span></div>
+    </div>
+  </div>
+
+  <div class="branches">
+    <div class="branch b-sidecar">
+      <b><span class="cmd">/sidecar &lt;branch&gt;</span> after a review</b>
+      <p>Opens a worktree with dependencies and stops. You iterate directly, or in a separate session. Cody only on "hand this to Cody". "Done" pushes, updates the PR, removes the worktree.</p>
+    </div>
+    <div class="branch b-golden">
+      <b><span class="cmd">scripts/golden-check.sh</span> after editing a skill, agent or hook</b>
+      <p>Cold headless answers to golden.md, given only the orientation, diffed against the last run.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="sw"></i> squad step</span>
+    <span><i class="sw hook"></i> hook, runs by itself</span>
+    <span><i class="sw side"></i> side path, run by hand</span>
+    <span><i class="sw" style="border-style:dashed"></i> human gate</span>
+  </div>
+
+  <h2>Memory matrix</h2>
+  <div class="matrix-wrap">
+    <table>
+      <thead>
+        <tr><th>file</th><th>lives in</th><th>orient</th><th>seed</th><th>forge</th><th>chisel</th><th>ralph</th><th>cody</th><th>reven</th><th>sidecar</th><th>checkpoint</th><th>lore prefer</th></tr>
+      </thead>
+      <tbody>
+        <tr class="group"><td colspan="12">about you and the project (always in the vault)</td></tr>
+        <tr><td>status.md</td><td>vault</td><td class="R">R</td><td class="W">W <small>once</small></td><td></td><td></td><td></td><td class="W">W <small>+1 line</small></td><td></td><td class="W">W <small>+1 line</small></td><td class="W">W</td><td></td></tr>
+        <tr><td>decisions.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td class="R">R <small>last 20 active</small></td><td></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td></td><td></td><td class="W">W</td></tr>
+        <tr><td>preferences/development.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td></tr>
+        <tr><td>golden.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>session.log</td><td>vault</td><td class="R">R</td><td class="W">W</td><td class="W">W</td><td class="W">W</td><td class="W">W</td><td></td><td></td><td class="W">W</td><td></td><td></td></tr>
+        <tr class="group"><td colspan="12">project knowledge (SQUAD_DIR: vault by default, repo when configured)</td></tr>
+        <tr><td>architecture.md</td><td>SQUAD_DIR</td><td class="R">R <small>mtime only</small></td><td class="W">W</td><td class="R">R</td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td></td></tr>
+        <tr><td>scout-cache.md</td><td>SQUAD_DIR</td><td></td><td class="W">W</td><td class="R">R</td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td></td></tr>
+        <tr><td>forge/output.yaml</td><td>SQUAD_DIR</td><td></td><td></td><td class="W">W</td><td class="RW"><span class="R">R</span><span class="W">&thinsp;archive</span></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>prd/current.md</td><td>SQUAD_DIR</td><td></td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">&thinsp;archive</span></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="group"><td colspan="12">run state (vault .squad/)</td></tr>
+        <tr><td>progress.txt</td><td>vault</td><td class="R">R</td><td></td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td><td class="R">R <small>last 30 lines</small></td><td class="R">R <small>branch base</small></td><td class="W">W</td><td></td><td></td></tr>
+        <tr><td>ralph-run.md</td><td>vault</td><td></td><td></td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>chisel-config.json</td><td>vault</td><td></td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Reading the cells</b><p><span class="R">R</span> reads, <span class="W">W</span> writes. A qualifier says how much: "once" means scaffolded on first run and never overwritten; "+1 line" means an append; "last 20 active" means the tail of entries without a <code>Superseded by:</code> line; "last 30 lines" is what Ralph injects into Cody. "archive" means the file is moved out after being consumed.</p></div>
+    <div class="note"><b>Authority order</b><p>issue text › architecture.md › scout-cache.md › decisions.md › development.md. Higher wins; Cody notes the conflict in the PR body, Reven under Observations, Forge as an open question.</p></div>
+    <div class="note"><b>Update and forget</b><p>A decision that reverses another carries <code>Supersedes:</code>; the old one gets <code>Superseded by:</code>. At 60 active entries the superseded ones move to decisions-archive.md, which nothing loads.</p></div>
+  </div>
+</div>
+</body>
+</html>

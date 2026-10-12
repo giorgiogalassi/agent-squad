@@ -20,39 +20,36 @@ runs as a required step inside `/forge` before a draft scope closes.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
 /chisel         Create tracker issues (GitHub in connected mode, a local batch file in detached mode).
-/ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+/ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
                 Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
-Cody            Implement issue, commit to the chain branch, open one PR per chain.
-Reven           Review PR.
-(no session-end command) status.md reconstructs from evidence on the next /lore start; run /lore recover to rebuild it explicitly.
+Cody            Implement one issue on a branch cut from origin/<base>, with preferences and active decisions injected; open its PR.
+Reven           Review each PR against its own base (stacked PRs show only their diff).
+SessionEnd      lore-checkpoint hook rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+scripts/golden-check.sh   Manual regression check after editing any skill, agent, hook or rule file.
 ```
+
+[![Agent Squad flow](docs/flow.png)](https://giorgiogalassi.github.io/agent-squad/flow.html)
+
+The full picture, including the hooks, the side paths and a matrix of
+which step reads and writes which memory file, lives in
+[`docs/flow.html`](docs/flow.html), rendered at
+<https://giorgiogalassi.github.io/agent-squad/flow.html>. The spine is:
 
 ```mermaid
 graph LR
-    S["/lore start<br/>Orient (hook auto-injects)"] --> A["/seed<br/>Initialize .squad context"]
-    A --> B["/clear<br/>Reset session context"]
-    B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
-    C --> D{"Complexity<br/>confirmed"}
-    D -->|HIGH| E["/archy<br/>Create PRD"]
-
-    F["/chisel<br/>Create tracker issues"] --> G["Review issues"]
-    G --> H["/ralph<br/>Execute in dependency order<br/>one branch per chain"]
-    H --> I["Cody<br/>Implement, commit to chain branch"]
-    I --> J["Reven<br/>Review one PR per chain"]
-    J -->|Approved| K["Merge"]
-    J -->|Changes requested| I
-
-    D -->|LOW / MED| F
-    E --> F
+    A["/seed"] --> B["/forge"] --> C["/chisel"] --> D["/ralph"] --> E["Cody"] --> F["Reven"] --> G["Merge"]
+    B -.->|HIGH| H["/archy"] -.-> C
 ```
 
 The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
 structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
 creates tracker issues (GitHub issues in connected mode, or a local batch
-file in detached mode), `Ralph` drives execution through `Cody` one branch
-per dependency chain, and `Reven` reviews before merge.
+file in detached mode), `Ralph` drives execution through `Cody` — one
+stacked branch and PR per issue in connected mode, one branch per
+dependency chain in detached mode — and `Reven` reviews each PR against
+its base before merge.
 
 ## Sidecar: iterating on an existing branch
 
