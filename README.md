@@ -266,6 +266,11 @@ Then add to `~/.claude/settings.json`:
   { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
 ```
 
+It also prints up to two signal lines, omitted when not applicable:
+`Architecture snapshot older than <file>; run /seed` (architecture.md is
+older than the newest manifest or lockfile at the project root) and
+`status.md over budget; next rebuild compresses` (over ~300 words).
+
 The hook orients (read-only); `/lore start` still handles the write and
 setup path (first-time naming, migration, session-log reset).
 
