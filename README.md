@@ -20,29 +20,36 @@ runs as a required step inside `/forge` before a draft scope closes.
 /forge          Interactive discovery, writes output.yaml.
 /archy          (HIGH only) Create PRD.
 /chisel         Create tracker issues (GitHub in connected mode, a local batch file in detached mode).
-/ralph          Execute issues in dependency order, one branch per dependency chain (invokes Cody).
+/ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
                 Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
-Cody            Implement issue, commit to the chain branch, open one PR per chain.
-Reven           Review PR.
-(no session-end command) status.md reconstructs from evidence on the next /lore start; run /lore recover to rebuild it explicitly.
+Cody            Implement one issue on a branch cut from origin/<base>, with preferences and active decisions injected; open its PR.
+Reven           Review each PR against its own base (stacked PRs show only their diff).
+SessionEnd      lore-checkpoint hook rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+scripts/golden-check.sh   Manual regression check after editing any skill, agent, hook or rule file.
 ```
 
 ```mermaid
 graph LR
-    S["/lore start<br/>Orient (hook auto-injects)"] --> A["/seed<br/>Initialize .squad context"]
+    S["SessionStart hook<br/>lore-orient: status, signals"] --> A["/seed<br/>Initialize context (SQUAD_DIR)<br/>+ golden.md template"]
     A --> B["/clear<br/>Reset session context"]
-    B --> C["/forge<br/>Interactive discovery<br/>Writes output.yaml"]
+    B --> C["/forge<br/>Interactive discovery<br/>reads active decisions<br/>Writes output.yaml"]
     C --> D{"Complexity<br/>confirmed"}
     D -->|HIGH| E["/archy<br/>Create PRD"]
 
-    F["/chisel<br/>Create tracker issues"] --> G["Review issues"]
-    G --> H["/ralph<br/>Execute in dependency order<br/>one branch per chain"]
-    H --> I["Cody<br/>Implement, commit to chain branch"]
-    I --> J["Reven<br/>Review one PR per chain"]
-    J -->|Approved| K["Merge"]
+    F["/chisel<br/>Create tracker issues<br/>parent + sub-issues<br/>archives the input"] --> G["Review issues<br/>remove needs-review"]
+    G --> H["/ralph --parent n<br/>Execute in dependency order<br/>one stacked branch + PR per issue<br/>run state in ralph-run.md"]
+    H --> I["Cody<br/>branch from origin/base<br/>prefs + decisions injected"]
+    I --> J["Reven<br/>diff against the PR base<br/>one review per PR"]
+    J -->|Approved| K["Merge<br/>top-down, retarget children"]
     J -->|Changes requested| I
+
+    K -.->|"iterate on a branch"| L["/sidecar branch<br/>open worktree, stop"]
+    L -.-> J
+
+    K --> Z["SessionEnd hook<br/>lore-checkpoint: rebuild status.md<br/>(worktree session: checkpoint only)"]
+    Z -.->|"after editing skills/hooks"| Y["scripts/golden-check.sh<br/>regression vs last run"]
 
     D -->|LOW / MED| F
     E --> F
@@ -51,8 +58,10 @@ graph LR
 The diagram shows the current manual MVP: `Lore` manages second-brain memory, `Seed` prepares context, `Forge`
 structures the work, `Archy` appears only for `HIGH` complexity, `Chisel`
 creates tracker issues (GitHub issues in connected mode, or a local batch
-file in detached mode), `Ralph` drives execution through `Cody` one branch
-per dependency chain, and `Reven` reviews before merge.
+file in detached mode), `Ralph` drives execution through `Cody` — one
+stacked branch and PR per issue in connected mode, one branch per
+dependency chain in detached mode — and `Reven` reviews each PR against
+its base before merge.
 
 ## Sidecar: iterating on an existing branch
 
