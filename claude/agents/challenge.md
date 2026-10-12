@@ -27,6 +27,7 @@ back.
 
 ## On start
 
+<!-- squad-lint: stateless -->
 **Path resolution: not applicable.** This agent is stateless by design.
 It takes a self-contained brief and returns a structured result in the
 same turn; it never reads or writes `.squad/` state, never touches the
