@@ -1158,7 +1158,9 @@ Lore's rule (no conflict: silent; conflict: prompt once, default
 it points to `lore start`. `lore start` keeps steps 1-6 (vault, naming,
 session log, migration, INDEX) as setup and repair; reconstruction lives
 in `lore recover`. `lore-orient.sh` says "run /seed" when the mapping is
-missing and prints nothing about `lore start` otherwise.
+missing and prints nothing about `lore start` otherwise. The auto-load of
+`## Context refs` that `lore start` steps 7-11 used to do moved into
+`lore-orient.sh` (read-only; 5 refs, 60 lines each, 2400 chars total).
 
 > **Key decision:** keep the name `lore start`, no rename to `lore init`.
 > A rename needs an alias release and touches every reference for a

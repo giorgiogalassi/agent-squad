@@ -138,8 +138,10 @@ across reconstruction.
 [YYYY-MM-DD HH:MM] <one-line last confirmed state>
 
 ## Context refs
-Files worth loading at the start of a session. Be selective — each costs tokens
-every session start.
+Files worth loading at the start of a session (auto-loaded by the SessionStart
+hook: max 5 refs, 60 lines each, 2400 chars total). Be selective — each costs
+tokens every session start. Wikilinks `[[path|label]]` or plain paths, relative
+to the vault.
 - <path/to/file>
 ```
 

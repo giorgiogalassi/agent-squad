@@ -42,8 +42,9 @@ linked toplevel: /tmp/wt-test/linked
 
 Different absolute path, different basename. A skill invoked from inside
 a Sidecar worktree would fail the `lore-config.json` lookup entirely —
-Seed's own protocol says what happens then: *"No vault mapping found for
-this project. Run /seed first."* Worse, several skills fall back to
+Seed would treat it as a new project and record a mapping for the
+worktree path itself, while every other skill stops with *"run /seed
+first"*. Worse, several skills fall back to
 the CWD basename as the project name when no mapping exists, which means
 `progress.txt`, `architecture.md`, `chisel-config.json`, and every other
 vault file would silently read from and write to a namespace named after

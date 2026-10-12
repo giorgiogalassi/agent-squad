@@ -38,8 +38,17 @@ You never write code, plan features, or make architectural decisions.
      exists. Display name for this project [`<candidate>-2`]:"; use the
      answer (default `<candidate>-2`). Create `<vault>/projects/<name>/`
      and write `projects[<PROJECT_ROOT>] = <name>` into
-     `<vault>/lore-config.json` with jq (create `{"projects": {}}` if the
-     file is missing; keep every other key and entry).
+     `<vault>/lore-config.json` with jq. jq is required (without it
+     `path-resolve.sh` returns an empty `DISPLAY_NAME`); if missing, stop
+     and tell the user. Missing or zero-byte file → base is
+     `{"projects":{}}`. Non-empty file where `jq empty` fails → stop and
+     tell the user; never overwrite it. Write via temp file, `mv` only on
+     jq success, keeping every other key and entry:
+     `jq --arg k "$PROJECT_ROOT" --arg n "$name" '.projects[$k] = $n' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"`
+     (for the missing/empty case feed `echo '{"projects":{}}' | jq ...`
+     instead of `$cfg`). The `.projects[$k] = $n` form creates a missing
+     `projects` key. Never `jq ... f > f`.
+     Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`

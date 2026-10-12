@@ -99,6 +99,46 @@ else
   OUTPUT="${OUTPUT}No status.md for this project yet. Reconstruct from the evidence below,${NL}or run /seed.${NL}"
 fi
 
+# Context refs: auto-load the files listed under "## Context refs" in
+# status.md (read-only). Wikilinks [[path|label]] and plain paths, resolved
+# relative to the vault. Caps: 5 refs, 60 lines per file, 2400 chars total.
+if [ -f "$STATUS" ]; then
+  REFS_MAX=5; REFS_LINES=60; REFS_BUDGET=2400
+  REFS_OUT=""; REFS_N=0; REFS_FULL=0
+  while IFS= read -r _line; do
+    case "$_line" in
+      '- '*|'* '*) _line="${_line:2}" ;;
+      *) continue ;;
+    esac
+    if [[ "$_line" =~ \[\[([^]|]+)(\|[^]]*)?\]\] ]]; then
+      _ref="${BASH_REMATCH[1]}"
+    else
+      _ref="${_line%% *}"
+    fi
+    case "$_ref" in ''|'—'|'-'|/*|*..*) continue ;; esac
+    REFS_N=$((REFS_N + 1))
+    [ "$REFS_N" -gt "$REFS_MAX" ] && break
+    _file="$VAULT/$_ref"
+    [ -f "$_file" ] || _file="$VAULT/$_ref.md"
+    if [ ! -f "$_file" ]; then
+      REFS_OUT="${REFS_OUT}⚠ Context ref not found: ${_ref} — skipping.${NL}"
+      continue
+    fi
+    [ "$REFS_FULL" = 1 ] && continue
+    _body="#### ${_ref}${NL}$(head -n "$REFS_LINES" "$_file")${NL}"
+    [ "$(wc -l < "$_file" | tr -d ' ')" -gt "$REFS_LINES" ] && _body="${_body}… (truncated)${NL}"
+    if [ $(( ${#REFS_OUT} + ${#_body} )) -gt "$REFS_BUDGET" ]; then
+      _room=$(( REFS_BUDGET - ${#REFS_OUT} ))
+      [ "$_room" -gt 0 ] && REFS_OUT="${REFS_OUT}${_body:0:$_room}${NL}"
+      REFS_OUT="${REFS_OUT}… (truncated)${NL}"
+      REFS_FULL=1
+    else
+      REFS_OUT="${REFS_OUT}${_body}"
+    fi
+  done < <(awk '/^## /{on = ($0 == "## Context refs"); next} on' "$STATUS")
+  [ -n "$REFS_OUT" ] && OUTPUT="${OUTPUT}${NL}### Context refs${NL}${REFS_OUT}"
+fi
+
 # Local evidence: cheap, offline, lets the model reconcile a stale status.md
 # Uses the actual working directory, not $ROOT: $ROOT is the main project
 # root (needed for the vault lookup above), but the branch/commits should
