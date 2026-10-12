@@ -16,6 +16,10 @@
 #   { "hooks": { "SessionEnd": [ { "hooks": [
 #     { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
 
+# Recursion guard: the headless `claude -p` below is itself a session and may
+# fire SessionEnd; it runs with SQUAD_LORE_HOOK=1 so that nested run exits here.
+[ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
+
 bail() { echo "lore-checkpoint: $1"; exit 0; }
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -56,7 +60,15 @@ commit_vault() {
   fi
 }
 
-section() { sed -n "/^## $2/,/^## /p" "$1" | sed '1d;/^## /d;/^$/d'; }
+# section <file> <heading>: body of a section. Inner blank lines are kept;
+# only the heading line and trailing blank lines are trimmed.
+section() {
+  awk -v h="## $2" '
+    /^## / { if (on) exit; if (index($0, h) == 1) on = 1; next }
+    on { if ($0 == "") { blanks++; next }
+         while (blanks > 0) { print ""; blanks-- }
+         print }' "$1"
+}
 # replace_section <file> <heading> <body-file>: swap a section's body, keep the blank line before the next heading.
 replace_section() {
   awk -v h="## $2" -v bf="$3" '
@@ -115,10 +127,10 @@ PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file,
 
 TMO=""
 command -v timeout >/dev/null 2>&1 && TMO="timeout 90"
-NEW="$(printf '%s' "$EVIDENCE" | $TMO claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
+NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 $TMO claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
   || bail "headless rebuild failed, status unchanged"
 
-# Strip stray code fences, then validate shape and size (~4 chars/token).
+# Strip stray code fences, then validate shape and size (~4 chars/token: 400 tokens = 1600 bytes).
 NEW="$(printf '%s\n' "$NEW" | sed '/^```/d')"
 printf '%s\n' "$NEW" | head -n 1 | grep -q '^---$' || bail "rebuild output invalid, status unchanged"
 for h in '^# Status' '^Last updated:' '^## Goal' '^## Done' '^## Next' '^## Blocked' '^## Last checkpoint'; do
@@ -129,6 +141,8 @@ done
 # checkpoint = last 3 existing lines, Last updated stamped here. No rebuild
 # checkpoint line is added: it would read as newer than Last updated.
 section "$STATUS" Blocked > "$TMPB"
+# Intentional: under Last checkpoint only lines starting with "[" are kept;
+# any other text in that section is dropped.
 section "$STATUS" "Last checkpoint" | grep '^\[' | tail -n 3 > "$TMPC"
 OUT="$STATUS.tmp.$$"
 printf '%s\n' "$NEW" | sed "s/^Last updated:.*/Last updated: $NOW by claude-code/" > "$OUT.1"
@@ -136,7 +150,7 @@ replace_section "$OUT.1" Blocked "$TMPB" > "$OUT.2"
 replace_section "$OUT.2" "Last checkpoint" "$TMPC" > "$OUT"
 rm -f "$OUT.1" "$OUT.2"
 
-if [ "$(wc -c < "$OUT" | tr -d ' ')" -gt 2400 ]; then
+if [ "$(wc -c < "$OUT" | tr -d ' ')" -gt 1600 ]; then
   rm -f "$OUT"; bail "rebuild over 400-token budget, status unchanged"
 fi
 mv "$OUT" "$STATUS" || { rm -f "$OUT"; bail "write failed"; }

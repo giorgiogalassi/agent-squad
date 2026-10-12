@@ -269,7 +269,7 @@ setup path (first-time naming, migration, session-log reset).
 
 `status.md` otherwise rebuilds only inside `lore start`. This hook keeps
 it current when a session ends. It never blocks exit; any failure prints
-one line and exits 0. Needs `path-resolve.sh` and `jq`.
+one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
 
 - Session in a linked worktree: appends one checkpoint line for the
   branch (capped to the last 3), never rebuilds.
