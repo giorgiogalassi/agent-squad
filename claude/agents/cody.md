@@ -76,8 +76,15 @@ and switching inside someone else's worktree corrupts it.
 Otherwise, Ralph supplies `branch`, `base`, `branch action` (direct
 invocation defaults: `create`, `main`, `<issue-id>-<short-description>`):
 
-- `create`: `git checkout <base> && git checkout -b <branch>`. If the
-  branch already exists, check it out instead of failing.
+- `create`, connected: `git fetch origin`, then
+  `git checkout -b <branch> origin/<base>` — a stale local `<base>`
+  would give the PR spurious diffs and conflicts. If `origin/<base>`
+  does not exist after the fetch (base is a local-only stacked branch),
+  fall back to the local `<base>` and say so in the plan output. If the
+  branch already exists, check it out instead of failing, and report
+  the fetch result (success, or the error).
+- `create`, detached: no network. `git checkout <base> && git checkout
+  -b <branch>` from the local base; if the branch exists, check it out.
 - `continue`: `git checkout <branch>` — never a new branch, never off
   main.
 
