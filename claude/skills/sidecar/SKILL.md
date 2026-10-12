@@ -170,10 +170,10 @@ Explicit sync language ("push this", "update the PR", "let's see it on
 the PR", "sync it up") = commit any pending work in the worktree (stage by path), `git push
 origin HEAD`, and open or update the PR (`gh pr create --base <base>`;
 detached: print the paste-ready description instead, never push), then
-stay open — do not proceed to Phase 5. A bare "commit" is never a sync
+stay open — do not proceed to Phase 4. A bare "commit" is never a sync
 or close signal.
 
-## Phase 5: teardown
+## Phase 4: teardown
 
 Close on clear finishing language ("done", "ship it", "close it out",
 "wrap it up", "that's everything") — not on a bare "push it". Ambiguous →
@@ -183,7 +183,9 @@ Never remove a worktree on a guess.
 On a real close signal:
 
 1. Final sync (skip if the last action was already a sync and nothing
-   changed since): commit pending work, then connected pushes and
+   changed since): commit pending work (stage by path, `[#N]`-prefixed
+   message; Cody's shared-branch rule applies to Sidecar's own commits —
+   on `main`/`develop`/`release/*` stop and ask), then connected pushes and
    opens/updates the PR; detached prints the paste-ready description.
    Append one checkpoint line to `status.md` under `## Last checkpoint`
    (`[YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>.
@@ -231,7 +233,7 @@ else in the squad.
 - Only explicit finishing language closes; a plain push syncs.
 - `.claude/worktrees/` is host-project state: git-ignored, disposable,
   never routed through the vault.
-- Never symlink `node_modules`; never run any install — Phase 2c only
+- Never symlink `node_modules`; never run any install — Phase 2b only
   compares and names the command for the user.
 - Asked for the worktree path mid-session → reprint `cd <worktree-path>`
   on its own line immediately.
