@@ -46,7 +46,7 @@ branch, ask — never guess one.
 **Preflight.** Teardown may push and open/update a PR, so check up
 front, not at teardown. `which gh` and `gh auth status`; on failure
 print the matching
-`ERROR: gh CLI not found on PATH...` / `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
+`ERROR: gh CLI not found on PATH...` / `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.` <!-- lint:gh-ok -->
 and stop. Skip both checks in detached mode (`chisel.mode` in
 `.squad/chisel-config.json`; a missing file or field means connected,
 matching Ralph).

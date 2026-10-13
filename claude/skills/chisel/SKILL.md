@@ -41,7 +41,7 @@ configuration flow first.
 `--parent`/`--blocked-by`). If `chisel.project` is configured, extend
 this same preflight before creating anything: confirm the `project`
 scope is present in the `gh auth status` token-scopes line (if missing,
-tell the user to run `gh auth refresh -s project`), then confirm the
+tell the user to run `gh auth refresh -s project`), then confirm the <!-- lint:gh-ok -->
 project exists and is reachable with
 `gh project view <project.number> --owner <project.owner>`. On any
 preflight failure print the error and stop before creating anything —
@@ -99,10 +99,20 @@ carries no `tracker` field; if found, report `tracker` by name as
 disavowed, not as a generic unknown key. A config without `mode` is
 connected (backward compatibility).
 
-On every connected run, verify every configured label (`review_label`
-unless `none`, and all three `state_labels`) exists in the target repo
-(`gh label list`); create missing ones with `gh label create` and say
-so — downstream label swaps by Cody and Ralph fail otherwise.
+On every connected run:
+
+```bash
+bash ~/.claude/hooks/squad-labels.sh ensure
+```
+
+Read `OUTCOME`, `CHANGED` and `LABELS_CREATED` (say which labels were
+created when `CHANGED=yes`). Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 10 | Report the stderr reason and stop before creating issues. |
+| 20 | Report the stderr reason and stop before creating issues. |
 
 Confirm with one line and proceed:
 

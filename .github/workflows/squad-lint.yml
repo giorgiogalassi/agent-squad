@@ -38,6 +38,9 @@ jobs:
       - name: Run squad-lint.sh
         run: bash scripts/squad-lint.sh
 
+      - name: Test the gh write-ban check
+        run: bash scripts/test-squad-lint-gh.sh
+
       - name: Install Claude Code CLI
         id: install-claude
         run: |

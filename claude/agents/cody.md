@@ -56,17 +56,22 @@ if you were invoked, the blocker is resolved).
 
 ### 0. Claim the issue (connected mode only)
 
-Read the `in_progress` label from `state_labels` in
-`chisel-config.json` (never hardcode), then:
+Issue number missing from the prompt → extract from the description
+(`#30`-style). Then:
 
 ```bash
-gh issue edit <issue-number> -R <owner>/<repo> --add-assignee @me --add-label <in_progress>
+bash ~/.claude/hooks/squad-labels.sh claim --issue <issue-number>
 ```
 
-Issue number missing from the prompt → extract from the description
-(`#30`-style). If the command fails, log it in your plan comment and
-continue; do not stop. Detached: skip — Ralph records status in the
-handoff.
+Read `OUTCOME` and `CHANGED`. Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 10 | Log the stderr reason in your plan comment and continue. |
+| 20 | Log the stderr reason in your plan comment and continue. |
+
+Detached: skip — Ralph records status in the handoff.
 
 Do not touch `review_label` here, even if it is still on the issue
 (that happens when Ralph ran on an explicit override — see
@@ -242,17 +247,18 @@ Then act on `open pr` (default `yes` when invoked directly):
   checklists, plus notes for Reven. Always pass `--base` so a stacked
   branch never targets main by accident. If `gh` is unavailable, push
   and print manual instructions. Immediately after the PR is created,
-  swap labels on every covered issue (both from `state_labels`, never
-  hardcoded), and also remove `review_label` if one is configured (not
-  `none`) — this is the point in the cycle where the pre-work review
-  gate label retires in favor of `in_review`; see `LABEL_STATE_MACHINE.md`.
-  Removal is a no-op if the label is already gone (the normal case,
-  where a human already removed it before Ralph ever claimed the
-  issue):
+  for every covered issue `<n>`:
   ```bash
-  gh issue edit <n> -R <owner>/<repo> --remove-label <in_progress> --add-label <in_review>
-  gh issue edit <n> -R <owner>/<repo> --remove-label <review_label>  # skip if review_label is none
+  bash ~/.claude/hooks/squad-labels.sh review --issue <n>
   ```
+  Read `OUTCOME` and `CHANGED`. Act on the exit code:
+
+  | Exit | Action |
+  |------|--------|
+  | 0 | Continue with the next issue. |
+  | 10 | Note the stderr reason in the PR body and continue. |
+  | 20 | Note the stderr reason in the PR body and continue. |
+
 - **`open pr: yes`, detached:** never push, never call any forge API.
   Print a paste-ready PR description (title `[CHAIN] title`, base
   branch, body as above); the user pushes and opens the PR themselves.

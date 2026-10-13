@@ -24,10 +24,10 @@ config shape):
 > `PATH_RESOLUTION.md`, it exists so a human changing the lifecycle has
 > the full picture and the rationale in one place. Skills stay
 > self-contained (Iteration 19, see `JOURNAL.md`) — each of Chisel,
-> Cody, and Ralph carries its own copy of the label commands relevant to
-> its own steps. Keep those copies in sync with the table below; this
-> file is the tie-breaker when they'd otherwise drift, not a thing any
-> agent loads.
+> Cody, and Ralph invokes `squad-labels.sh` for the label commands
+> relevant to its own steps. Keep that script in sync with the table
+> below; this file is the tie-breaker when they'd otherwise drift, not a
+> thing any agent loads.
 
 ## The state machine
 
