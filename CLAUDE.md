@@ -7,7 +7,8 @@ removed in Iteration 19. Path resolution is the one deliberate exception,
 and it resolves the tension by being a *script*, not a shared skill or
 doc: every skill and agent's "Path resolution protocol" runs
 `~/.claude/hooks/path-resolve.sh` via Bash as its first step and reads
-four output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`/`SQUAD_DIR`) — an
+five output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`/`SQUAD_DIR`/`TRACKER_MODE`;
+`TRACKER_MODE` is `detached` unless `chisel.mode` is provably `connected`) — an
 ordinary, unambiguous shell call each skill already makes dozens of per
 session, not a new category of soft dependency. `PATH_RESOLUTION.md` at
 the repo root documents the algorithm and its rationale but is itself

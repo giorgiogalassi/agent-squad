@@ -97,14 +97,28 @@ not attempt to resolve.
 ## The script
 
 `claude/hooks/path-resolve.sh` implements the algorithm above plus the
-`lore-config.json` lookup, and prints four lines to stdout:
+`lore-config.json` lookup, and prints five lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
 PROJECT_ROOT=<resolved project root, correct even inside a linked worktree>
 DISPLAY_NAME=<mapped display name, or empty if none exists yet>
 SQUAD_DIR=<where project knowledge lives>
+TRACKER_MODE=<connected|detached>
 ```
+
+`TRACKER_MODE` is resolved by the script, never passed by the model:
+detached mode is a safety property (privacy, user-owned tickets). It is
+read from `chisel.mode` in
+`<vault>/projects/<name>/.squad/chisel-config.json` (always the vault,
+never `SQUAD_DIR`) and is `connected` only when the file exists, `jq`
+can read it, and the value is exactly `connected`. Any doubt (file
+missing, `mode` key missing, unrecognized value, `jq` unavailable)
+yields `detached` plus one stderr line. Note the deliberate difference
+from Chisel's own config flow, where a config without `mode` is treated
+as `connected` for backward compatibility: here a missing `mode` is
+`detached`, because this value gates writes to a tracker and must fail
+safe.
 
 `SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default, or
 `<PROJECT_ROOT>/.squad` when `lore-config.json` has
@@ -129,8 +143,10 @@ as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent's protocol now reads:
 
-> Run `~/.claude/hooks/path-resolve.sh` and read its four output lines:
-> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`.
+> Run `~/.claude/hooks/path-resolve.sh` and read its output lines
+> (`KEY=value`, five in total; parse by key, not position):
+> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`, `TRACKER_MODE`.
+> (Each skill reads only the keys it needs.)
 
 ## What does NOT change
 

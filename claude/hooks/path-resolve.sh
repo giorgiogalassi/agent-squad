@@ -46,7 +46,16 @@
 # progress.txt and issues/ always stay in the vault regardless.
 # SQUAD_DIR is a path only; callers check that it exists.
 #
-# Output: four KEY=VALUE lines on stdout, always in this order. Read
+# TRACKER_MODE is `connected` or `detached`, read from `chisel.mode` in
+# <VAULT>/projects/<name>/.squad/chisel-config.json (always the vault,
+# never SQUAD_DIR). It is `connected` only when the file exists, jq can
+# read it and the value is exactly "connected"; any doubt (file missing,
+# key missing, unknown value, jq missing) yields `detached` plus one
+# stderr line. A config without `mode` is detached here on purpose:
+# Chisel's "no mode = connected" rule is for its config flow, not for
+# write safety.
+#
+# Output: five KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
 # Install: copy to ~/.claude/hooks/path-resolve.sh, chmod +x.
@@ -91,7 +100,24 @@ else
   SQUAD_DIR="$VAULT/projects/$NAME/.squad"
 fi
 
+TRACKER_MODE="detached"
+CHISEL_CONFIG="$VAULT/projects/$NAME/.squad/chisel-config.json"
+if [ ! -f "$CHISEL_CONFIG" ]; then
+  echo "path-resolve: $CHISEL_CONFIG not found; TRACKER_MODE=detached" >&2
+elif ! command -v jq >/dev/null 2>&1; then
+  echo "path-resolve: jq not found; cannot read chisel.mode, TRACKER_MODE=detached" >&2
+else
+  MODE="$(jq -r '.chisel.mode // empty' "$CHISEL_CONFIG" 2>/dev/null)"
+  case "$MODE" in
+    connected) TRACKER_MODE="connected" ;;
+    detached) ;;
+    "") echo "path-resolve: chisel.mode missing or unreadable in $CHISEL_CONFIG; TRACKER_MODE=detached" >&2 ;;
+    *) echo "path-resolve: unrecognized chisel.mode '$MODE' in $CHISEL_CONFIG; TRACKER_MODE=detached" >&2 ;;
+  esac
+fi
+
 echo "VAULT_PATH=$VAULT"
 echo "PROJECT_ROOT=$ROOT"
 echo "DISPLAY_NAME=$DISPLAY"
 echo "SQUAD_DIR=$SQUAD_DIR"
+echo "TRACKER_MODE=$TRACKER_MODE"
