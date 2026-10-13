@@ -83,23 +83,28 @@ never happened.
 
 `working_directory: <path>` in your prompt (Sidecar) → skip this step
 entirely: run every command with that path as working directory, and
-never `git checkout` anything — the worktree is already on the branch,
+never switch branches — the worktree is already on the branch,
 and switching inside someone else's worktree corrupts it.
 
 Otherwise, Ralph supplies `branch`, `base`, `branch action` (direct
 invocation defaults: `create`, `main`, `<issue-id>-<short-description>`):
 
-- `create`, connected: `git fetch origin`, then
-  `git checkout -b <branch> origin/<base>` — a stale local `<base>`
-  would give the PR spurious diffs and conflicts. If `origin/<base>`
-  does not exist after the fetch (base is a local-only stacked branch),
-  fall back to the local `<base>` and say so in the plan output. If the
-  branch already exists, check it out instead of failing, and report
-  the fetch result (success, or the error).
-- `create`, detached: no network. `git checkout <base> && git checkout
-  -b <branch>` from the local base; if the branch exists, check it out.
-- `continue`: `git checkout <branch>` — never a new branch, never off
-  main.
+Run, in both tracker modes (fetching origin is a read, not a tracker
+write):
+
+```bash
+bash ~/.claude/hooks/squad-branch.sh <create|continue> <branch> --base <base>
+```
+
+`<create|continue>` is the `branch action`. Read `OUTCOME`, `CHANGED`,
+`BRANCH`, `BASE` and `HEAD_SHA`; keep `HEAD_SHA` as the baseline for your
+diff and test scoping. Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 10 | Stop and report the stderr reason. Never repair another branch (no stash, reset, forced checkout, or removing another worktree). |
+| 20 | Stop and report the stderr reason as a retryable failure for Ralph. |
 
 Naming (when you choose): issue-ID prefix + short kebab-case, e.g.
 `12-add-reservation-table`.

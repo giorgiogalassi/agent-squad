@@ -43,6 +43,8 @@ jobs:
 
       - name: Test the label doc/test pairing check
         run: bash scripts/test-squad-lint-labels.sh
+      - name: Test the hook-refs check
+        run: bash scripts/test-squad-lint-hooks.sh
 
       - name: Install Claude Code CLI
         id: install-claude
