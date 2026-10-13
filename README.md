@@ -24,9 +24,15 @@ runs as a required step inside `/forge` before a draft scope closes.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
                 Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
-Cody            Implement one issue on a branch cut from origin/<base>, with preferences and active decisions injected; open its PR.
+Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
 SessionEnd      lore-checkpoint hook rebuilds status.md (detached) when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+
+Checks (this repo)
+Tier 1 (gate)   bash scripts/squad-lint.sh
+                bash scripts/test-squad-labels.sh ; bash scripts/test-squad-branch.sh
+                (and the other scripts/test-*.sh; hook-tests.yml on ubuntu + macOS, squad-lint.yml on ubuntu only)
+Tier 2 (advisory) claude plugin eval claude/ ...   (see "Evals (tier 2)"; never gates a PR)
 ```
 
 [![Agent Squad flow](docs/flow.png)](https://giorgiogalassi.github.io/agent-squad/flow.html)
@@ -211,6 +217,27 @@ lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`,
 `TRACKER_MODE`); `TRACKER_MODE` is `detached` unless `chisel.mode` in the
 project's `chisel-config.json` is exactly `connected` (any doubt, including
 a missing file or `jq`, means `detached`).
+
+## Script layer
+
+Steps that must be deterministic are scripts in `claude/hooks/`, and the
+agent prose only calls them (the rule is in `CLAUDE.md`):
+
+- `path-resolve.sh` prints the five path/mode lines, including `TRACKER_MODE`.
+- `squad-common.sh` is the shared guard: `squad_gh_write` is the only
+  mutating `gh` path and refuses in detached mode.
+- `squad-labels.sh` (ensure, claim, review, escalate, with `--handoff`)
+  moves issue labels; it makes zero `gh` calls in detached mode.
+- `squad-branch.sh` (create, continue) handles branches, with no `gh`
+  calls, worktree-safe, never `-f`, stash or reset. It resolves
+  `origin/<base>`, then local `<base>`, and emits `BASE_REF`; detached mode
+  tolerates a missing `origin`, so local-only stacks work without a remote.
+
+Output is `KEY=value` lines and exit codes 0, 2, 10 and 20, specified in
+[`SCRIPT_CONTRACT.md`](SCRIPT_CONTRACT.md). `TRACKER_MODE` is resolved by
+`path-resolve.sh`, never passed by a model, and defaults to `detached`
+unless `chisel.mode` is provably `connected`. Run-state and PR scripts are
+not scripted yet (planned batch 1b).
 
 ## Worktree hook
 
