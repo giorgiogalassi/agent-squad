@@ -39,16 +39,14 @@ top-level `chisel` key): `mode`, `review_label`, `state_labels`. Missing
 
 **Detached mode** never calls any tracker tool. Source of truth: the most
 recent `batch-*.md` with `Status: pending` in `.squad/issues/`, including
-its key-mapping table. Every tracker-facing action becomes a checklist
-line appended to `.squad/issues/handoff-<batch-timestamp>.md` (create on
-first append):
-
-  - [ ] Move <KEY> to In Progress
-  - [ ] Move <KEY> to In Review
-  - [ ] Move <KEY> to Blocked, comment: <last error, one line>
-
-Use the tracker key from the mapping when present, else the local ID.
-The user replays the checklist into their tracker manually.
+its key-mapping table. The handoff path is
+`.squad/issues/handoff-<batch-timestamp>.md`. Label transitions are
+recorded by passing `--handoff <handoff path>` to `squad-labels.sh`
+(`claim --issue <KEY>` when an issue is dispatched; `escalate` in 2c;
+`review` in the success step); Ralph itself appends only the
+`(committed on <branch>)` lines. Use the tracker key from the mapping
+when present, else the local ID. The user replays the checklist into
+their tracker manually.
 
 ## Preflight (connected mode only)
 
@@ -56,7 +54,7 @@ Run once at startup, before touching any issue. On any failure, print the
 error and stop:
 
 1. `which gh` → `ERROR: gh CLI not found on PATH. Install gh and authenticate before running Ralph.`
-2. `gh auth status` → `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.`
+2. `gh auth status` → `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.` <!-- lint:gh-ok -->
 3. `gh --version` older than 2.95.0 (needed for `--parent`/`--blocked-by`/
    `--blocking`/`--add-sub-issue`) → `ERROR: gh CLI version <found> is older than the required 2.95.0. Upgrade gh and retry.`
 
@@ -269,8 +267,10 @@ skipped-for-none. Then:
   `[ID] committed on <branch> (base: <base>). Notes: <summary>`
 - **Committed and PR opened:** connected: nothing further — Cody already
   swapped `in_progress` → `in_review` (from `state_labels`) when it
-  opened the PR; do not duplicate. Detached: append
-  `- [ ] Move <KEY> to In Review` per issue on the branch. `progress.txt`:
+  opened the PR; do not duplicate. Detached: run
+  `bash ~/.claude/hooks/squad-labels.sh review --issue <KEY> --handoff <handoff path>`
+  per issue on the branch (exit 0 continue; 10 and 20 note the stderr
+  reason in `progress.txt` and continue). `progress.txt`:
   `[ID] resolved. PR: #N (base: <base>) (or Branch: <branch> (base: <base>)
   detached). Notes: <summary>` — the `(base: …)` token is what Reven reads
   to diff a stacked branch against its real base.
@@ -293,18 +293,20 @@ failures on main (note in `progress.txt` and the PR body).
 
 After 3 attempts (stalls + retryable failures share the counter):
 
-- Connected — swap the state label and comment the last error (labels
-  from `state_labels`, never hardcoded):
+- Run (connected: omit `--handoff`; detached: pass the handoff path):
   ```bash
-  gh issue edit <n> -R <owner>/<repo> --remove-label <in_progress> --add-label <blocked>
-  gh issue comment <n> -R <owner>/<repo> --body "<last error output>"
+  bash ~/.claude/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>" --handoff <handoff path>
   ```
-  Always remove `in_progress` in the same call that adds `blocked` — an
-  escalated issue never carries both. `review_label`, if still present,
-  is left alone (see `LABEL_STATE_MACHINE.md`): a blocked issue
-  legitimately still needs human eyes.
-- Detached: append `- [ ] Move <KEY> to Blocked, comment: <last error>`
-  to the handoff.
+  Read `OUTCOME` and `CHANGED`. Act on the exit code:
+
+  | Exit | Action |
+  |------|--------|
+  | 0 | Continue. |
+  | 10 | Add the stderr reason to the escalation message below and continue. |
+  | 20 | Add the stderr reason to the escalation message below and continue. |
+
+  A `blocked` issue still needs human eyes: `review_label`, if present,
+  stays.
 - Print `#12 failed after 3 attempts. Escalating to you.` and continue
   with the next issue — never stop the whole batch for one escalation.
 
