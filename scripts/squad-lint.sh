@@ -404,8 +404,8 @@ check_gh_write_ban() {
 
 # ---------------------------------------------------------------------
 # Check 7: LABEL_STATE_MACHINE.md rows <-> scripts/test-squad-labels.sh.
-# Table rows start "| <id> |" (id = L<n> or D); the 4th cell is "Performed
-# by". Tests are `check "<id> ..."` / `check "D-..."` lines.
+# Table rows start "| <id> |" (id = L<n> or D); the "Performed by" cell is $5 (the 4th
+# visible cell, because of the leading empty field). Tests are `check "<id> ..."` / `check "D-..."` lines.
 # ---------------------------------------------------------------------
 check_label_doc_tests() {
   local before="$VIOLATIONS" doc=LABEL_STATE_MACHINE.md tf=scripts/test-squad-labels.sh
