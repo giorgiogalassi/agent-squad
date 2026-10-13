@@ -6,7 +6,7 @@ code lives in `claude/hooks/squad-common.sh`, which scripts source.
 
 ## Stdout
 
-Only lines matching `^[A-Z_]+=` . One `KEY=value` per line. Nothing else.
+Only lines matching `^[A-Z_]+=`. One `KEY=value` per line. Nothing else.
 
 Value encoding: single line; `\` is escaped as `\\`; `=` after the first
 `=` is literal and not escaped; newlines are forbidden (`squad_emit`
@@ -49,6 +49,18 @@ is required in detached mode and ignored in connected mode.
 
 ## Library
 
-`squad_resolve`, `squad_gh_write`, `squad_record_local`, `squad_emit`
-return codes; `squad_fail <code> <reason>` writes the reason to stderr
-and exits. The header of `squad-common.sh` is authoritative.
+Function return codes (the header of `squad-common.sh` is authoritative):
+
+| Function | Returns |
+|---|---|
+| `squad_resolve` | 0 / 20 |
+| `squad_gh_write` | 0 / 20 (gh stdout is redirected to stderr) |
+| `squad_record_local` | 0 changed / 1 unchanged / 20 I/O error |
+| `squad_emit` | 0 / 2 |
+
+`squad_fail <code> <reason>` writes the reason to stderr and exits.
+
+The 1 from `squad_record_local` is library-only and is never a script exit
+code; the script exit codes remain 0/2/10/20 above. Callers under `set -e`
+must guard it, because a return of 1 aborts them:
+`squad_record_local ... || rc=$?`.

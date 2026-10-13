@@ -19,6 +19,7 @@ cp "$REPO_ROOT"/claude/hooks/path-resolve.sh "$COMMON" "$TMPROOT/hooks/"
 cat > "$TMPROOT/realbin/gh" <<'EOP'
 #!/usr/bin/env bash
 for a in "$@"; do printf '%s\n' "$a"; done >> "$GH_ARGV_LOG"
+[ -n "${GH_STUB_STDOUT:-}" ] && printf '%s\n' "$GH_STUB_STDOUT"
 exit "${GH_STUB_RC:-0}"
 EOP
 chmod +x "$TMPROOT/realbin/gh"
@@ -59,6 +60,11 @@ exp="$(printf 'issue\nedit\n7\n--add-label\na b\n')"
 out="$(cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" PATH="$TMPROOT/realbin:$PATH" GH_STUB_RC=4 \
   bash -c '. "$1/squad-common.sh"; squad_resolve; squad_gh_write issue edit 7; echo "RC=$?"' _ "$TMPROOT/hooks" 2>/dev/null)"
 [ "$out" = "RC=20" ] && ok "gh failure (4) mapped to 20" || bad "gh failure mapping ($out)"
+
+# gh stdout must not leak onto the function's stdout (contract lines only)
+out="$(cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" PATH="$TMPROOT/realbin:$PATH" GH_STUB_STDOUT="https://github.com/o/r/pull/1" \
+  bash -c '. "$1/squad-common.sh"; squad_resolve; squad_gh_write pr create' _ "$TMPROOT/hooks" 2>/dev/null)"
+[ -z "$out" ] && ok "gh_write keeps gh stdout off stdout" || bad "gh stdout leaked ($out)"
 
 # --- squad_record_local
 H="$TMPROOT/deep/dir/handoff.txt"

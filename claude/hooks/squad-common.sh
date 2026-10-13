@@ -6,6 +6,10 @@
 # Functions that EXIT the calling script:   squad_fail
 # Functions that RETURN a code (no exit):   squad_resolve, squad_gh_write,
 #                                           squad_record_local, squad_emit
+# Return codes: squad_resolve 0/20; squad_gh_write 0/20;
+#   squad_record_local 0 changed / 1 unchanged / 20 I/O error;
+#   squad_emit 0/2. The 1 is library-only, never a script exit code; callers
+#   under `set -e` must guard it (`squad_record_local ... || rc=$?`).
 #
 # path-resolve.sh is located in the same directory as the file that
 # sources this one, so it works from the repo and from ~/.claude/hooks/.
@@ -26,6 +30,7 @@ squad_fail() {
 # DISPLAY_NAME, SQUAD_DIR, TRACKER_MODE. Returns 0, or 20 if resolution fails.
 squad_resolve() {
   local out line key val
+  unset TRACKER_MODE
   if ! out="$(bash "$SQUAD_HOOKS_DIR/path-resolve.sh" 2>/dev/null)"; then
     echo "squad: path-resolve.sh failed" >&2
     return 20
@@ -49,13 +54,14 @@ EOF2
 # squad_gh_write <argv...>: the ONLY place a mutating gh verb may run.
 # Detached (or unresolved) mode: refuses, executes nothing, returns 20.
 # Connected: runs `gh <argv>`; returns 0 on success, 20 on any gh failure
-# (gh's own exit code is never passed through).
+# (gh's own exit code is never passed through). gh stdout goes to stderr so
+# stdout stays contract-only.
 squad_gh_write() {
   if [ "${TRACKER_MODE:-}" != "connected" ]; then
     echo "squad: refused gh write in ${TRACKER_MODE:-unresolved} mode" >&2
     return 20
   fi
-  if gh "$@"; then
+  if gh "$@" >&2; then
     return 0
   fi
   echo "squad: gh $1 failed" >&2
