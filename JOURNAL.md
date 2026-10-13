@@ -796,6 +796,8 @@ retired deliberately, not quietly.
 | `<vault>/projects/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
 | `<vault>/projects/<project>/.squad/progress.txt` | Ralph's per-issue batch memory. Appended by Ralph, read by Cody. |
 | `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files (local issue IDs, key mapping, Jira-importable CSV) and handoff checklists. |
+| `claude/hooks/squad-*.sh`, `SCRIPT_CONTRACT.md` | Script layer (Iteration 29): shared guard, label transitions, branch create/continue, with a fixed `KEY=value` output contract. Agent prose only calls them. |
+| `scripts/test-*.sh`, `claude/evals/` | Tier-1 bash gate and tier-2 advisory `claude plugin eval` cases. |
 | `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
 | `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
 | `claude/agents/` | Claude-specific agent definitions to copy into `~/.claude/agents/`. |
@@ -875,6 +877,8 @@ The definition of a failed attempt has not been fully specified. Does a test fai
 
 > **Resolved (2026-06-12):** failure classification written into both Ralph skills (section 2b). Retryable: build/compile failure, test failure introduced by the changes, type errors, unresolvable lint errors, transient PR-creation errors. Immediate escalation: identical error across two consecutive attempts, ambiguity requiring a human decision, auth or environment failures, loop symptoms. Not counted as failures: absent test suite, pre-existing failures on main (noted in progress.txt and the PR body). Cody's manual-PR fallback when `gh` is unavailable counts as success.
 
+> **Update (Iteration 29):** label transitions and branch create/continue are now scripts with the exit-code contract in `SCRIPT_CONTRACT.md` (0 ok, 2 usage, 10 refused or precondition, 20 environment). Ralph's retry decision for these steps reads the exit code instead of parsing prose; run state and PR scripts are batch 1b.
+
 ### 5.5 decisions.md maintenance discipline
 
 `decisions.md` value depends entirely on keeping it updated. There is no automated mechanism to prompt updates after significant decisions.
@@ -930,7 +934,15 @@ The harness spectrum, cheapest first:
 - **Fixtures.** One or two throwaway repos (connected and detached) with a deliberately designed issue set: a dependency chain, a cycle that must halt, an issue that must fail and escalate. Re-running the squad against the same fixture after each patch surfaces behavior drift. No scorer needed; the result is read by eye. This is the layer most likely to earn its place.
 - **Assertions.** Encoding invariants as automated checks ("escalate after 3 retries", "a cycle halts", "reconstruction preserves ## Blocked"). This is the real harness and where cost and dependency-creep live (golden-file comparison is brittle; LLM-as-judge adds a model on every run). Gate it behind evidence that manual fixture-running is too slow or error-prone.
 
+> **Partially closed (Iteration 29):** the assertions layer now exists in two tiers. Tier 1 is a deterministic bash gate: `scripts/test-squad-labels.sh`, `scripts/test-squad-branch.sh`, `scripts/test-squad-common.sh`, `scripts/test-path-resolve.sh`, `scripts/test-gh-shim.sh` and the lint suites run against a `gh` shim and fixture repos on ubuntu and macOS, plus `squad-lint.sh` checks 6-8. Tier 2 is `claude/evals/`, three advisory `claude plugin eval` cases for what prose does. Still open: fixtures for Ralph-level scenarios (cycle halts, escalation after retries), a verification contract per issue, and reconstruction assertions.
+
 > **Action:** build nothing up front. The first real batch after merge is the first harness run, manual. If reading logs by hand suffices, do nothing. If you re-run the same scenarios and squint at output, build the fixtures. If you repeat correctness mistakes a check could catch, add assertions for those specific cases. The harness grows from observed pain, not design. Note: a framework's eval and observability tooling (open point 5.10) overlaps this; if the harness need grows past the observability layer, fold it into the Sentry-time build-vs-adopt decision rather than building both.
+
+### 5.12 Ralph stacking rule with diamond dependencies
+
+Ralph stacks each issue's branch on its latest blocker. That is lossless for a chain but wrong for a diamond: when an issue has two blockers that are not themselves ordered (#214 needed #211 and #212; #220 needed #213, #217 and #219), the branch contains only one of them and silently drops the others. Batch 1a avoided the problem by running a linear stack in topological order.
+
+> **Action:** specify the rule in Ralph for multi-blocker issues: stack on a merge of all blockers, or fall back to a linear stack when the graph has diamonds, and make Ralph report which it chose. Decide before parallel chains (later batch) make linearizing unavailable.
 
 ---
 
@@ -1168,6 +1180,92 @@ missing and prints nothing about `lore start` otherwise. The auto-load of
 
 ---
 
+### Iteration 29: Deterministic script layer and two-tier harness
+
+Three problems converged. The label state machine existed in three
+hand-synced copies (the `LABEL_STATE_MACHINE.md` table, the agent prose,
+and the lifecycle workflow), and every copy drifted at least once.
+Prose procedures had already broken in Iteration 23, when a path rule
+copied into many definitions behaved differently in a worktree. And the
+only harness, `golden-check.sh`, was informational: it printed a diff and
+gated nothing, so a regression surfaced in a live session instead of a
+check.
+
+**Design:** scripts are the pattern, and prose keeps only the call.
+Batch 1a scoped the move to labels and branch create/continue so the
+contract could be settled once on two small cases.
+
+- *Mode by script, default detached.* `path-resolve.sh` gained a fifth
+  line, `TRACKER_MODE`, which is `connected` only when `chisel.mode` is
+  provably `connected`; a missing file, missing `jq` or any doubt yields
+  `detached`. Mode is never a model-supplied flag, because detached is a
+  privacy and safety property and a model must not be able to talk itself
+  out of it.
+- *One shared guard.* `squad-common.sh` holds `squad_gh_write`, the only
+  mutating `gh` path, which refuses in detached mode, plus
+  `squad_record_local`, `squad_emit` and `squad_fail`. `squad-labels.sh`
+  (ensure, claim, review, escalate; `--handoff` for the detached line)
+  makes zero `gh` calls in detached mode. `squad-branch.sh` (create,
+  continue) makes none at all, works inside worktrees, and never uses
+  `-f`, stash or reset.
+- *Output contract.* `SCRIPT_CONTRACT.md` fixes stdout as `KEY=value`
+  lines (`^[A-Z_]+=`), `OUTCOME` and `CHANGED` keys, exit codes 0, 2, 10
+  and 20, no pass-through of `gh` or `git` codes, and idempotency. The
+  detached happy path exits 0 with `OUTCOME=recorded-local` rather than a
+  distinct non-zero code: a model reads non-zero as failure and reaches
+  for raw `gh`, which is the exact behavior the guard exists to prevent.
+- *Tier 1, a bash gate.* `scripts/gh-shim/gh` and
+  `scripts/fixtures/make-fixture.sh` back `scripts/test-*.sh` (path
+  resolve, gh shim, common, labels, branch, and three lint suites). They
+  run on ubuntu and macOS with `/bin/bash` 3.2 through `hook-tests.yml`
+  and `squad-lint.yml`, and they replace `golden-check.sh`, now deleted.
+- *Lint as allowlist.* `squad-lint.sh` check 6 allows a fixed set of
+  `gh` read forms (with `<!-- lint:gh-ok -->` for deliberate exceptions
+  and `scripts/lint-allowlist-1b.txt` for entries tagged `retires: 1b`)
+  rather than denying a list of write forms, since a denylist fails open
+  on the next unknown write. Check 7 ties each `LABEL_STATE_MACHINE.md`
+  row id (L1-L8, D) to a test name; check 8 verifies that every
+  `~/.claude/hooks/*.sh` the prose references exists.
+- *Tier 2, advisory evals.* `claude/evals/` holds three cases
+  (connected claim, detached claim, worktree continue) graded by
+  zero-cost checks, run by `plugin-eval.yml` on dispatch or a same-repo
+  `eval` label with `--threshold 0`. `claude plugin eval` cannot be the
+  gate: every run calls a real model (3 runs times 2 arms by default),
+  results are non-deterministic and graders cannot be custom. So bash
+  gates and the evals report. Findings: the sandbox can write
+  `$HOME/second-brain`, the `agent-squad:` plugin prefix is harmless, and
+  the macOS `xcrun` git shim fails inside the eval sandbox.
+- *Eval-only packaging.* `claude/.claude-plugin/plugin.json` is name-only
+  with no `hooks.json`, so loading `claude/` as a plugin cannot double
+  fire hooks next to the copy install. CI runs `claude plugin validate
+  claude/` without `--strict`, because a name-only manifest warns.
+
+Known gap, documented rather than hidden: Cody's prose still skips the
+claim in detached mode, although `squad-labels.sh claim --handoff`
+exists; Ralph produces the detached In-Progress line at dispatch. The
+detached-claim eval reports this. Also, `docs/flow.png` lags
+`flow.html` (the golden-check node was removed in #213), and the
+installed `~/.claude` copies must be re-synced after merge.
+
+The batch was a linear stack of PRs (#222-#231) because the issue graph
+had diamonds (#214 needed #211 and #212; #220 needed #213, #217 and
+#219), and stacking each issue on its latest blocker would have dropped
+blockers (open point 5.12).
+
+**Deferred:** run state (`ralph-run.md`) and PR open/update scripts,
+Chisel issue creation and Sidecar `gh pr create` (batch 1b). Later
+batches: a verification contract with model and effort routing per
+issue, an automatic Reven-to-Cody fix round with review findings feeding
+`decisions.md`, parallel execution of independent chains in worktrees,
+and folding Archy into Forge.
+
+> **Key decision:** whatever must be deterministic moves out of prose into
+> a script with a fixed output contract, and the tracker mode is resolved
+> by that script and defaults to detached. Prose holds only the call; a
+> bash gate decides pass or fail, and the model-run evals only advise.
+
+---
+
 ## 7. Skill and Agent Definitions
 
 Canonical definitions live in `claude/`, the sole distribution tree since
@@ -1195,6 +1293,12 @@ claude/
     worktree.sh
     lore-orient.sh
     chisel-config-validate.py
+    squad-common.sh
+    squad-labels.sh
+    squad-branch.sh
+  evals/
+    connected-claim, detached-claim, worktree-continue
+  .claude-plugin/plugin.json   (eval-only manifest)
 ```
 
 `PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no
