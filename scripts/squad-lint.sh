@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Seven checks, each independent and each able to fail
+# done") into a gate. Eight checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -20,6 +20,8 @@
 #      by" cell names squad-labels.sh has a test in scripts/test-squad-labels.sh
 #      whose name starts with its id (L<n> , or D- for the id "D"), and every
 #      such test id has a script-performed row
+#   8. hook refs exist: every ~/.claude/hooks/<x>.sh referenced in
+#      claude/skills/** or claude/agents/*.md must exist as claude/hooks/<x>.sh
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -430,6 +432,21 @@ check_label_doc_tests() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "every script-performed label row has tests and vice versa"
 }
 
+# ---------------------------------------------------------------------
+# Check 8: every ~/.claude/hooks/<x>.sh referenced by a skill or agent ships
+# as claude/hooks/<x>.sh.
+# ---------------------------------------------------------------------
+check_hook_refs_exist() {
+  local before="$VIOLATIONS" f ref
+  section "8. referenced hooks exist"
+  while IFS= read -r f; do
+    for ref in $(grep -oE '~/\.claude/hooks/[A-Za-z0-9_.-]+\.sh' "$f" | sort -u); do
+      [ -f "claude/hooks/${ref##*/}" ] || fail "$f references $ref but claude/hooks/${ref##*/} does not exist"
+    done
+  done < <(find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null)
+  [ "$VIOLATIONS" -eq "$before" ] && ok "every referenced hook script ships in claude/hooks/"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -437,6 +454,7 @@ check_dangling_doc_pointers
 check_delegation_tool
 check_gh_write_ban
 check_label_doc_tests
+check_hook_refs_exist
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

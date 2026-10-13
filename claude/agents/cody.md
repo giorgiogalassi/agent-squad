@@ -83,23 +83,32 @@ never happened.
 
 `working_directory: <path>` in your prompt (Sidecar) → skip this step
 entirely: run every command with that path as working directory, and
-never `git checkout` anything — the worktree is already on the branch,
+never switch branches — the worktree is already on the branch,
 and switching inside someone else's worktree corrupts it.
 
 Otherwise, Ralph supplies `branch`, `base`, `branch action` (direct
 invocation defaults: `create`, `main`, `<issue-id>-<short-description>`):
 
-- `create`, connected: `git fetch origin`, then
-  `git checkout -b <branch> origin/<base>` — a stale local `<base>`
-  would give the PR spurious diffs and conflicts. If `origin/<base>`
-  does not exist after the fetch (base is a local-only stacked branch),
-  fall back to the local `<base>` and say so in the plan output. If the
-  branch already exists, check it out instead of failing, and report
-  the fetch result (success, or the error).
-- `create`, detached: no network. `git checkout <base> && git checkout
-  -b <branch>` from the local base; if the branch exists, check it out.
-- `continue`: `git checkout <branch>` — never a new branch, never off
-  main.
+Run, in both tracker modes (connected fetches origin and fails if it
+cannot; detached fetches only when an `origin` remote exists, tolerates
+fetch failures, and may stack on a local-only base):
+
+```bash
+bash ~/.claude/hooks/squad-branch.sh <create|continue> <branch> --base <base>
+```
+
+`<create|continue>` is the `branch action`. Read `OUTCOME`, `CHANGED`,
+`BRANCH`, `BASE`, `BASE_REF` and `HEAD_SHA`; `BASE_REF` is the ref the
+branch was based on (`origin/<base>` or local `<base>`). Keep `HEAD_SHA` as
+the baseline for your diff and test scoping, and use `BASE_REF` wherever a
+later step needs the base to diff against. Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 2 | Stop and report as a Cody bug (usage error). |
+| 10 | Stop and report the stderr reason. Never repair another branch (no stash, reset, forced checkout, or removing another worktree). |
+| 20 | Stop and report the stderr reason as a retryable failure for Ralph. |
 
 Naming (when you choose): issue-ID prefix + short kebab-case, e.g.
 `12-add-reservation-table`.
