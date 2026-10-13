@@ -32,7 +32,7 @@ export GH_SHIM_LOG="$TMPROOT/gh.log"; : > "$GH_SHIM_LOG"
 
 GIT="git -c user.name=T -c user.email=t@example.com"
 fixture() {  # fixture [--worktree]
-  local out; out="$("$MK" connected "$@")" || return 1
+  local out; out="$("$MK" "${FMODE:-connected}" "$@")" || return 1
   F_ROOT="$(printf '%s\n' "$out" | sed -n 's/^FIXTURE_ROOT=//p')"
   F_PROJECT="$(printf '%s\n' "$out" | sed -n 's/^PROJECT=//p')"
   F_VAULT="$(printf '%s\n' "$out" | sed -n 's/^VAULT=//p')"
@@ -141,6 +141,48 @@ br "$P" create feat-d --base main
 check "fetch failure (create): exit 20" "20/" "$RC/$OUT"
 br "$P" continue feat-w --base main
 check "fetch failure (continue): exit 20" "20/" "$RC/$OUT"
+
+# ---- local-only base / missing origin (mode-dependent)
+mkbase() {  # local-only branch "stack" one commit ahead of main, not pushed
+  $GIT -C "$1" checkout -q -b stack
+  echo s > "$1/stack.txt"; $GIT -C "$1" add stack.txt; $GIT -C "$1" commit -q -m stack
+  $GIT -C "$1" checkout -q main
+}
+FMODE=detached fixture
+P="$F_PROJECT"; mkbase "$P"
+br "$P" create feat-l --base stack
+check "detached local-only base (create): rc/BASE_REF" "0/stack" "$RC/$(key BASE_REF)"
+check "detached local-only base: HEAD is local stack" "$($GIT -C "$P" rev-parse stack)" "$(key HEAD_SHA)"
+$GIT -C "$P" checkout -q main
+br "$P" continue feat-l --base stack
+check "detached local-only base (continue): rc/BASE_REF" "0/stack" "$RC/$(key BASE_REF)"
+$GIT -C "$P" checkout -q main
+br "$P" create feat-o --base dev
+check "detached base on origin: BASE_REF" "0/origin/dev" "$RC/$(key BASE_REF)"
+br "$P" create feat-z --base ghost
+check "detached base missing: exit 10" "10/" "$RC/$OUT"
+$GIT -C "$P" checkout -q main
+$GIT -C "$P" remote set-url origin "$F_ROOT/does-not-exist.git"
+br "$P" create feat-f --base stack
+check "detached fetch failure: exit 0 + warning" "0/stack/1" "$RC/$(key BASE_REF)/$(printf '%s\n' "$ERR" | grep -c 'fetch origin failed')"
+$GIT -C "$P" checkout -q main
+$GIT -C "$P" remote remove origin
+br "$P" create feat-n --base stack
+check "detached no origin remote: rc/BASE_REF/silent" "0/stack/" "$RC/$(key BASE_REF)/$ERR"
+br "$P" create feat-y --base ghost
+check "detached no origin, base missing: exit 10" "10/" "$RC/$OUT"
+
+fixture
+P="$F_PROJECT"; mkbase "$P"
+br "$P" create feat-c1 --base dev
+check "connected base on origin: rc/BASE_REF" "0/origin/dev" "$RC/$(key BASE_REF)"
+$GIT -C "$P" checkout -q main
+br "$P" create feat-c2 --base ghost
+check "connected base missing: exit 10" "10/" "$RC/$OUT"
+$GIT -C "$P" remote remove origin
+br "$P" create feat-c3 --base stack
+check "connected no origin remote: exit 20" "20/" "$RC/$OUT"
+case "$ERR" in *origin*) ok "connected no origin: stderr names remote" ;; *) bad "stderr: $ERR" ;; esac
 
 check "no gh calls in any mode (shim log empty)" "" "$(cat "$GH_SHIM_LOG")"
 

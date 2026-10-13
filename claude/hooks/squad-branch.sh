@@ -6,8 +6,15 @@
 #   squad-branch.sh create   <branch> --base <base>
 #   squad-branch.sh continue <branch> --base <base>
 #
-# Both verbs: `git fetch origin`, then verify refs/remotes/origin/<base>.
-#   create:   no local <branch> -> create it from origin/<base> (no upstream
+# Fetch (both verbs), mode-dependent (TRACKER_MODE from squad_resolve):
+#   origin remote present: `git fetch origin` (quiet). On failure: detached ->
+#     one stderr warning, continue with local refs; connected -> exit 20.
+#   no origin remote: detached -> continue silently with local refs;
+#     connected -> exit 20 naming the missing remote.
+# Base resolution (both modes): origin/<base> if it exists, else local <base>
+# if it exists, else exit 10. BASE_REF reports which one was used. Detached
+# stacks never push, so a local-only base is normal there.
+#   create:   no local <branch> -> create it from BASE_REF (no upstream
 #             set) and check it out: applied. Local <branch> already checked
 #             out in this worktree -> unchanged. Local <branch> exists but is
 #             not checked out -> check it out: applied. An existing local
@@ -23,9 +30,11 @@
 # Operates on the cwd's repository (may be a linked worktree) with plain git
 # commands; never derives the project root from `git rev-parse --show-toplevel`.
 #
-# Output: OUTCOME (applied|unchanged), CHANGED (yes|no), BRANCH, BASE, HEAD_SHA.
+# Output: OUTCOME (applied|unchanged), CHANGED (yes|no), BRANCH, BASE,
+# BASE_REF (origin/<base>|<base>), HEAD_SHA.
 # Exit: 0 ok, 2 usage, 10 precondition (base/branch missing, checked out
-# elsewhere, checkout blocked), 20 fetch/io failure. Git exit codes are
+# elsewhere, checkout blocked), 20 fetch/io failure (connected mode only for
+# fetch problems). Git exit codes are
 # never passed through.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
@@ -54,9 +63,26 @@ git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || squad_fail 2 "invalid
 G() { git -C "$PWD" "$@"; }
 
 G rev-parse --git-dir >/dev/null 2>&1 || squad_fail 20 "not inside a git repository"
-G fetch origin >/dev/null 2>&1 || squad_fail 20 "git fetch origin failed"
-G rev-parse -q --verify "refs/remotes/origin/$BASE" >/dev/null 2>&1 \
-  || squad_fail 10 "base 'origin/$BASE' does not exist on origin"
+squad_resolve || squad_fail 20 "cannot resolve tracker mode"
+
+if G remote get-url origin >/dev/null 2>&1; then
+  if ! G fetch -q origin >/dev/null 2>&1; then
+    if [ "$TRACKER_MODE" = connected ]; then
+      squad_fail 20 "git fetch origin failed"
+    fi
+    echo "squad-branch: git fetch origin failed; continuing with local refs" >&2
+  fi
+elif [ "$TRACKER_MODE" = connected ]; then
+  squad_fail 20 "no 'origin' remote configured (required in connected mode)"
+fi
+
+if G rev-parse -q --verify "refs/remotes/origin/$BASE" >/dev/null 2>&1; then
+  BASE_REF="origin/$BASE"
+elif G rev-parse -q --verify "refs/heads/$BASE" >/dev/null 2>&1; then
+  BASE_REF="$BASE"
+else
+  squad_fail 10 "base $BASE not found locally or on origin"
+fi
 
 CURRENT="$(G symbolic-ref -q --short HEAD 2>/dev/null || true)"
 HAVE_LOCAL=0
@@ -66,7 +92,8 @@ finish() {  # finish <outcome> <changed>
   local sha
   sha="$(G rev-parse HEAD 2>/dev/null)" || squad_fail 20 "cannot read HEAD"
   squad_emit OUTCOME "$1"; squad_emit CHANGED "$2"
-  squad_emit BRANCH "$BRANCH"; squad_emit BASE "$BASE"; squad_emit HEAD_SHA "$sha"
+  squad_emit BRANCH "$BRANCH"; squad_emit BASE "$BASE"
+  squad_emit BASE_REF "$BASE_REF"; squad_emit HEAD_SHA "$sha"
   exit 0
 }
 
@@ -94,8 +121,8 @@ if [ "$HAVE_LOCAL" = 1 ]; then
 fi
 
 if [ "$VERB" = create ]; then
-  G checkout -q --no-track -b "$BRANCH" "origin/$BASE" >/dev/null 2>&1 \
-    || squad_fail 10 "cannot create '$BRANCH' from origin/$BASE"
+  G checkout -q --no-track -b "$BRANCH" "$BASE_REF" >/dev/null 2>&1 \
+    || squad_fail 10 "cannot create '$BRANCH' from $BASE_REF"
   finish applied yes
 fi
 
