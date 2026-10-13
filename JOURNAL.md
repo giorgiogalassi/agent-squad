@@ -934,7 +934,7 @@ The harness spectrum, cheapest first:
 - **Fixtures.** One or two throwaway repos (connected and detached) with a deliberately designed issue set: a dependency chain, a cycle that must halt, an issue that must fail and escalate. Re-running the squad against the same fixture after each patch surfaces behavior drift. No scorer needed; the result is read by eye. This is the layer most likely to earn its place.
 - **Assertions.** Encoding invariants as automated checks ("escalate after 3 retries", "a cycle halts", "reconstruction preserves ## Blocked"). This is the real harness and where cost and dependency-creep live (golden-file comparison is brittle; LLM-as-judge adds a model on every run). Gate it behind evidence that manual fixture-running is too slow or error-prone.
 
-> **Partially closed (Iteration 29):** the assertions layer now exists in two tiers. Tier 1 is a deterministic bash gate: `scripts/test-squad-labels.sh`, `scripts/test-squad-branch.sh`, `scripts/test-squad-common.sh`, `scripts/test-path-resolve.sh`, `scripts/test-gh-shim.sh` and the lint suites run against a `gh` shim and fixture repos on ubuntu and macOS, plus `squad-lint.sh` checks 6-8. Tier 2 is `claude/evals/`, three advisory `claude plugin eval` cases for what prose does. Still open: fixtures for Ralph-level scenarios (cycle halts, escalation after retries), a verification contract per issue, and reconstruction assertions.
+> **Partially closed (Iteration 29):** the assertions layer now exists in two tiers. Tier 1 is a deterministic bash gate: `scripts/test-squad-labels.sh`, `scripts/test-squad-branch.sh`, `scripts/test-squad-common.sh`, `scripts/test-path-resolve.sh`, `scripts/test-gh-shim.sh` and the lint suites run against a `gh` shim and fixture repos (`hook-tests.yml` on ubuntu and macOS, `squad-lint.yml` on ubuntu only), plus `squad-lint.sh` checks 6-8. Tier 2 is `claude/evals/`, three advisory `claude plugin eval` cases for what prose does. Still open: fixtures for Ralph-level scenarios (cycle halts, escalation after retries), a verification contract per issue, and reconstruction assertions.
 
 > **Action:** build nothing up front. The first real batch after merge is the first harness run, manual. If reading logs by hand suffices, do nothing. If you re-run the same scenarios and squint at output, build the fixtures. If you repeat correctness mistakes a check could catch, add assertions for those specific cases. The harness grows from observed pain, not design. Note: a framework's eval and observability tooling (open point 5.10) overlaps this; if the harness need grows past the observability layer, fold it into the Sentry-time build-vs-adopt decision rather than building both.
 
@@ -1217,8 +1217,11 @@ contract could be settled once on two small cases.
 - *Tier 1, a bash gate.* `scripts/gh-shim/gh` and
   `scripts/fixtures/make-fixture.sh` back `scripts/test-*.sh` (path
   resolve, gh shim, common, labels, branch, and three lint suites). They
-  run on ubuntu and macOS with `/bin/bash` 3.2 through `hook-tests.yml`
-  and `squad-lint.yml`, and they replace `golden-check.sh`, now deleted.
+  run with `/bin/bash` 3.2 through two workflows: `hook-tests.yml`
+  (path-resolve, gh-shim, common, labels, branch, worktree) on ubuntu and
+  macOS, and `squad-lint.yml` (lint, `test-squad-lint-gh.sh`,
+  `test-squad-lint-labels.sh`, `test-squad-lint-hooks.sh`) on ubuntu
+  only. They replace `golden-check.sh`, now deleted.
 - *Lint as allowlist.* `squad-lint.sh` check 6 allows a fixed set of
   `gh` read forms (with `<!-- lint:gh-ok -->` for deliberate exceptions
   and `scripts/lint-allowlist-1b.txt` for entries tagged `retires: 1b`)
@@ -1230,7 +1233,9 @@ contract could be settled once on two small cases.
   (connected claim, detached claim, worktree continue) graded by
   zero-cost checks, run by `plugin-eval.yml` on dispatch or a same-repo
   `eval` label with `--threshold 0`. `claude plugin eval` cannot be the
-  gate: every run calls a real model (3 runs times 2 arms by default),
+  gate: every run calls a real model (the CLI defaults to 3 runs times 2 arms;
+  the repo configures neither, and the README invocation passes
+  `--ablation none` for one arm),
   results are non-deterministic and graders cannot be custom. So bash
   gates and the evals report. Findings: the sandbox can write
   `$HOME/second-brain`, the `agent-squad:` plugin prefix is harmless, and
@@ -1238,12 +1243,34 @@ contract could be settled once on two small cases.
 - *Eval-only packaging.* `claude/.claude-plugin/plugin.json` is name-only
   with no `hooks.json`, so loading `claude/` as a plugin cannot double
   fire hooks next to the copy install. CI runs `claude plugin validate
-  claude/` without `--strict`, because a name-only manifest warns.
+  claude/` without `--strict`, because a name-only manifest warns (the
+  #213 trade-off).
+- *Fix-round outcomes.* `squad_gh_write` sends `gh` stdout to stderr so
+  only `KEY=value` lines reach stdout; the contract also lists library
+  return codes (`squad_record_local` 1 = unchanged, library-only).
+- *Labels script hardening.* `squad-labels.sh` reads label names only from
+  `chisel-config.json`, without `jq`; a missing config in connected mode is
+  exit 20. `review`'s unchanged branch also requires `review_label` gone.
+  `escalate` posts the comment before the label swap, so a retry may
+  duplicate the comment but never loses it. `claim` while `blocked` is
+  exit 10.
+- *Branch base resolution.* `squad-branch.sh` resolves `origin/<base>`,
+  then local `<base>`, and emits `BASE_REF`. Detached mode tolerates a
+  missing `origin` or a failed fetch, so local-only stacks keep working;
+  this is the detached-mode privacy property, the squad never needs a
+  remote. Connected mode still exits 20 on fetch failure.
+- *Ralph detached claim.* Ralph now has an explicit detached `claim` call
+  site in Phase 2a.
+- *Eval workflow.* `plugin-eval.yml` scopes the API key to the eval step,
+  uses a concurrency group, and guards on the `labeled` event for the
+  `eval` label; results are ignored via `claude/evals/.gitignore`. The
+  detached-claim `handoff-line` grader is expected to fail until it is
+  re-pointed at Ralph's handoff line.
 
 Known gap, documented rather than hidden: Cody's prose still skips the
 claim in detached mode, although `squad-labels.sh claim --handoff`
-exists; Ralph produces the detached In-Progress line at dispatch. The
-detached-claim eval reports this. Also, `docs/flow.png` lags
+exists; Ralph produces the detached In-Progress line at dispatch (Phase
+2a). The detached-claim eval reports this until its grader is re-pointed. Also, `docs/flow.png` lags
 `flow.html` (the golden-check node was removed in #213), and the
 installed `~/.claude` copies must be re-synced after merge.
 
