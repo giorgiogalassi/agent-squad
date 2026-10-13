@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: worktree-continue
+runs: 1
+context:
+  scaffold_script: scaffold.sh
