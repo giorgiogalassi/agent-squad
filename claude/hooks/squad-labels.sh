@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # squad-labels.sh -- performs the label transitions of LABEL_STATE_MACHINE.md.
-# Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; jq optional.
+# Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; no jq needed.
 #
 # Usage:
 #   squad-labels.sh ensure   [--handoff <p>]
@@ -8,9 +8,18 @@
 #   squad-labels.sh review   --issue <n> [--handoff <p>]
 #   squad-labels.sh escalate --issue <n> --reason <text> [--handoff <p>]
 #
-# Connected: mutates via squad_gh_write only; label names come from
-# chisel-config.json (defaults, with a stderr note, when jq is missing);
-# the issue's current labels are read with `gh issue view --json labels`.
+# Connected: mutates via squad_gh_write only; label names come ONLY from
+# chisel-config.json (state_labels.{in_progress,in_review,blocked} required,
+# review_label absent/"none" = not configured), parsed with grep/sed. A
+# missing/unreadable config or missing state label is a hard failure (20);
+# there are no built-in defaults. The issue's current labels are read with
+# `gh issue view --json labels`.
+# Two-step verbs are re-runnable after a partial failure:
+#   review    swap edit, then remove review_label; a re-run that finds
+#             in_review but review_label still present does only the remove.
+#   escalate  comment first, then label swap. A retry after a label-swap
+#             failure may DUPLICATE the comment (recoverable); the reverse
+#             order would lose the comment (not recoverable).
 # Detached: zero gh calls; appends a checklist line to --handoff (required).
 # Exit: 0 ok, 2 usage, 10 illegal transition, 20 gh/io failure.
 
@@ -68,17 +77,15 @@ if [ "$TRACKER_MODE" != connected ]; then
 fi
 
 # --- connected: label names from config -------------------------------------
-L_IP="in-progress"; L_IR="in-review"; L_BL="blocked"; L_RV="needs-review"
 CFG="$VAULT_PATH/projects/$DISPLAY_NAME/.squad/chisel-config.json"
-if command -v jq >/dev/null 2>&1 && [ -f "$CFG" ]; then
-  cfg() { jq -r --arg d "$2" "(.chisel.$1 // \$d)" "$CFG" 2>/dev/null || printf '%s' "$2"; }
-  L_IP="$(cfg state_labels.in_progress "$L_IP")"
-  L_IR="$(cfg state_labels.in_review "$L_IR")"
-  L_BL="$(cfg state_labels.blocked "$L_BL")"
-  L_RV="$(cfg review_label "$L_RV")"
-else
-  echo "squad-labels: jq or config unavailable, using default label names" >&2
-fi
+[ -f "$CFG" ] && [ -r "$CFG" ] || squad_fail 20 "chisel-config.json missing or unreadable: $CFG"
+# cfgval <key>: first string value of "<key>" in the config (keys are unique).
+cfgval() { grep -o "\"$1\" *: *\"[^\"]*\"" "$CFG" | head -1 | sed 's/^"[^"]*" *: *"//; s/"$//'; }
+L_IP="$(cfgval in_progress)"; L_IR="$(cfgval in_review)"; L_BL="$(cfgval blocked)"
+L_RV="$(cfgval review_label)"; [ -n "$L_RV" ] || L_RV=none
+[ -n "$L_IP" ] || squad_fail 20 "chisel.state_labels.in_progress missing in $CFG"
+[ -n "$L_IR" ] || squad_fail 20 "chisel.state_labels.in_review missing in $CFG"
+[ -n "$L_BL" ] || squad_fail 20 "chisel.state_labels.blocked missing in $CFG"
 
 # One repo lookup per call (read-only).
 REPO_JSON="$(gh repo view --json nameWithOwner)" || squad_fail 20 "gh repo view failed"
@@ -129,36 +136,44 @@ fi
 
 VIEW="$(gh issue view "$ISSUE" -R "$REPO" --json labels)" || squad_fail 20 "gh issue view $ISSUE failed"
 FROM="$(printf '%s' "$VIEW" | names_of)"
-has_ip=0; has_ir=0; has_bl=0
+has_ip=0; has_ir=0; has_bl=0; has_rv=0
 in_list "$FROM" "$L_IP" && has_ip=1
 in_list "$FROM" "$L_IR" && has_ir=1
 in_list "$FROM" "$L_BL" && has_bl=1
+[ "$L_RV" != none ] && in_list "$FROM" "$L_RV" && has_rv=1
 
 case "$VERB" in
   claim)
     [ "$has_ip" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ir" = 1 ] && squad_fail 10 "cannot claim $ISSUE: already $L_IR"
+    [ "$has_bl" = 1 ] && squad_fail 10 "cannot claim $ISSUE: $L_BL present (no such transition)"
     squad_gh_write issue edit "$ISSUE" -R "$REPO" --add-assignee @me --add-label "$L_IP" \
       || squad_fail 20 "gh issue edit failed"
     finish applied yes "$FROM" "$(add "$FROM" "$L_IP")" ;;
   review)
-    [ "$has_ip" = 0 ] && [ "$has_ir" = 1 ] && finish unchanged no "$FROM" "$FROM"
+    if [ "$has_ip" = 0 ] && [ "$has_ir" = 1 ]; then
+      # Already swapped; only a leftover review_label (partial failure) remains.
+      [ "$has_rv" = 1 ] || finish unchanged no "$FROM" "$FROM"
+      squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
+        || squad_fail 20 "gh issue edit (remove $L_RV) failed"
+      finish applied yes "$FROM" "$(drop "$FROM" "$L_RV")"
+    fi
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot review $ISSUE: neither $L_IP nor $L_IR present"
     squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_IR" \
       || squad_fail 20 "gh issue edit failed"
     TO="$(add "$(drop "$FROM" "$L_IP")" "$L_IR")"
     if [ "$L_RV" != none ]; then
       squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
-        || squad_fail 20 "gh issue edit failed"
+        || squad_fail 20 "gh issue edit (remove $L_RV) failed; re-run review to finish"
       TO="$(drop "$TO" "$L_RV")"
     fi
     finish applied yes "$FROM" "$TO" ;;
   escalate)
     [ "$has_ip" = 0 ] && [ "$has_bl" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot escalate $ISSUE: $L_IP not present"
-    squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_BL" \
-      || squad_fail 20 "gh issue edit failed"
     squad_gh_write issue comment "$ISSUE" -R "$REPO" --body "$REASON" \
       || squad_fail 20 "gh issue comment failed"
+    squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_BL" \
+      || squad_fail 20 "gh issue edit failed after comment posted; a retry may duplicate the comment"
     finish applied yes "$FROM" "$(add "$(drop "$FROM" "$L_IP")" "$L_BL")" ;;
 esac

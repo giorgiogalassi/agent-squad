@@ -34,9 +34,26 @@ check() {  # check <name> <expected> <actual>
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi
 }
 
-mkdir -p "$TMPROOT/hooks" "$TMPROOT/stubbin" "$TMPROOT/shimbin"
+mkdir -p "$TMPROOT/hooks" "$TMPROOT/hooks-conn" "$TMPROOT/stubbin" "$TMPROOT/shimbin" "$TMPROOT/nojq"
 cp "$SUT_DIR/$SUT_NAME" "$SUT_DIR/squad-common.sh" "$SUT_DIR/path-resolve.sh" "$TMPROOT/hooks/" 2>/dev/null \
   || { echo "error: override dir lacks squad-common.sh/path-resolve.sh" >&2; exit 2; }
+# hooks-conn: same script, but path-resolve.sh is replaced by a stub that always
+# reports connected (the real one needs jq to say "connected", and has its own
+# tests), so config handling can be exercised with jq hidden or config missing.
+cp "$TMPROOT/hooks/$SUT_NAME" "$TMPROOT/hooks/squad-common.sh" "$TMPROOT/hooks-conn/"
+cat > "$TMPROOT/hooks-conn/path-resolve.sh" <<'EOP'
+#!/usr/bin/env bash
+echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"
+echo "DISPLAY_NAME=fixture"; echo "SQUAD_DIR=$SECOND_BRAIN_PATH/projects/fixture/.squad"
+echo "TRACKER_MODE=connected"
+EOP
+# nojq: every tool on the system PATH dirs except jq.
+for d in /bin /usr/bin; do
+  for f in "$d"/*; do
+    b="${f##*/}"; [ "$b" = jq ] && continue
+    [ -e "$TMPROOT/nojq/$b" ] || ln -s "$f" "$TMPROOT/nojq/$b" 2>/dev/null
+  done
+done
 ln -s "$REPO_ROOT/scripts/gh-shim/gh" "$TMPROOT/shimbin/gh"
 cat > "$TMPROOT/stubbin/gh" <<'EOP'
 #!/usr/bin/env bash
@@ -52,7 +69,11 @@ case "$1 $2" in
   "repo view") echo "$line" >> "$GH_READ_LOG"; echo '{"nameWithOwner":"fixture-owner/fixture-repo"}' ;;
   "issue view") echo "$line" >> "$GH_READ_LOG"; echo "{\"labels\":[$(json_names "${GH_STUB_LABELS:-}")]}" ;;
   "label list") echo "$line" >> "$GH_READ_LOG"; echo "[$(json_names "${GH_STUB_EXISTING:-}")]" ;;
-  "issue edit"|"issue comment"|"label create") echo "$line" >> "$GH_SHIM_LOG"; exit "${GH_STUB_RC:-0}" ;;
+  "issue edit"|"issue comment"|"label create")
+    echo "$line" >> "$GH_SHIM_LOG"
+    # GH_STUB_FAIL_CALL=N fails only the Nth write call in the log.
+    [ "${GH_STUB_FAIL_CALL:-}" = "$(wc -l < "$GH_SHIM_LOG" | tr -d ' ')" ] && exit 1
+    exit "${GH_STUB_RC:-0}" ;;
   *) echo "$line" >> "$GH_SHIM_LOG"; exit 1 ;;
 esac
 EOP
@@ -70,11 +91,11 @@ fixture() {  # fixture <connected|detached> [--labels-custom]
 # lab <bindir> <args...>: sets RC, OUT, ERR; asserts stdout shape.
 lab() {
   local bindir="$1"; shift
-  (cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" PATH="$bindir:$PATH" \
-    bash "$TMPROOT/hooks/$SUT_NAME" "$@" >"$TMPROOT/out" 2>"$TMPROOT/err")
+  (cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" PATH="${LAB_PATH:-$bindir:$PATH}" \
+    bash "$TMPROOT/${LAB_HOOKS:-hooks}/$SUT_NAME" "$@" >"$TMPROOT/out" 2>"$TMPROOT/err")
   RC=$?; OUT="$(cat "$TMPROOT/out")"; ERR="$(cat "$TMPROOT/err")"
-  if [ -n "$OUT" ] && printf '%s\n' "$OUT" | grep -qv '^[A-Z_]*='; then
-    bad "stdout has non-KEY=value line: $(printf '%s' "$OUT" | grep -v '^[A-Z_]*=' | head -1)"
+  if [ -n "$OUT" ] && printf '%s\n' "$OUT" | grep -Eqv '^[A-Z_]+='; then
+    bad "stdout has non-KEY=value line: $(printf '%s' "$OUT" | grep -Ev '^[A-Z_]+=' | head -1)"
   else PASS=$((PASS+1)); fi
 }
 key() { printf '%s\n' "$OUT" | sed -n "s/^$1=//p"; }
@@ -101,6 +122,27 @@ check "L1 custom: ensure uses wip, skips review_label none" \
 gh label create in-review $R
 gh label create blocked $R" "$(writes)"
 
+# jq hidden: names must still come from the config (wip), parsed without jq.
+fixture connected --labels-custom
+check "L1 jq hidden: precondition (jq not on PATH)" "" "$(PATH="$TMPROOT/nojq" command -v jq)"
+LAB_HOOKS=hooks-conn LAB_PATH="$TMPROOT/$C:$TMPROOT/nojq" GH_STUB_EXISTING="" lab "$TMPROOT/$C" ensure
+check "L1 jq hidden: config names (wip) used, no defaults" \
+"gh label create wip $R
+gh label create in-review $R
+gh label create blocked $R" "$(writes)"
+check "L1 one repo view per connected call" "1" "$(grep -c '^gh repo view' "$GH_READ_LOG" | tr -d ' ')"
+# Missing config in connected mode: hard failure, no gh write.
+fixture connected
+rm -f "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+LAB_HOOKS=hooks-conn GH_STUB_EXISTING="" lab "$TMPROOT/$C" ensure
+check "L1 missing config: exits 20, no gh write" "20/" "$RC/$(writes)"
+check "L1 missing config: stderr names the config" "1" "$(printf '%s' "$ERR" | grep -c 'chisel-config.json')"
+fixture connected
+sed '/"in_review"/d' "$F_VAULT/projects/fixture/.squad/chisel-config.json" > "$TMPROOT/cfg" \
+  && cp "$TMPROOT/cfg" "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+LAB_HOOKS=hooks-conn GH_STUB_EXISTING="" lab "$TMPROOT/$C" ensure
+check "L1 missing state label: exits 20, no gh write" "20/" "$RC/$(writes)"
+
 # ---- L2 claim
 fixture connected
 GH_STUB_LABELS="needs-review" lab "$TMPROOT/$C" claim --issue 7
@@ -112,6 +154,8 @@ GH_STUB_LABELS="in-progress" lab "$TMPROOT/$C" claim --issue 7
 check "L2 idempotent: claim" "0/unchanged/no/" "$RC/$(key OUTCOME)/$(key CHANGED)/$(writes)"
 GH_STUB_LABELS="in-review" lab "$TMPROOT/$C" claim --issue 7
 check "L2 illegal: claim from in-review" "10/" "$RC/$(writes)"
+GH_STUB_LABELS="blocked" lab "$TMPROOT/$C" claim --issue 7
+check "L2 illegal: claim while blocked" "10/" "$RC/$(writes)"
 GH_STUB_RC=4 GH_STUB_LABELS="" lab "$TMPROOT/$C" claim --issue 7
 check "L2 gh write failure maps to 20" 20 "$RC"
 : > "$GH_SHIM_LOG"
@@ -132,6 +176,14 @@ GH_STUB_LABELS="in-review" lab "$TMPROOT/$C" review --issue 7
 check "L3 idempotent: review" "0/unchanged/no/" "$RC/$(key OUTCOME)/$(key CHANGED)/$(writes)"
 GH_STUB_LABELS="" lab "$TMPROOT/$C" review --issue 7
 check "L3 illegal: review with neither in-progress nor in-review" "10/" "$RC/$(writes)"
+# partial failure: step 2 (remove needs-review) fails, re-run repairs it
+: > "$GH_SHIM_LOG"
+GH_STUB_FAIL_CALL=2 GH_STUB_LABELS="in-progress,needs-review" lab "$TMPROOT/$C" review --issue 7
+check "L3 partial failure: first run exits 20" 20 "$RC"
+: > "$GH_SHIM_LOG"
+GH_STUB_LABELS="in-review,needs-review" lab "$TMPROOT/$C" review --issue 7
+check "L3 partial failure: re-run applies remove step only" \
+"0/applied/yes/gh issue edit 7 $R --remove-label needs-review" "$RC/$(key OUTCOME)/$(key CHANGED)/$(writes)"
 fixture connected --labels-custom
 GH_STUB_LABELS="wip" lab "$TMPROOT/$C" review --issue 7
 check "L3 custom: wip swap, no review_label removal" "gh issue edit 7 $R --remove-label wip --add-label in-review" "$(writes)"
@@ -140,18 +192,26 @@ check "L3 custom: wip swap, no review_label removal" "gh issue edit 7 $R --remov
 fixture connected
 GH_STUB_LABELS="in-progress,needs-review" lab "$TMPROOT/$C" escalate --issue 7 --reason "3 failed attempts"
 check "L4 escalate: rc/outcome" "0/applied/yes" "$RC/$(key OUTCOME)/$(key CHANGED)"
-check "L4 escalate: exact argv" "gh issue edit 7 $R --remove-label in-progress --add-label blocked
-gh issue comment 7 $R --body 3 failed attempts" "$(writes)"
+check "L4 escalate: exact argv" "gh issue comment 7 $R --body 3 failed attempts
+gh issue edit 7 $R --remove-label in-progress --add-label blocked" "$(writes)"
 : > "$GH_SHIM_LOG"
 GH_STUB_LABELS="blocked" lab "$TMPROOT/$C" escalate --issue 7 --reason x
 check "L4 idempotent: escalate" "0/unchanged/no/" "$RC/$(key OUTCOME)/$(key CHANGED)/$(writes)"
 GH_STUB_LABELS="" lab "$TMPROOT/$C" escalate --issue 7 --reason x
 check "L4 illegal: escalate without in-progress" "10/" "$RC/$(writes)"
 lab "$TMPROOT/$C" escalate --issue 7; check "L4 escalate without --reason is usage error" 2 "$RC"
+# partial failure: comment posted first, label swap fails, re-run repairs it
+: > "$GH_SHIM_LOG"
+GH_STUB_FAIL_CALL=2 GH_STUB_LABELS="in-progress" lab "$TMPROOT/$C" escalate --issue 7 --reason r
+check "L4 partial failure: first run exits 20 after the comment" "20/gh issue comment 7 $R --body r
+gh issue edit 7 $R --remove-label in-progress --add-label blocked" "$RC/$(writes)"
+: > "$GH_SHIM_LOG"
+GH_STUB_LABELS="in-progress" lab "$TMPROOT/$C" escalate --issue 7 --reason r
+check "L4 partial failure: re-run completes with outcome applied" "0/applied" "$RC/$(key OUTCOME)"
 fixture connected --labels-custom
 GH_STUB_LABELS="wip" lab "$TMPROOT/$C" escalate --issue 7 --reason r
-check "L4 custom: argv uses wip" "gh issue edit 7 $R --remove-label wip --add-label blocked
-gh issue comment 7 $R --body r" "$(writes)"
+check "L4 custom: argv uses wip" "gh issue comment 7 $R --body r
+gh issue edit 7 $R --remove-label wip --add-label blocked" "$(writes)"
 
 # ---- detached: zero gh calls, one handoff line per verb
 fixture detached
