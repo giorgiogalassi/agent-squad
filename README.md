@@ -465,6 +465,65 @@ hooks wired in `~/.claude/settings.json`. There is deliberately no
 hooks manifest under `claude/hooks/`; it would double-fire every hook for anyone who
 loads `claude/` as a plugin next to the copy install.
 
+## Evals (tier 2)
+
+`claude/evals/` holds three advisory `claude plugin eval` cases that the bash
+tests cannot cover, because they check what the agent *prose* does:
+
+| Case | Checks (zero-cost graders only) |
+|------|---------------------------------|
+| `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
+| `detached-claim` | no Bash call contains `gh`; a handoff line `- [ ] Move ... to In Progress` is written |
+| `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
+
+Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
+that, inside the run's temporary `$HOME`, copies `claude/hooks/*.sh` to
+`$HOME/.claude/hooks/`, builds a fixture with `scripts/fixtures/make-fixture.sh`
+inside the workspace, and writes `$HOME/second-brain/lore-config.json` plus the
+fixture's `chisel-config.json`. The agent finds the repo at `project/` (and
+`worktree/`) in its workspace. The `gh` shim must be first on `PATH` for the
+agent; the launcher provides that, and the first case prints `which gh`.
+
+Run locally (needs `ANTHROPIC_API_KEY` or a logged-in `claude`; costs a few
+tenths of a dollar per run, capped by `--max-cost-usd`):
+
+```bash
+PATH="$PWD/scripts/gh-shim:$PATH" claude plugin eval claude/ \
+  --trust-plugin --ablation none --scaffold \
+  --allow-tools 'Bash(*squad-labels.sh *)' 'Bash(*squad-branch.sh *)' \
+    'Bash(*path-resolve.sh*)' 'Bash(git *)' \
+  --max-cost-usd 5 --model claude-sonnet-5-5 --threshold 0 \
+  --no-publish --json /path/outside/repo/results.json
+```
+
+`--threshold 0` keeps the suite advisory (the CLI default of 1.0 exits 1 on
+any imperfect score). The suite is advisory: it never gates a PR. CI runs it
+from `.github/workflows/plugin-eval.yml` on `workflow_dispatch`, or on a
+same-repository pull request labeled `eval` (never on forks); it uploads
+`results.json` and `report.html`, and is red only on exit code 1 (cases failed
+to load). Do not commit the results directory the CLI creates under the eval dir.
+
+Findings from building it (Claude Code 2.1.296):
+
+- Eval runs use a temporary `HOME`, with the workspace at `$HOME/cwd`; the
+  scaffold runs with the same `HOME` and cwd.
+- Bash inside the sandbox may write under `$HOME/second-brain/...` (verified
+  with an `echo > $HOME/second-brain/y`, exit 0), so the vault lives there and
+  no `SECOND_BRAIN_PATH` override is needed. Writes outside `HOME` and the
+  workspace (for example the system temp dir) are denied.
+- `--allow-tools` takes the `Bash(*x*)` wildcard form as written above. Only
+  commands matching a pattern run, so a compound command with a pipe, `pwd` or
+  `head` is denied; the prompts tell Cody to keep to single simple commands.
+- The `agent-squad:` plugin prefix has no runtime impact: the agent is invoked
+  as `agent-squad:cody` and the same prose and `~/.claude/hooks/` scripts run.
+- On macOS the stock `/usr/bin/git` shim fails inside the sandbox (it cannot
+  write its xcrun cache in the system temp dir), which breaks `path-resolve.sh`
+  and `squad-branch.sh` locally; the Linux CI runner is unaffected. Expect
+  lower scores on macOS unless a Homebrew `git` comes first on `PATH`.
+- Cody's prose skips the claim in detached mode, so the `detached-claim`
+  handoff-line grader mostly reports whether Ralph's handoff contract is
+  followed; treat it as a signal, not a failure.
+
 ## Further reading
 
 `JOURNAL.md` contains the full design history: why each component exists,

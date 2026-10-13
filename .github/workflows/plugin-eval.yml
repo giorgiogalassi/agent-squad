@@ -1,0 +1,86 @@
+name: Plugin eval (tier 2)
+
+# Advisory tier-2 suite (issue #220, PRD D8/D10): `claude plugin eval` over
+# claude/evals/ checks that the agent prose calls the squad scripts and stays
+# silent on the tracker in detached mode. Scores never gate the PR.
+#
+# Safety:
+#   - Secrets (ANTHROPIC_API_KEY) are only exposed to runs we trust:
+#     workflow_dispatch, or a pull_request from THIS repository that carries
+#     the `eval` label. Fork PRs and unlabeled PRs skip the job.
+#   - The label is applied by a maintainer after reviewing the diff, because
+#     scaffold scripts and --trust-plugin execute code from the checked-out tree.
+#   - Cost is capped by --max-cost-usd.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-eval:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(github.event.pull_request.labels.*.name, 'eval'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: |
+          if curl -fsSL https://claude.ai/install.sh | bash \
+            || npm install -g @anthropic-ai/claude-code; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            echo "::error::Claude Code CLI could not be installed."
+            exit 1
+          fi
+
+      - name: Run plugin eval
+        id: eval
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          # The gh shim must be first on PATH for the agent (PATH is inherited
+          # at launch); it rejects every tracker write.
+          export PATH="$PWD/scripts/gh-shim:$PATH"
+          # --threshold 0 is NOT a gate: the CLI default (1.0) exits 1 on any
+          # score below 1, which would turn an advisory suite red.
+          set +e
+          claude plugin eval claude/ \
+            --trust-plugin --ablation none --scaffold \
+            --allow-tools 'Bash(*squad-labels.sh *)' 'Bash(*squad-branch.sh *)' \
+              'Bash(*path-resolve.sh*)' 'Bash(git *)' \
+            --max-cost-usd 5 --model claude-sonnet-5-5 \
+            --threshold 0 \
+            --json results.json --report report.html --no-publish
+          rc=$?
+          set -e
+          echo "claude plugin eval exit code: $rc"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-eval
+          path: |
+            results.json
+            report.html
+          if-no-files-found: warn
+
+      - name: Map exit code (0 and 2 are green; only 1 is red)
+        run: |
+          rc="${{ steps.eval.outputs.rc }}"
+          case "$rc" in
+            0) echo "All graders passed." ;;
+            2) echo "::notice::Advisory: eval hit the cost ceiling or ended partial (exit 2)." ;;
+            *) echo "::error::Eval failed to load or run (exit ${rc:-unknown})."; exit 1 ;;
+          esac
