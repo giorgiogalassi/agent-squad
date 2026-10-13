@@ -12,7 +12,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 fixture() {  # fixture <dir>
   mkdir -p "$1/scripts"
   cp -R "$REPO_ROOT/claude" "$1/claude"
-  cp -R "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$1/scripts/"
+  cp "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$REPO_ROOT/scripts/test-squad-labels.sh" "$1/scripts/"
   cp "$REPO_ROOT"/*.md "$1/" 2>/dev/null
   [ -d "$REPO_ROOT/codex" ] && cp -R "$REPO_ROOT/codex" "$1/codex"
   return 0

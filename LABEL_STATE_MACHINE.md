@@ -22,25 +22,32 @@ config shape):
 
 > **This document is not read by any skill or agent at runtime.** Like
 > `PATH_RESOLUTION.md`, it exists so a human changing the lifecycle has
-> the full picture and the rationale in one place. Skills stay
-> self-contained (Iteration 19, see `JOURNAL.md`) — each of Chisel,
-> Cody, and Ralph invokes `squad-labels.sh` for the label commands
-> relevant to its own steps. Keep that script in sync with the table
-> below; this file is the tie-breaker when they'd otherwise drift, not a
-> thing any agent loads.
+> the full picture and the rationale in one place. The table below is
+> *performed* by `claude/hooks/squad-labels.sh` (verbs `ensure`, `claim`,
+> `review`, `escalate`; contract in `SCRIPT_CONTRACT.md`), and each
+> script-performed row is asserted by a named test in
+> `scripts/test-squad-labels.sh`: test names start with the row id
+> (`L2 claim: exact argv`), detached cases with `D-`. `scripts/squad-lint.sh`
+> (check 7) fails when a script-performed row has no test or a test has no
+> row. Rows marked `not script-performed` are done by humans, by Chisel's
+> own `gh issue create --label`, or by `issue-lifecycle.yml`, and need no test.
 
 ## The state machine
 
-| Step | Actor | Mode | `review_label` | `in_progress` | `in_review` | `blocked` |
-|---|---|---|---|---|---|---|
-| Create | Chisel | connected | **+ add** | — | — | — |
-| Claim | Cody | connected | untouched | **+ add** | — | — |
-| PR opens (review) | Cody | connected | **− remove** (if configured) | **− remove** | **+ add** | — |
-| Escalate (3 failed attempts) | Ralph | connected | untouched | **− remove** | untouched | **+ add** |
-| Close via merge | `.github/workflows/issue-lifecycle.yml` | connected | **− remove** (idempotent) | **− remove** | **− remove** | **− remove** |
-| PR closed without merging | `.github/workflows/issue-lifecycle.yml` | connected | untouched | untouched | **− remove** | untouched |
-| Issue closed manually, no PR | — (human action) | connected | untouched | untouched | untouched | untouched |
-| Every step | Ralph / Cody | detached | n/a — `review_label` is a connected-only config field | simulated via handoff checklist line | simulated via handoff checklist line | simulated via handoff checklist line |
+| Id | Step | Actor | Performed by | Mode | `review_label` | `in_progress` | `in_review` | `blocked` |
+|---|---|---|---|---|---|---|---|---|
+| L1 | Create (label definitions) | Chisel | `squad-labels.sh ensure` | connected | definition exists | definition exists | definition exists | definition exists |
+| L2 | Claim | Cody | `squad-labels.sh claim` | connected | untouched | **+ add** | — | — |
+| L3 | PR opens (review) | Cody | `squad-labels.sh review` | connected | **− remove** (if configured) | **− remove** | **+ add** | — |
+| L4 | Escalate (3 failed attempts) | Ralph | `squad-labels.sh escalate` | connected | untouched | **− remove** | untouched | **+ add** |
+| L5 | Create (apply `review_label` to the issue) | Chisel | not script-performed (Chisel `gh issue create --label`, batch 1b) | connected | **+ add** | — | — | — |
+| L6 | Close via merge | `.github/workflows/issue-lifecycle.yml` | not script-performed | connected | **− remove** (idempotent) | **− remove** | **− remove** | **− remove** |
+| L7 | PR closed without merging | `.github/workflows/issue-lifecycle.yml` | not script-performed | connected | untouched | untouched | **− remove** | untouched |
+| L8 | Issue closed manually, no PR | — (human action) | not script-performed | connected | untouched | untouched | untouched | untouched |
+| D | Every step | Ralph / Cody | `squad-labels.sh` with `--handoff` (tests prefixed `D-`) | detached | n/a — `review_label` is a connected-only config field | simulated via handoff checklist line | simulated via handoff checklist line | simulated via handoff checklist line |
+
+L1 ensures the label definitions exist in the repo; L5 is the separate act of
+attaching `review_label` to a new issue, which Chisel still does itself.
 
 Detached mode never calls `gh`, so nothing in this table applies beyond
 "n/a" / "simulated": Ralph appends checklist lines
@@ -108,16 +115,10 @@ deliberately avoided:
 
 ## Files carrying this state machine
 
-Grep for `add-label`/`remove-label` to verify the claim, review-swap and
-escalation commands match this table:
-
-- `claude/skills/chisel/SKILL.md` — applies `review_label` at creation;
-  verifies/creates all configured labels on every connected run.
-- `claude/agents/cody.md` — claims (`in_progress`); on PR-open, swaps
-  `in_progress` → `in_review` and removes `review_label` if configured.
-- `claude/skills/ralph/SKILL.md` — batch-discovery review gate;
-  escalation swaps `in_progress` → `blocked`, never leaving both
-  attached at once.
+- `claude/hooks/squad-labels.sh` — performs rows L1-L4 and D.
+- `scripts/test-squad-labels.sh` — one named test group per script-performed row.
+- `claude/skills/chisel/SKILL.md`, `claude/agents/cody.md`,
+  `claude/skills/ralph/SKILL.md` — invoke the script for their steps.
 - `.github/workflows/issue-lifecycle.yml` — clears all three
   `state_labels` plus `review_label` on merge, and clears `in_review` on
   a non-merge PR close.
