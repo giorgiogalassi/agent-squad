@@ -83,6 +83,10 @@ for k in "lower" "HAS SPACE" ""; do
   o="$(bash -c "$src" _ "$TMPROOT/hooks" "$k" v 2>/dev/null)"
   [ "$o" = "RC=2" ] && ok "emit rejects key '$k'" || bad "emit key '$k' ($o)"
 done
+# Locale pin: under en_US.UTF-8 a [!A-Z_] glob accepts lowercase in bash 3.2
+# (the macOS CI runner's locale); the [[:upper:]] class must not.
+o="$(LC_ALL=en_US.UTF-8 bash -c "$src" _ "$TMPROOT/hooks" lower v 2>/dev/null)"
+[ "$o" = "RC=2" ] && ok "emit rejects lowercase key under UTF-8 locale" || bad "emit lowercase key under UTF-8 locale ($o)"
 o="$(bash -c "$src" _ "$TMPROOT/hooks" KEY "$(printf 'a\nb')" 2>/dev/null)"
 [ "$o" = "RC=2" ] && ok "emit rejects multi-line value" || bad "emit multiline ($o)"
 
