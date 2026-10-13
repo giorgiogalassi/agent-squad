@@ -24,6 +24,8 @@ on:
       - "scripts/test-worktree.sh"
       - "scripts/test-gh-shim.sh"
       - "scripts/test-squad-common.sh"
+      - "scripts/test-squad-labels.sh"
+      - "claude/hooks/squad-labels.sh"
       - "claude/hooks/squad-common.sh"
       - "scripts/gh-shim/**"
       - "scripts/fixtures/**"
@@ -56,3 +58,7 @@ jobs:
       - name: Run scripts/test-squad-common.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-common.sh; else bash scripts/test-squad-common.sh; fi
+
+      - name: Run scripts/test-squad-labels.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-labels.sh; else bash scripts/test-squad-labels.sh; fi
