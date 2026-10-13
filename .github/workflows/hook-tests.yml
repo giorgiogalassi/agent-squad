@@ -23,6 +23,8 @@ on:
       - "scripts/test-path-resolve.sh"
       - "scripts/test-worktree.sh"
       - "scripts/test-gh-shim.sh"
+      - "scripts/test-squad-common.sh"
+      - "claude/hooks/squad-common.sh"
       - "scripts/gh-shim/**"
       - "scripts/fixtures/**"
       - ".github/workflows/hook-tests.yml"
@@ -50,3 +52,7 @@ jobs:
       - name: Run scripts/test-gh-shim.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-gh-shim.sh; else bash scripts/test-gh-shim.sh; fi
+
+      - name: Run scripts/test-squad-common.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-common.sh; else bash scripts/test-squad-common.sh; fi

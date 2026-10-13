@@ -57,3 +57,11 @@ to the current project.
   files, or call GitHub APIs must be granted the required tool permissions
   (Edit, Bash, mcp__github) up front at invocation time. Do not assume
   inherited permissions are sufficient.
+
+## Scripted steps
+
+Script output and exit-code rules are in [SCRIPT_CONTRACT.md](SCRIPT_CONTRACT.md).
+Once a step is scripted, the prose around the call holds only the
+invocation, the keys it reads and the action per exit code. Never describe
+what the script does, and never add an "if the script fails, run gh ..."
+fallback.
