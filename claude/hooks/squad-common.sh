@@ -85,12 +85,13 @@ squad_record_local() {
 }
 
 # squad_emit KEY value: print KEY=value on stdout. KEY must match
-# ^[A-Z_]+$, value must be single-line; backslash is escaped as \\.
+# ^[A-Z_]+$ ([[:upper:]] class: a-z range globs accept lowercase under UTF-8
+# locales in bash 3.2), value must be single-line; backslash is escaped as \\.
 # Returns 0, or 2 (with a stderr reason) on invalid input.
 squad_emit() {
   local key="${1:-}" val="${2-}"
   case "$key" in
-    ''|*[!A-Z_]*) echo "squad: invalid output key '$key'" >&2; return 2 ;;
+    ''|*[![:upper:]_]*) echo "squad: invalid output key '$key'" >&2; return 2 ;;
   esac
   case "$val" in *'
 '*) echo "squad: multi-line value for $key" >&2; return 2 ;; esac
