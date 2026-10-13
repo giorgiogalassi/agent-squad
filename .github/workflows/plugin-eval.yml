@@ -20,16 +20,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: plugin-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   plugin-eval:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
-       contains(github.event.pull_request.labels.*.name, 'eval'))
+       contains(github.event.pull_request.labels.*.name, 'eval') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'eval'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -46,6 +49,8 @@ jobs:
 
       - name: Run plugin eval
         id: eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           # The gh shim must be first on PATH for the agent (PATH is inherited

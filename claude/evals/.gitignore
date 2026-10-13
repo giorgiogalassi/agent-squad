@@ -1,0 +1,4 @@
+# Eval run output (see README "Evals (tier 2)"); never commit.
+results/
+**/results.json
+**/report.html

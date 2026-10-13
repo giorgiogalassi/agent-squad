@@ -501,7 +501,13 @@ any imperfect score). The suite is advisory: it never gates a PR. CI runs it
 from `.github/workflows/plugin-eval.yml` on `workflow_dispatch`, or on a
 same-repository pull request labeled `eval` (never on forks); it uploads
 `results.json` and `report.html`, and is red only on exit code 1 (cases failed
-to load). Do not commit the results directory the CLI creates under the eval dir.
+to load). Do not commit the results directory the CLI creates under the eval dir
+(`claude/evals/.gitignore` ignores it).
+
+The `detached-claim` `handoff-line` grader is expected to fail today:
+`claude/agents/cody.md` skips the detached claim (Ralph records it in the
+handoff via `squad-labels.sh claim --handoff`, added in #217), so that case
+scores 0.5 by design until the grader is re-pointed at Ralph's handoff line.
 
 Findings from building it (Claude Code 2.1.296):
 
@@ -518,7 +524,8 @@ Findings from building it (Claude Code 2.1.296):
   as `agent-squad:cody` and the same prose and `~/.claude/hooks/` scripts run.
 - On macOS the stock `/usr/bin/git` shim fails inside the sandbox (it cannot
   write its xcrun cache in the system temp dir), which breaks `path-resolve.sh`
-  and `squad-branch.sh` locally; the Linux CI runner is unaffected. Expect
+  and `squad-branch.sh` locally; the Linux CI runner is expected to be unaffected (not yet exercised via
+  workflow_dispatch). Expect
   lower scores on macOS unless a Homebrew `git` comes first on `PATH`.
 - Cody's prose skips the claim in detached mode, so the `detached-claim`
   handoff-line grader mostly reports whether Ralph's handoff contract is
