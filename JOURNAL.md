@@ -877,7 +877,7 @@ The definition of a failed attempt has not been fully specified. Does a test fai
 
 > **Resolved (2026-06-12):** failure classification written into both Ralph skills (section 2b). Retryable: build/compile failure, test failure introduced by the changes, type errors, unresolvable lint errors, transient PR-creation errors. Immediate escalation: identical error across two consecutive attempts, ambiguity requiring a human decision, auth or environment failures, loop symptoms. Not counted as failures: absent test suite, pre-existing failures on main (noted in progress.txt and the PR body). Cody's manual-PR fallback when `gh` is unavailable counts as success.
 
-> **Update (Iteration 29):** label transitions and branch create/continue are now scripts with the exit-code contract in `SCRIPT_CONTRACT.md` (0 ok, 2 usage, 10 refused or precondition, 20 environment). Ralph's retry decision for these steps reads the exit code instead of parsing prose; run state and PR scripts are batch 1b.
+> **Update (Iteration 29):** label transitions and branch create/continue are now scripts with the exit-code contract in `SCRIPT_CONTRACT.md` (0 success, 2 usage error, 10 precondition failed, 20 gh/git/network error or refused detached write). Ralph's retry decision for these steps reads the exit code instead of parsing prose; run state and PR scripts are batch 1b.
 
 ### 5.5 decisions.md maintenance discipline
 
