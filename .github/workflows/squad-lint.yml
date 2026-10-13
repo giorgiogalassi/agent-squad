@@ -37,3 +37,25 @@ jobs:
 
       - name: Run squad-lint.sh
         run: bash scripts/squad-lint.sh
+
+      - name: Install Claude Code CLI
+        id: install-claude
+        run: |
+          if curl -fsSL https://claude.ai/install.sh | bash \
+            || npm install -g @anthropic-ai/claude-code; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            echo "::notice::Claude Code CLI could not be installed; skipping plugin validate."
+          fi
+
+      - name: Validate plugin manifest
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          if ! command -v claude >/dev/null 2>&1; then
+            echo "::notice::claude CLI not available; skipping claude plugin validate."
+            exit 0
+          fi
+          # NOTE: --strict is intentionally omitted. The manifest is exactly
+          # {"name":"agent-squad"} (eval-only, PRD D10) and --strict turns the
+          # missing version/description/author warnings into errors.
+          claude plugin validate claude/
