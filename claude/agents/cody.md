@@ -89,20 +89,24 @@ and switching inside someone else's worktree corrupts it.
 Otherwise, Ralph supplies `branch`, `base`, `branch action` (direct
 invocation defaults: `create`, `main`, `<issue-id>-<short-description>`):
 
-Run, in both tracker modes (fetching origin is a read, not a tracker
-write):
+Run, in both tracker modes (connected fetches origin and fails if it
+cannot; detached fetches only when an `origin` remote exists, tolerates
+fetch failures, and may stack on a local-only base):
 
 ```bash
 bash ~/.claude/hooks/squad-branch.sh <create|continue> <branch> --base <base>
 ```
 
 `<create|continue>` is the `branch action`. Read `OUTCOME`, `CHANGED`,
-`BRANCH`, `BASE` and `HEAD_SHA`; keep `HEAD_SHA` as the baseline for your
-diff and test scoping. Act on the exit code:
+`BRANCH`, `BASE`, `BASE_REF` and `HEAD_SHA`; `BASE_REF` is the ref the
+branch was based on (`origin/<base>` or local `<base>`). Keep `HEAD_SHA` as
+the baseline for your diff and test scoping, and use `BASE_REF` wherever a
+later step needs the base to diff against. Act on the exit code:
 
 | Exit | Action |
 |------|--------|
 | 0 | Continue. |
+| 2 | Stop and report as a Cody bug (usage error). |
 | 10 | Stop and report the stderr reason. Never repair another branch (no stash, reset, forced checkout, or removing another worktree). |
 | 20 | Stop and report the stderr reason as a retryable failure for Ralph. |
 
