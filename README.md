@@ -204,7 +204,11 @@ cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktre
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
-resolve which vault project it's talking to.
+resolve which vault project it's talking to. It prints five `KEY=value`
+lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`,
+`TRACKER_MODE`); `TRACKER_MODE` is `detached` unless `chisel.mode` in the
+project's `chisel-config.json` is exactly `connected` (any doubt, including
+a missing file or `jq`, means `detached`).
 
 ## Worktree hook
 

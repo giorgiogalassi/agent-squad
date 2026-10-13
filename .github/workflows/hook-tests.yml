@@ -19,6 +19,8 @@ on:
   pull_request:
     paths:
       - "claude/hooks/worktree.sh"
+      - "claude/hooks/path-resolve.sh"
+      - "scripts/test-path-resolve.sh"
       - "scripts/test-worktree.sh"
       - ".github/workflows/hook-tests.yml"
 
@@ -38,3 +40,6 @@ jobs:
 
       - name: Run scripts/test-worktree.sh
         run: bash scripts/test-worktree.sh
+
+      - name: Run scripts/test-path-resolve.sh
+        run: bash scripts/test-path-resolve.sh
