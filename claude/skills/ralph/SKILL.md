@@ -215,6 +215,21 @@ git -C <wd> log --oneline -1
 git -C <wd> status --porcelain
 ```
 
+**Detached only, before spawning:** run
+```bash
+bash ~/.claude/hooks/squad-labels.sh claim --issue <KEY> --handoff <handoff path>
+```
+Read `OUTCOME` and `HANDOFF_LINE`. Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 2 | Stop and report as a Ralph bug. |
+| 10 | Log the stderr reason and continue. |
+| 20 | Log the stderr reason and continue. |
+
+Connected mode: no call here; Cody performs the claim.
+
 ### 2b. Verify, then classify
 
 Cody's printed summary is not evidence — a stalled run can still print
@@ -293,7 +308,11 @@ failures on main (note in `progress.txt` and the PR body).
 
 After 3 attempts (stalls + retryable failures share the counter):
 
-- Run (connected: omit `--handoff`; detached: pass the handoff path):
+- Run, connected:
+  ```bash
+  bash ~/.claude/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>"
+  ```
+  Detached (adds the handoff path):
   ```bash
   bash ~/.claude/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>" --handoff <handoff path>
   ```
