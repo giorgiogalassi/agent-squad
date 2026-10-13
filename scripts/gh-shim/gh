@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Fake `gh` for tier-1 (deterministic, model-free) tests.
+# Put this directory first on PATH. Every invocation appends exactly one
+# line to $GH_SHIM_LOG (default: /dev/null): the argv joined by spaces,
+# newlines flattened; rejected calls are prefixed with "REJECTED ".
+#
+# Allowlist (exit 0, plausible stub stdout): issue view|list,
+# pr view|list|checks|diff, project view, repo view, label list,
+# auth status, --version, and `api ... -X GET` (or --method GET) except
+# graphql. Anything else (issue edit, pr create, api graphql, api with
+# -f/-F and no -X GET, ...) exits 1 with REJECTED logged. Never touches
+# the network. Bash 3.2 compatible.
+
+LOG="${GH_SHIM_LOG:-/dev/null}"
+line="gh"
+for a in "$@"; do line="$line $a"; done
+line="$(printf '%s' "$line" | tr '\n' ' ')"
+
+reject() {
+  printf 'REJECTED %s\n' "$line" >> "$LOG"
+  echo "gh-shim: rejected: $line" >&2
+  exit 1
+}
+accept() { printf '%s\n' "$line" >> "$LOG"; }
+
+# Is a "-X GET" / "--method GET" / "-XGET" pair present?
+has_get() {
+  prev=""
+  for a in "$@"; do
+    case "$a" in
+      -XGET|--method=GET) return 0 ;;
+    esac
+    if [ "$prev" = "-X" ] || [ "$prev" = "--method" ]; then
+      [ "$a" = "GET" ] && return 0
+    fi
+    prev="$a"
+  done
+  return 1
+}
+
+cmd="${1:-}"; sub="${2:-}"
+case "$cmd $sub" in
+  "issue view")
+    accept
+    echo '{"number":1,"title":"Stub issue","state":"OPEN","body":"stub body","labels":[],"assignees":[]}' ;;
+  "issue list"|"pr list")
+    accept; echo '[]' ;;
+  "pr view")
+    accept
+    echo '{"number":1,"title":"Stub PR","state":"OPEN","headRefName":"stub-branch","baseRefName":"main","labels":[]}' ;;
+  "pr checks")
+    accept; echo 'stub-check	pass	1s' ;;
+  "pr diff")
+    accept; echo 'diff --git a/stub b/stub' ;;
+  "project view")
+    accept; echo '{"number":1,"title":"Stub project","url":"https://github.com/users/stub/projects/1"}' ;;
+  "repo view")
+    accept; echo '{"nameWithOwner":"stub-owner/stub-repo","defaultBranchRef":{"name":"main"},"url":"https://github.com/stub-owner/stub-repo"}' ;;
+  "label list")
+    accept; echo '[]' ;;
+  "auth status")
+    accept; echo 'github.com
+  Logged in to github.com account stub (shim)' ;;
+  "api "*)
+    case "$line" in *graphql*) reject ;; esac
+    if has_get "$@"; then accept; echo '{}'; else reject; fi ;;
+  *)
+    if [ "$cmd" = "--version" ] && [ $# -eq 1 ]; then
+      accept; echo 'gh version 0.0.0-shim'
+    else
+      reject
+    fi ;;
+esac
+exit 0
