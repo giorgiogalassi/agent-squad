@@ -6,7 +6,7 @@
 #   (its directory must hold squad-common.sh and path-resolve.sh siblings).
 #
 # Row ids, in LABEL_STATE_MACHINE.md table order of the rows the script
-# performs (issue #218 will add these ids to the doc):
+# performs (the ids live in the doc; squad-lint.sh check 7 ties them):
 #   L1  Create   (Chisel, connected)  -> verb `ensure`
 #   L2  Claim    (Cody, connected)    -> verb `claim`
 #   L3  PR opens (Cody, connected)    -> verb `review`

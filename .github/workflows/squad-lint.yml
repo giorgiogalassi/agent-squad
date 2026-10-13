@@ -41,6 +41,9 @@ jobs:
       - name: Test the gh write-ban check
         run: bash scripts/test-squad-lint-gh.sh
 
+      - name: Test the label doc/test pairing check
+        run: bash scripts/test-squad-lint-labels.sh
+
       - name: Install Claude Code CLI
         id: install-claude
         run: |

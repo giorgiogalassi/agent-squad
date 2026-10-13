@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Six checks, each independent and each able to fail
+# done") into a gate. Seven checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -16,6 +16,10 @@
 #   6. gh write ban: every `gh <sub>` in claude/skills and claude/agents must
 #      be a read form, carry <!-- lint:gh-ok -->, or match an entry in
 #      scripts/lint-allowlist-1b.txt (each entry must name its retiring batch)
+#   7. label-doc/test tie: every LABEL_STATE_MACHINE.md row whose "Performed
+#      by" cell names squad-labels.sh has a test in scripts/test-squad-labels.sh
+#      whose name starts with its id (L<n> , or D- for the id "D"), and every
+#      such test id has a script-performed row
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -398,12 +402,41 @@ check_gh_write_ban() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "every gh token in skills/agents is a read, lint:gh-ok, or allowlisted"
 }
 
+# ---------------------------------------------------------------------
+# Check 7: LABEL_STATE_MACHINE.md rows <-> scripts/test-squad-labels.sh.
+# Table rows start "| <id> |" (id = L<n> or D); the "Performed by" cell is $5 (the 4th
+# visible cell, because of the leading empty field). Tests are `check "<id> ..."` / `check "D-..."` lines.
+# ---------------------------------------------------------------------
+check_label_doc_tests() {
+  local before="$VIOLATIONS" doc=LABEL_STATE_MACHINE.md tf=scripts/test-squad-labels.sh
+  local row id by rows tests t
+  section "7. label doc rows tied to tests"
+  if [ ! -f "$doc" ] || [ ! -f "$tf" ]; then
+    fail "$doc or $tf missing -- cannot tie label rows to tests"
+    return
+  fi
+  rows="$(awk -F'|' '/^\| *(L[0-9]+|D) *\|/ {
+    id=$2; by=$5; gsub(/^ +| +$/, "", id)
+    if (by ~ /squad-labels\.sh/) print id }' "$doc")"
+  tests="$(grep -oE 'check "(L[0-9]+ |D-)' "$tf" | sed -E 's/^check "//; s/ $//; s/^D-$/D/' | sort -u)"
+  for id in $rows; do
+    printf '%s\n' "$tests" | grep -qx "$id" \
+      || fail "$doc: script-performed row $id has no test named \"$id ...\" (or \"D-...\") in $tf"
+  done
+  for t in $tests; do
+    printf '%s\n' "$rows" | grep -qx "$t" \
+      || fail "$tf: test id $t has no script-performed row in $doc"
+  done
+  [ "$VIOLATIONS" -eq "$before" ] && ok "every script-performed label row has tests and vice versa"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
 check_dangling_doc_pointers
 check_delegation_tool
 check_gh_write_ban
+check_label_doc_tests
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then
