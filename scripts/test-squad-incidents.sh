@@ -88,5 +88,26 @@ check "off leaves store unchanged" 0 "$(rows)"
 # 9. usage error
 run bogus; check "unknown verb exits 2" 2 "$RC"
 
+# 10. dangling flag must not hang (guarded: background + kill, no `timeout` on macOS)
+guarded() {  # guarded <args...> -> sets OUT, RC (RC=124 on hang)
+  local pid i=0
+  bash "$SUT" "$@" >"$TMPROOT/gout" 2>/dev/null & pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; RC=124
+  else wait "$pid"; RC=$?; fi
+  OUT="$(cat "$TMPROOT/gout")"
+}
+newstore
+guarded record --kind failure --reason
+check "record dangling flag exits 0" 0 "$RC"; check "record dangling flag empty stdout" "" "$OUT"
+guarded resolve --signature
+check "resolve dangling --signature exits 2" 2 "$RC"
+guarded resolve --signature x --ref
+check "resolve dangling --ref exits 2" 2 "$RC"
+newstore
+guarded record --session s1 --project p --source bogus --kind failure --component c --exit 1 --reason r
+check "invalid source still exits 0" 0 "$RC"
+check "invalid source dropped" "" "$(cut -f4 "$SQUAD_INCIDENTS_FILE")"
+
 echo; echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

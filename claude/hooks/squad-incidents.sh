@@ -56,17 +56,18 @@ cmd_record() (
   local_session=""; project=""; source_=""; kind=""; comp=""; code=""; reason=""; dedupe=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --session) local_session="$2"; shift 2 ;;
-      --project) project="$2"; shift 2 ;;
-      --source) source_="$2"; shift 2 ;;
-      --kind) kind="$2"; shift 2 ;;
-      --component) comp="$2"; shift 2 ;;
-      --exit) code="$2"; shift 2 ;;
-      --reason) reason="$2"; shift 2 ;;
-      --dedupe-id) dedupe="$2"; shift 2 ;;
+      --session) [ $# -ge 2 ] || break; local_session="$2"; shift 2 ;;
+      --project) [ $# -ge 2 ] || break; project="$2"; shift 2 ;;
+      --source) [ $# -ge 2 ] || break; source_="$2"; shift 2 ;;
+      --kind) [ $# -ge 2 ] || break; kind="$2"; shift 2 ;;
+      --component) [ $# -ge 2 ] || break; comp="$2"; shift 2 ;;
+      --exit) [ $# -ge 2 ] || break; code="$2"; shift 2 ;;
+      --reason) [ $# -ge 2 ] || break; reason="$2"; shift 2 ;;
+      --dedupe-id) [ $# -ge 2 ] || break; dedupe="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
+  case "$source_" in script|transcript) ;; *) source_="" ;; esac
   file="$(store_path)"
   [ -d "$(dirname "$file")" ] || exit 0
   case "$kind" in failure|escalation|denial) ;; *) exit 0 ;; esac
@@ -115,8 +116,8 @@ cmd_resolve() {
   local sig="" ref=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --signature) sig="${2-}"; shift 2 ;;
-      --ref) ref="${2-}"; shift 2 ;;
+      --signature) [ $# -ge 2 ] || squad_fail 2 "resolve: --signature needs a value"; sig="$2"; shift 2 ;;
+      --ref) [ $# -ge 2 ] || squad_fail 2 "resolve: --ref needs a value"; ref="$2"; shift 2 ;;
       *) squad_fail 2 "resolve: unknown argument $1" ;;
     esac
   done
