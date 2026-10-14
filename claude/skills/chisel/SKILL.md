@@ -134,10 +134,22 @@ details (Cody's call), micro-tasks that belong as checklist items, or
 anything out of scope in the PRD. A good issue: clear title, what and
 why, the criteria it covers, explicit dependencies.
 
+## Test specs
+
+Every issue gets a `Test specs` section (given/when/then):
+- Copy verbatim the ones the source (Forge YAML, PRD, ticket) has; derive
+  the rest from the issue outcome. Bug fix: the first spec reproduces the
+  bug.
+- Neither possible → ask the user during the run. Undecided → the section
+  is an open point saying why; resolvable later with specs or
+  `Test specs: skipped (<reason>)`.
+- Docs/prose, config or CSS/layout-only → `Test specs: exempt (<class>)`.
+  Mixed issue: specs cover the code part, note the exempt part.
+
 ## Issue creation (connected mode)
 
 `gh` via Bash. Titles: verb + noun, ≤60 chars. Bodies: markdown —
-context, acceptance criteria, notes; never a `Blocked by:` line
+context, acceptance criteria, test specs, notes; never a `Blocked by:` line
 (dependencies are native GitHub state, queryable via
 `gh issue view --json parent,blockedBy,blocking`).
 
@@ -208,6 +220,9 @@ Parent: [SQ-1]
 
 ### Acceptance criteria
 - ...
+
+### Test specs
+- Given ... when ... then ...
 
 ## SQ-3: <title>
 Blocked by: [SQ-2] <title of blocking issue>
