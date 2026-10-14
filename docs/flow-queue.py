@@ -6,221 +6,273 @@ import os
 import sys
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow-queue.svg")
-SLOT = 1.8  # seconds per step
+SLOT = 1.7  # seconds per step
+
+# key, cmd label, name, kind
 STATIONS = [
-    ("/chisel", "Chisel", "step"),
-    ("you", "Review issues", "gate"),
-    ("/ralph", "Ralph", "step"),
-    ("agent", "Cody", "step"),
-    ("agent", "Reven", "step"),
-    ("you", "Merge", "gate"),
-    ("SessionEnd", "lore-checkpoint", "hook"),
+    ("forge", "/forge", "Forge", "step"),
+    ("chisel", "/chisel", "Chisel", "step"),
+    ("gate", "you", "Review issues", "gate"),
+    ("ralph", "/ralph", "Ralph", "step"),
+    ("cody", "agent", "Cody", "step"),
+    ("reven", "/reven", "Reven", "step"),
+    ("merge", "you", "Merge", "gate"),
+    ("ckpt", "SessionEnd", "lore-checkpoint", "hook"),
 ]
-# (caption, #12 station, #13 station)
+SIDE = ("sidecar", "/sidecar", "Sidecar", "side")  # side path, below the track
+
+# caption, plan token, #12, #13, highlighted station
 STEPS = [
-    ("Chisel opens issues #12 and #13, both labelled needs-review", 0, 0),
-    ("You lift the needs-review gate", 1, 1),
-    ("Ralph runs the batch in dependency order, #12 first", 2, 2),
-    ("Cody writes failing tests for #12, then code until green", 3, 2),
-    ("Cody opens PR #12 against main. Reven reviews it", 4, 2),
-    ("#13 branches from #12's branch. Tests first again", 4, 3),
-    ("PR #13 is stacked on #12's branch. Reven diffs against that base", 4, 4),
-    ("You retarget #13 to main, then merge #12", 5, 4),
-    ("Then #13 merges", 5, 5),
-    ("SessionEnd: lore-checkpoint updates status.md", 6, 6),
-    (None, None, None),  # fade out, loop
+    ("Forge plans the change and sizes it", "forge", None, None, "forge"),
+    ("Chisel turns the plan into issues #12 and #13, both labelled needs-review", None, "chisel", "chisel", "chisel"),
+    ("You lift the needs-review gate", None, "gate", "gate", "gate"),
+    ("Ralph's loop, issue 1 of 2: #12 goes to Cody", None, "ralph", "ralph", "ralph"),
+    ("Cody writes failing tests for #12, then code until green, then opens PR #12", None, "cody", "ralph", "cody"),
+    ("Ralph loops, issue 2 of 2: #13 branches from #12's branch", None, "cody", "cody", "ralph"),
+    ("Tests first again. PR #13 is stacked on #12's branch", None, "cody", "cody", "cody"),
+    ("You run Reven on each PR. Each diffs against its own base", None, "reven", "reven", "reven"),
+    ("You fix a review note on #13 in a sidecar worktree. “Done” pushes it", None, "reven", "sidecar", "sidecar"),
+    ("You retarget #13 to main, then merge #12", None, "merge", "reven", "merge"),
+    ("Then #13 merges", None, "merge", "merge", "merge"),
+    ("SessionEnd: lore-checkpoint updates status.md", None, "ckpt", "ckpt", "ckpt"),
+    (None, None, None, None, None),  # fade out, loop
 ]
+# time windows (in steps) for overlays
+WINDOWS = {
+    "b12": (4.5, 11.9),            # #12 -> main
+    "b13s": (6, 8),                # #13 -> 12-... (hidden while in the sidecar)
+    "b13m": (9, 11.9),             # #13 -> main after retarget
+    "m12": (9, 11.9), "m13": (10, 11.9),
+    "red12": (4, 4.45), "grn12": (4.45, 5),
+    "red13": (6, 6.45), "grn13": (6.45, 7),
+    "fix13": (8, 9),
+    "n1": (3, 5), "n2": (5, 7),    # Ralph counter
+    "loop": (3, 7),                # Ralph <-> Cody loop arc visible/flowing
+}
+
 N = len(STEPS)
 DUR = SLOT * N
-W, H = 1200, 290
-BOX_W, BOX_H, BOX_Y = 140, 64, 30
-X0 = 40 + BOX_W / 2
-DX = (W - 80 - BOX_W) / (len(STATIONS) - 1)
-TRACK_Y = 122
-LANES = {"12": 152, "13": 190}
+W, H = 1280, 400
+BOX_W, BOX_H, BOX_Y = 132, 64, 56
+MARGIN = 24
+X0 = MARGIN + BOX_W / 2
+DX = (W - 2 * MARGIN - BOX_W) / (len(STATIONS) - 1)
+TRACK_Y = BOX_Y + BOX_H + 26
+LANE = {"plan": TRACK_Y + 28, "12": TRACK_Y + 28, "13": TRACK_Y + 64}
 PILL_W, PILL_H = 56, 26
+IDX = {k: i for i, (k, *_r) in enumerate(STATIONS)}
+SIDE_X = (IDX["reven"] + IDX["merge"]) / 2  # sidecar sits between Reven and Merge
+SIDE_Y = TRACK_Y + 104
+CAP_Y = H - 26
 
 
 def cx(i):
     return X0 + i * DX
 
 
+def pos(key, lane):
+    """(x, dy) for a token: dy is the offset from its own lane."""
+    if key == "sidecar":
+        return cx(SIDE_X) - BOX_W / 2 - PILL_W / 2 - 10, SIDE_Y + BOX_H / 2 - LANE[lane]
+    return cx(IDX[key]), 0.0
+
+
 def pct(x):
     return f"{x * 100:.3f}%"
 
 
-def move_keyframes(name, positions):
-    """translate keyframes: move in the first 15% of a step, hold for the rest."""
-    lines = []
-    last = None
-    for s, pos in enumerate(positions):
-        p = pos if pos is not None else last
+def tf(p):
+    return f"transform:translate({p[0]:.1f}px,{p[1]:.1f}px)"
+
+
+def move_keyframes(name, keys, lane):
+    """move in the first 15% of a step, hold for the rest."""
+    frames, last = [], None
+    for s, k in enumerate(keys):
+        p = pos(k, lane) if k else last
         if p is None:
-            p = 0
-        start, settle = s / N, (s + 0.15) / N
-        x = cx(p)
-        if s == 0:
-            lines.append(f"{pct(0)}{{transform:translate({x:.1f}px,0)}}")
+            continue
+        if last is None:
+            frames.append(f"0%{{{tf(p)}}}")
         else:
-            lines.append(f"{pct(start)}{{transform:translate({cx(last):.1f}px,0)}}")
-            lines.append(f"{pct(settle)}{{transform:translate({x:.1f}px,0)}}")
+            frames.append(f"{pct(s / N)}{{{tf(last)}}}")
+            frames.append(f"{pct((s + 0.15) / N)}{{{tf(p)}}}")
         last = p
-    lines.append(f"100%{{transform:translate({cx(last):.1f}px,0)}}")
-    return f"@keyframes {name}{{{''.join(lines)}}}"
+    frames.append(f"100%{{{tf(last)}}}")
+    return f"@keyframes {name}{{{''.join(frames)}}}"
 
 
-def window_keyframes(name, first, last_excl):
-    """opacity 1 from step `first` up to (not incl.) step `last_excl`, with short fades."""
-    f = 0.08 / N
-    a, b = first / N, last_excl / N
-    pts = []
-    if a > 0:
-        pts += [f"0%{{opacity:0}}", f"{pct(a)}{{opacity:0}}"]
-    pts.append(f"{pct(a + f) if a > 0 else '0%'}{{opacity:1}}")
-    pts.append(f"{pct(b - f)}{{opacity:1}}")
-    pts.append(f"{pct(b)}{{opacity:0}}")
-    if b < 1:
-        pts.append("100%{opacity:0}")
+def window_keyframes(name, runs):
+    f = 0.06 / N
+    pts = ["0%{opacity:0}"]
+    for a, b in runs:
+        a, b = a / N, b / N
+        pts += [f"{pct(a)}{{opacity:0}}", f"{pct(a + f)}{{opacity:1}}",
+                f"{pct(b - f)}{{opacity:1}}", f"{pct(b)}{{opacity:0}}"]
+    pts.append("100%{opacity:0}")
     return f"@keyframes {name}{{{''.join(pts)}}}"
 
 
-css = []
-anim = []
-
-# tokens
-for tok, idx in (("12", 1), ("13", 2)):
-    positions = [st[idx] for st in STEPS]
-    css.append(move_keyframes(f"mv{tok}", positions))
-    anim.append(f"#t{tok}{{animation:mv{tok} {DUR}s linear infinite}}")
-    css.append(window_keyframes(f"vis{tok}", 0, N - 1))
-    anim.append(f"#t{tok} .body{{animation:vis{tok} {DUR}s linear infinite}}")
-
-# base tags and merged marks: (id, from step, until step)
-WINDOWS = [
-    ("b12", 4, N - 1),   # #12 -> main
-    ("b13s", 6, 7),      # #13 -> 12-...
-    ("b13m", 7, N - 1),  # #13 -> main after retarget
-    ("m12", 7, N - 1),
-    ("m13", 8, N - 1),
-    ("red12", 3, 3.5), ("grn12", 3.5, 4),
-    ("red13", 5, 5.5), ("grn13", 5.5, 6),
-]
-for wid, a, b in WINDOWS:
-    css.append(window_keyframes(f"w_{wid}", a, b))
-    anim.append(f"#{wid}{{opacity:0;animation:w_{wid} {DUR}s linear infinite}}")
-
-# captions and station highlights
-for s, (cap, p12, p13) in enumerate(STEPS):
-    if cap is None:
-        continue
-    css.append(window_keyframes(f"c{s}", s, s + 1))
-    anim.append(f"#c{s}{{opacity:0;animation:c{s} {DUR}s linear infinite}}")
-ACTIVE = [0, 1, 2, 3, 4, 3, 4, 5, 5, 6]  # station highlighted per step
-for i in range(len(STATIONS)):
-    active = [s for s, st in enumerate(ACTIVE) if st == i]
-    if not active:
-        continue
-    runs, start, prev = [], active[0], active[0]
-    for s in active[1:]:
+def runs_of(steps):
+    steps = sorted(steps)
+    runs, start, prev = [], steps[0], steps[0]
+    for s in steps[1:]:
         if s != prev + 1:
-            runs.append((start, prev + 1)); start = s
+            runs.append((start, prev + 1))
+            start = s
         prev = s
     runs.append((start, prev + 1))
-    pts = ["0%{opacity:0}"]
-    f = 0.08 / N
-    for a, b in runs:
-        pts += [f"{pct(a / N)}{{opacity:0}}", f"{pct(a / N + f)}{{opacity:1}}",
-                f"{pct(b / N - f)}{{opacity:1}}", f"{pct(b / N)}{{opacity:0}}"]
-    pts.append("100%{opacity:0}")
-    css.append(f"@keyframes hl{i}{{{''.join(pts)}}}")
-    anim.append(f"#hl{i}{{opacity:0;animation:hl{i} {DUR}s linear infinite}}")
+    return runs
 
-# static frame for reduced motion: step 6 (both PRs open, stacked)
-static = [
-    f"#t12{{transform:translate({cx(4):.1f}px,0)}}",
-    f"#t13{{transform:translate({cx(4):.1f}px,0)}}",
-    "#b12,#b13s{opacity:1}",
-    "#cstatic{opacity:1}",
-]
 
-out = []
-out.append(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="ttl dsc">')
-out.append('<title id="ttl">Agent Squad: one batch through the pipeline</title>')
-out.append('<desc id="dsc">Two stacked issues move from Chisel through the review gate, Ralph, Cody (tests first), Reven and merge, '
-           'with the child PR retargeted to main before the parent merges, ending at lore-checkpoint.</desc>')
-out.append("<style>")
-out.append(""":root{--bg:#f6f7f9;--surface:#fff;--ink:#1c2230;--muted:#5d6675;--line:#d7dce4;--accent:#0f766e;--accent-soft:#d9f0ec;
---hook:#6d4fc2;--hook-soft:#ebe6fb;--red:#b91c1c;--green:#15803d}
+css, anim = [], []
+
+
+def animate(sel, kf_name, kf):
+    css.append(kf)
+    anim.append(f"{sel}{{animation:{kf_name} {DUR}s linear infinite}}")
+
+
+# tokens
+for tok, col in (("plan", 1), ("12", 2), ("13", 3)):
+    keys = [st[col] for st in STEPS]
+    animate(f"#t{tok}", f"mv{tok}", move_keyframes(f"mv{tok}", keys, tok))
+    visible = [s for s, k in enumerate(keys) if k]
+    animate(f"#t{tok}>.body", f"vis{tok}", window_keyframes(f"vis{tok}", runs_of(visible)))
+
+for wid, (a, b) in WINDOWS.items():
+    animate(f"#{wid}", f"w_{wid}", window_keyframes(f"w_{wid}", [(a, b)]))
+anim.append(f"#loop .flow{{animation:dash 0.8s linear infinite}}")
+css.append("@keyframes dash{to{stroke-dashoffset:-12}}")
+
+for s, st in enumerate(STEPS):
+    if st[0]:
+        animate(f"#c{s}", f"c{s}", window_keyframes(f"c{s}", [(s, s + 1)]))
+for key in [k for k, *_r in STATIONS] + [SIDE[0]]:
+    active = [s for s, st in enumerate(STEPS) if st[4] == key]
+    if active:
+        animate(f"#hl_{key}", f"hl_{key}", window_keyframes(f"hl_{key}", runs_of(active)))
+
+# reduced motion: step 7 (both PRs open, stacked, under review)
+static = (f"#t12{{{tf(pos('reven', '12'))}}}#t13{{{tf(pos('reven', '13'))}}}"
+          "#t12>.body,#t13>.body,#b12,#b13s,#cstatic,#loop{opacity:1}")
+
+out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="ttl dsc">',
+       '<title id="ttl">Agent Squad: one batch through the pipeline</title>',
+       '<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue '
+       '(tests first, the second PR stacked on the first), you review with Reven and fix one note in a sidecar, '
+       'retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>',
+       '<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'
+       '<path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker>'
+       '<marker id="arrh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'
+       '<path d="M0 0L8 4L0 8z" fill="var(--hook)"/></marker></defs>',
+       "<style>",
+       """:root{--bg:#f6f7f9;--surface:#fff;--ink:#1c2230;--muted:#5d6675;--line:#d7dce4;--accent:#0f766e;--accent-soft:#d9f0ec;
+--hook:#6d4fc2;--hook-soft:#ebe6fb;--side:#b45309;--side-soft:#fdebd0;--red:#b91c1c;--green:#15803d}
 @media (prefers-color-scheme:dark){:root{--bg:#12161d;--surface:#1a2029;--ink:#e8ebf0;--muted:#9aa3b2;--line:#2d3542;--accent:#2dd4bf;
---accent-soft:#113b37;--hook:#a78bfa;--hook-soft:#2a2347;--red:#f87171;--green:#4ade80}}
+--accent-soft:#113b37;--hook:#a78bfa;--hook-soft:#2a2347;--side:#f59e0b;--side-soft:#3d2a0a;--red:#f87171;--green:#4ade80}}
 text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .bg{fill:var(--bg)}
 .box{fill:var(--surface);stroke:var(--line);stroke-width:1}
 .box.gate{stroke-dasharray:4 3}
 .box.hook{fill:var(--hook-soft);stroke:var(--hook)}
+.box.side{fill:var(--side-soft);stroke:var(--side)}
 .cmd{font-size:12px;fill:var(--accent)}
 .cmd.hook{fill:var(--hook)}
-.name{font-size:15px;font-weight:600}
+.cmd.side{fill:var(--side)}
+.name{font-size:14px;font-weight:600}
 .hl{fill:none;stroke:var(--accent);stroke-width:2.5}
 .track{stroke:var(--line);stroke-width:2;stroke-dasharray:2 6;stroke-linecap:round}
 .pill{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.pill.plan{fill:var(--surface);stroke-dasharray:3 3}
 .pill.merged{fill:var(--accent);stroke:var(--accent)}
 .tid{font-size:13px;font-weight:600}
 .tid.on{fill:var(--surface)}
 .tag{font-size:12px;fill:var(--muted)}
 .red{font-size:12px;fill:var(--red)}
 .grn{font-size:12px;fill:var(--green)}
-.cap{font-size:15px;fill:var(--ink)}
+.fix{font-size:12px;fill:var(--side)}
+.badge{fill:var(--hook)}
+.badgetx{font-size:11px;font-weight:600;fill:var(--surface)}
+.looparc{fill:none;stroke:var(--hook);stroke-width:1.75}
+.flow{stroke-dasharray:6 6}
+.looplbl{font-size:12px;fill:var(--hook)}
+.sidelink{fill:none;stroke:var(--side);stroke-width:1.5;stroke-dasharray:3 4}
+.cap{font-size:15px}
 .capstep{font-size:12px;fill:var(--muted)}
-#cstatic{opacity:0}
-""")
-out.append("\n".join(css))
-out.append("@media (prefers-reduced-motion:no-preference){" + "\n".join(anim) + "}")
-out.append("@media (prefers-reduced-motion:reduce){" + "".join(static) + "}")
-out.append("</style>")
-out.append(f'<rect class="bg" x="0" y="0" width="{W}" height="{H}" rx="8"/>')
-out.append(f'<line class="track" x1="{cx(0):.1f}" y1="{TRACK_Y}" x2="{cx(len(STATIONS) - 1):.1f}" y2="{TRACK_Y}"/>')
+.ov{opacity:0}
+""",
+       "\n".join(css),
+       "@media (prefers-reduced-motion:no-preference){" + "\n".join(anim) + "}",
+       "@media (prefers-reduced-motion:reduce){" + static + "}",
+       "</style>",
+       f'<rect class="bg" x="0" y="0" width="{W}" height="{H}" rx="8"/>',
+       f'<line class="track" x1="{cx(0):.1f}" y1="{TRACK_Y}" x2="{cx(len(STATIONS) - 1):.1f}" y2="{TRACK_Y}"/>']
 
-for i, (cmd, name, kind) in enumerate(STATIONS):
-    x = cx(i) - BOX_W / 2
-    out.append(f'<rect class="box {kind}" x="{x:.1f}" y="{BOX_Y}" width="{BOX_W}" height="{BOX_H}" rx="6"/>')
-    out.append(f'<rect id="hl{i}" class="hl" x="{x - 3:.1f}" y="{BOX_Y - 3}" width="{BOX_W + 6}" height="{BOX_H + 6}" rx="8"/>')
-    ccls = "cmd mono hook" if kind == "hook" else "cmd mono"
-    out.append(f'<text class="{ccls}" x="{x + 12:.1f}" y="{BOX_Y + 24}">{cmd}</text>')
-    out.append(f'<text class="name" x="{x + 12:.1f}" y="{BOX_Y + 46}">{name}</text>')
+
+def station(key, cmd, name, kind, x0, y0):
+    o = [f'<rect class="box {kind}" x="{x0:.1f}" y="{y0}" width="{BOX_W}" height="{BOX_H}" rx="6"/>',
+         f'<rect id="hl_{key}" class="hl ov" x="{x0 - 3:.1f}" y="{y0 - 3}" width="{BOX_W + 6}" height="{BOX_H + 6}" rx="8"/>',
+         f'<text class="cmd mono {kind}" x="{x0 + 12:.1f}" y="{y0 + 24}">{cmd}</text>',
+         f'<text class="name" x="{x0 + 12:.1f}" y="{y0 + 46}">{name}</text>']
+    return "".join(o)
+
+
+for i, (key, cmd, name, kind) in enumerate(STATIONS):
+    out.append(station(key, cmd, name, kind, cx(i) - BOX_W / 2, BOX_Y))
     if i < len(STATIONS) - 1:
-        ax = cx(i) + BOX_W / 2 + 4
-        out.append(f'<path d="M{ax:.1f} {BOX_Y + BOX_H / 2} h{DX - BOX_W - 8:.1f}" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>')
+        ax = cx(i) + BOX_W / 2 + 3
+        out.append(f'<path d="M{ax:.1f} {BOX_Y + BOX_H / 2} h{DX - BOX_W - 6:.1f}" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>')
 
-out.insert(3, '<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'
-              '<path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker></defs>')
+# sidecar side path: dashed links up to the track from Reven and back toward Merge
+sx = cx(SIDE_X)
+out.append(f'<path class="sidelink" d="M{cx(IDX["reven"]):.1f} {LANE["13"] + 20} Q{cx(IDX["reven"]):.1f} {SIDE_Y + BOX_H / 2} {sx - BOX_W / 2:.1f} {SIDE_Y + BOX_H / 2}"/>')
+out.append(f'<path class="sidelink" d="M{sx + BOX_W / 2:.1f} {SIDE_Y + BOX_H / 2} Q{cx(IDX["merge"]):.1f} {SIDE_Y + BOX_H / 2} {cx(IDX["merge"]):.1f} {LANE["13"] + 20}"/>')
+out.append(station(SIDE[0], SIDE[1], SIDE[2], SIDE[3], sx - BOX_W / 2, SIDE_Y))
+
+# Ralph <-> Cody loop arc above the boxes, plus the issue counter badge on Ralph
+rx_, cx_ = cx(IDX["ralph"]), cx(IDX["cody"])
+top = BOX_Y - 2
+arc = f"M{cx_ - 20:.1f} {top} C{cx_ - 20:.1f} {top - 40} {rx_ + 20:.1f} {top - 40} {rx_ + 20:.1f} {top}"
+out.append(f'<path class="looparc" d="{arc}" stroke-opacity="0.35" marker-end="url(#arrh)"/>')
+out.append(f'<g id="loop" class="ov"><path class="looparc flow" d="{arc}" marker-end="url(#arrh)"/></g>')
+out.append(f'<text class="looplbl" x="{(rx_ + cx_) / 2:.1f}" y="{top - 34}" text-anchor="middle">↻ next issue</text>')
+bx, by = rx_ + BOX_W / 2 - 22, BOX_Y + 12
+for nid, txt in (("n1", "1/2"), ("n2", "2/2")):
+    out.append(f'<g id="{nid}" class="ov"><rect class="badge" x="{bx - 16:.1f}" y="{by - 9}" width="32" height="18" rx="9"/>'
+               f'<text class="badgetx mono" x="{bx:.1f}" y="{by + 4}" text-anchor="middle">{txt}</text></g>')
 
 
-def token(tok, y, tags):
-    g = [f'<g id="t{tok}"><g class="body">']
+def token(tok, label, tags, plan=False):
+    y = LANE[tok]
     px, py = -PILL_W / 2, y - PILL_H / 2
-    g.append(f'<rect class="pill" x="{px}" y="{py}" width="{PILL_W}" height="{PILL_H}" rx="13"/>')
-    g.append(f'<text class="tid" x="0" y="{y + 4.5}" text-anchor="middle">#{tok}</text>')
-    g.append(f'<g id="m{tok}"><rect class="pill merged" x="{px}" y="{py}" width="{PILL_W}" height="{PILL_H}" rx="13"/>'
-             f'<text class="tid on" x="0" y="{y + 4.5}" text-anchor="middle">#{tok}</text></g>')
+    g = [f'<g id="t{tok}"><g class="body ov">',
+         f'<rect class="pill{" plan" if plan else ""}" x="{px}" y="{py}" width="{PILL_W}" height="{PILL_H}" rx="13"/>',
+         f'<text class="tid" x="0" y="{y + 4.5}" text-anchor="middle">{label}</text>']
+    if not plan:
+        g.append(f'<g id="m{tok}" class="ov"><rect class="pill merged" x="{px}" y="{py}" width="{PILL_W}" height="{PILL_H}" rx="13"/>'
+                 f'<text class="tid on" x="0" y="{y + 4.5}" text-anchor="middle">{label}</text></g>')
     for tid, cls, txt in tags:
-        g.append(f'<text id="{tid}" class="{cls} mono" x="{PILL_W / 2 + 8}" y="{y + 4.5}">{txt}</text>')
+        g.append(f'<text id="{tid}" class="{cls} mono ov" x="{PILL_W / 2 + 8}" y="{y + 4.5}">{txt}</text>')
     g.append("</g></g>")
     return "".join(g)
 
 
-out.append(token("12", LANES["12"], [("b12", "tag", "→ main"), ("red12", "red", "✗ tests"), ("grn12", "grn", "✓ tests")]))
-out.append(token("13", LANES["13"], [("b13s", "tag", "→ 12-…"), ("b13m", "tag", "→ main"), ("red13", "red", "✗ tests"), ("grn13", "grn", "✓ tests")]))
+out.append(token("plan", "plan", [], plan=True))
+out.append(token("12", "#12", [("b12", "tag", "→ main"), ("red12", "red", "✗ tests"), ("grn12", "grn", "✓ tests")]))
+out.append(token("13", "#13", [("b13s", "tag", "→ 12-…"), ("b13m", "tag", "→ main"), ("red13", "red", "✗ tests"),
+                              ("grn13", "grn", "✓ tests")]))
+# the sidecar fix note sits beside #13 while it is in the sidecar; position it absolutely
+fx, fy = cx(SIDE_X) + BOX_W / 2 + 10, SIDE_Y + BOX_H / 2 + 4
+out.append(f'<text id="fix13" class="fix mono ov" x="{fx:.1f}" y="{fy}">fix review note</text>')
 
-CAP_Y = 250
-for s, (cap, _, _) in enumerate(STEPS):
-    if cap is None:
-        continue
-    out.append(f'<g id="c{s}"><text class="capstep mono" x="{W / 2}" y="{CAP_Y - 20}" text-anchor="middle">step {s + 1} of {N - 1}</text>'
-               f'<text class="cap" x="{W / 2}" y="{CAP_Y + 2}" text-anchor="middle">{cap.replace("&", "&amp;")}</text></g>')
-out.append(f'<text id="cstatic" class="cap" x="{W / 2}" y="{CAP_Y + 2}" text-anchor="middle">'
-           'Two stacked PRs after review: #13 is based on #12\'s branch until you retarget it to main</text>')
+for s, st in enumerate(STEPS):
+    if st[0]:
+        out.append(f'<g id="c{s}" class="ov"><text class="capstep mono" x="{W / 2}" y="{CAP_Y - 20}" text-anchor="middle">step {s + 1} of {N - 1}</text>'
+                   f'<text class="cap" x="{W / 2}" y="{CAP_Y + 2}" text-anchor="middle">{st[0].replace("&", "&amp;")}</text></g>')
+out.append(f'<text id="cstatic" class="cap ov" x="{W / 2}" y="{CAP_Y + 2}" text-anchor="middle">'
+           "Both PRs under review: #13 is stacked on #12’s branch until you retarget it to main</text>")
 out.append("</svg>")
 
 with open(OUT, "w") as fh:
