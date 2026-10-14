@@ -1291,6 +1291,14 @@ and folding Archy into Forge.
 > by that script and defaults to detached. Prose holds only the call; a
 > bash gate decides pass or fail, and the model-run evals only advise.
 
+**Fix (#234):** `lore-orient.sh` emitted `additionalContext` at the top
+level, which Claude Code ignores for SessionStart, so the user saw the
+orientation and the model never did. It is now nested under
+`hookSpecificOutput` (with `hookEventName: "SessionStart"`) in both the
+`jq` and the manual-escape branches; `systemMessage` stays for the UI and
+the msg-only paths are unchanged. `scripts/test-lore-orient.sh` guards
+both shapes. The installed `~/.claude/hooks` copy needs a re-sync.
+
 ---
 
 ## 7. Skill and Agent Definitions

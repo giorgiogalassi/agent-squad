@@ -28,6 +28,8 @@ on:
       - "claude/hooks/squad-labels.sh"
       - "scripts/test-squad-branch.sh"
       - "claude/hooks/squad-branch.sh"
+      - "scripts/test-lore-orient.sh"
+      - "claude/hooks/lore-orient.sh"
       - "claude/hooks/squad-common.sh"
       - "scripts/gh-shim/**"
       - "scripts/fixtures/**"
@@ -68,3 +70,7 @@ jobs:
       - name: Run scripts/test-squad-branch.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-branch.sh; else bash scripts/test-squad-branch.sh; fi
+
+      - name: Run scripts/test-lore-orient.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-orient.sh; else bash scripts/test-lore-orient.sh; fi

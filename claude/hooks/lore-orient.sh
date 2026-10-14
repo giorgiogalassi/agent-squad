@@ -38,8 +38,10 @@ else
   fi
 fi
 
-# Emit {"systemMessage": <msg>, "additionalContext": <msg>} (or just
-# {"systemMessage": <msg>} when $2 = "msg-only"). Always via jq when
+# Emit {"systemMessage": <msg>, "hookSpecificOutput": {"hookEventName":
+# "SessionStart", "additionalContext": <msg>}} (or just {"systemMessage":
+# <msg>} when $2 = "msg-only"). Claude Code ignores a top-level
+# additionalContext; SessionStart needs it nested. Always via jq when
 # available; falls back to manual JSON-string escaping otherwise so the
 # hook keeps its "always print best-effort orientation" promise even
 # without jq. The manual fallback is the *only* escaping applied to
@@ -51,7 +53,7 @@ emit_json() {
     if [ "$mode" = "msg-only" ]; then
       jq -n --arg msg "$msg" '{systemMessage: $msg}'
     else
-      jq -n --arg msg "$msg" '{systemMessage: $msg, additionalContext: $msg}'
+      jq -n --arg msg "$msg" '{systemMessage: $msg, hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
     fi
     return
   fi
@@ -64,7 +66,7 @@ emit_json() {
   if [ "$mode" = "msg-only" ]; then
     printf '{"systemMessage": "%s"}\n' "$esc"
   else
-    printf '{"systemMessage": "%s", "additionalContext": "%s"}\n' "$esc" "$esc"
+    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s"}}\n' "$esc" "$esc"
   fi
 }
 
@@ -180,7 +182,7 @@ fi
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
 
-# Export final JSON — systemMessage shows in UI, additionalContext is injected as prompt context
+# Export final JSON — systemMessage shows in UI, hookSpecificOutput.additionalContext is injected as prompt context
 emit_json "$OUTPUT"
 
 exit 0
