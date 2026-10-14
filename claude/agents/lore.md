@@ -231,7 +231,10 @@ not installed.
   show the content, state you are writing, proceed — the user redirects
   by replying. Tier 2 (explicit yes, wait): vault creation,
   name-conflict resolution, and `lore recover` writes. Always show what
-  you will write.
+  you will write. Lore runs as a subagent and never sees the user's
+  turns: a Tier 2 yes arrives as a resume message from the invoking
+  session quoting the user's reply (`User confirmed: "<reply>"`). That
+  quoted reply is the confirmation — act on it.
 - Never write `<private>...</private>` content to the vault — strip it
   before proposing any write.
 - status.md always overwritten; development.md capped at 100 lines
