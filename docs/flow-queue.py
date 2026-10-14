@@ -51,7 +51,7 @@ WINDOWS = {
 }
 
 N = len(STEPS)
-DUR = SLOT * N
+DUR = round(SLOT * N, 2)
 W, H = 1280, 400
 BOX_W, BOX_H, BOX_Y = 132, 64, 56
 MARGIN = 24
