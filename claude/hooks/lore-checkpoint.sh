@@ -22,6 +22,12 @@
 # other lines are dropped by the `^\[` filter, and a multi-line note counts
 # against the 3-line cap.
 #
+# Denial pass: every SessionEnd also spawns a SEPARATE detached
+# `lore-checkpoint.sh --incidents <transcript> <session_id> <project>` that
+# scans the transcripts for permission/classifier denials and records them via
+# squad-incidents.sh (source=transcript, kind=denial, dedupe_id=tool_use_id).
+# It needs jq (skipped without), takes no lock and never commits the vault.
+#
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
 # Install (Claude Code): copy to ~/.claude/hooks/lore-checkpoint.sh, chmod +x,
@@ -40,16 +46,64 @@ MODE=hook; NOTE=""
 case "${1:-}" in
   --note) MODE=note; NOTE="${2:-}"; [ -n "$NOTE" ] || bail "--note needs a line, skipped" ;;
   --rebuild) MODE=rebuild ;;
+  --incidents) MODE=incidents ;;
 esac
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SELF="$HOOK_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
 
+# --- Denial pass (detached) ------------------------------------------------
+# Auto-mode classifier denial; user rejections ("The user doesn't want...") do not match.
+DENIAL_PATTERN="Permission for this action was denied by the Claude Code auto mode classifier"
+SQUAD_PATHS='claude/skills|claude/agents|claude/hooks|\.claude/hooks/squad-|\.squad/'
+
+# scan_transcript <jsonl> <component> <all|squad>: record denials. For "squad",
+# only denials whose tool input references squad paths count.
+scan_transcript() {
+  local file="$1" comp="$2" scope="$3" id tool reason inp
+  [ -f "$file" ] || return 0
+  jq -R -s -r --arg pat "$DENIAL_PATTERN" '
+    def txt: if (.content | type) == "array" then ([.content[]? | .text? // ""] | join(" ")) else (.content // "" | tostring) end;
+    split("\n") | map(fromjson? // empty) as $l
+    | ([$l[] | .message.content? | arrays | .[] | select(.type == "tool_use")
+        | {key: .id, value: {name: .name, input: (.input | tojson)}}] | from_entries) as $uses
+    | $l[] | .message.content? | arrays | .[]
+    | select(.type == "tool_result" and .is_error == true)
+    | select(txt | startswith($pat))
+    | [.tool_use_id, ($uses[.tool_use_id].name // "tool"),
+       (txt | capture("Reason: (?<r>\\[[^\\]]*\\])").r // ""),
+       ($uses[.tool_use_id].input // "")] | @tsv' "$file" 2>/dev/null \
+  | while IFS="$(printf '\t')" read -r id tool reason inp; do
+      [ -n "$id" ] || continue
+      if [ "$scope" = squad ] && ! printf '%s' "$inp" | grep -qE "$SQUAD_PATHS"; then continue; fi
+      bash "$HOOK_DIR/squad-incidents.sh" record --session "$INC_SESSION" --project "$INC_PROJECT" \
+        --source transcript --kind denial --component "$comp" \
+        --reason "$tool denied $reason" --dedupe-id "$id" >/dev/null 2>&1
+    done
+}
+
+if [ "$MODE" = incidents ]; then
+  INC_TRANSCRIPT="${2:-}"; INC_SESSION="${3:-}"; INC_PROJECT="${4:-}"
+  command -v jq >/dev/null 2>&1 || bail "jq missing, denial pass skipped"
+  [ -f "$INC_TRANSCRIPT" ] || bail "no transcript, denial pass skipped"
+  scan_transcript "$INC_TRANSCRIPT" main squad
+  SUBDIR="$(dirname "$INC_TRANSCRIPT")/$INC_SESSION/subagents"
+  if [ -n "$INC_SESSION" ] && [ -d "$SUBDIR" ]; then
+    for sub in "$SUBDIR"/agent-*.jsonl; do
+      [ -f "$sub" ] || continue
+      kind="$(jq -r '.agentType // empty' "${sub%.jsonl}.meta.json" 2>/dev/null)"
+      scan_transcript "$sub" "${kind:-subagent}" all
+    done
+  fi
+  exit 0
+fi
+
 # Hook input: JSON on stdin; `cwd` is the session's working directory.
 INPUT=""
 [ "$MODE" = hook ] && INPUT="$(cat 2>/dev/null)"
-CWD=""
+CWD=""; TRANSCRIPT=""; SESSION_ID=""
 if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
-  CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
+  { IFS= read -r CWD; IFS= read -r TRANSCRIPT; IFS= read -r SESSION_ID; } < <(printf '%s' "$INPUT" \
+    | jq -r '(.cwd // ""), (.transcript_path // ""), (.session_id // "")' 2>/dev/null)
 fi
 [ -z "$CWD" ] && CWD="$PWD"
 cd "$CWD" 2>/dev/null || bail "cannot enter $CWD, skipped"
@@ -67,6 +121,19 @@ done < <("$HOOK_DIR/path-resolve.sh")
 [ -n "${ROOT:-}" ] || bail "not a git project, skipped"
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
+
+# Detach fully: own session when possible, all stdio redirected, so Claude
+# Code is not kept waiting on an open pipe.
+DETACH=""
+command -v setsid >/dev/null 2>&1 && DETACH="setsid"
+[ -z "$DETACH" ] && command -v perl >/dev/null 2>&1 && DETACH="perl -MPOSIX -e POSIX::setsid();exec(@ARGV) --"
+
+# Denial pass: separate detached process on every session end (main checkout
+# and worktrees), independent of the status rebuild below.
+if [ "$MODE" = hook ] && [ -n "$TRANSCRIPT" ] && command -v jq >/dev/null 2>&1; then
+  ( $DETACH nohup bash "$SELF" --incidents "$TRANSCRIPT" "$SESSION_ID" "$DISPLAY" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+fi
+
 [ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
 
 TOP="$(git rev-parse --show-toplevel 2>/dev/null)"
@@ -172,12 +239,7 @@ if [ "$MODE" = hook ]; then
   if [ -n "$UPDATED" ] && [ -z "$(git log --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
   # Fresh lock held -> a rebuild is already running (stale after 10 min).
   if [ -d "$LOCK" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then exit 0; fi
-  # Detach fully: own session when possible, all stdio redirected, so Claude
-  # Code is not kept waiting on an open pipe.
   LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
-  DETACH=""
-  command -v setsid >/dev/null 2>&1 && DETACH="setsid"
-  [ -z "$DETACH" ] && command -v perl >/dev/null 2>&1 && DETACH="perl -MPOSIX -e POSIX::setsid();exec(@ARGV) --"
   ( cd "$CWD" && $DETACH nohup bash "$SELF" --rebuild >"$LOG" 2>&1 </dev/null & ) >/dev/null 2>&1
   exit 0
 fi

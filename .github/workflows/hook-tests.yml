@@ -33,6 +33,8 @@ on:
       - "scripts/test-squad-incidents.sh"
       - "claude/hooks/squad-incidents.sh"
       - "claude/hooks/squad-common.sh"
+      - "scripts/test-lore-incidents.sh"
+      - "claude/hooks/lore-checkpoint.sh"
       - "scripts/gh-shim/**"
       - "scripts/fixtures/**"
       - ".github/workflows/hook-tests.yml"
@@ -80,3 +82,7 @@ jobs:
       - name: Run scripts/test-squad-incidents.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-incidents.sh; else bash scripts/test-squad-incidents.sh; fi
+
+      - name: Run scripts/test-lore-incidents.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-incidents.sh; else bash scripts/test-lore-incidents.sh; fi
