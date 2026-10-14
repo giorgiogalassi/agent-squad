@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tests for check 7 (label doc rows tied to tests) of scripts/squad-lint.sh.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-squad-lint-labels.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

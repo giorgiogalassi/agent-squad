@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tests claude/hooks/squad-common.sh. Plain bash 3.2; no bats, no jq.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 COMMON="$REPO_ROOT/claude/hooks/squad-common.sh"

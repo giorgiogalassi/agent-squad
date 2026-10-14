@@ -18,6 +18,8 @@
 # call, argv joined by spaces, same format as scripts/gh-shim/gh); reads go
 # to $GH_READ_LOG. Detached cases use the real shim, whose log must stay empty.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 SUT="${1:-$REPO_ROOT/claude/hooks/squad-labels.sh}"

@@ -26,6 +26,8 @@
 # find, diff. No bats, no jq.
 
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_WT="$REPO_ROOT/claude/hooks/worktree.sh"

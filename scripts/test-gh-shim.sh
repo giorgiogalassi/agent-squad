@@ -2,6 +2,8 @@
 # Tests scripts/gh-shim/gh and scripts/fixtures/make-fixture.sh.
 # Plain bash + git + coreutils; no bats, no jq.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM_DIR="$REPO_ROOT/scripts/gh-shim"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
