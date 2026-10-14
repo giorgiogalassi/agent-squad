@@ -80,47 +80,47 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 @keyframes hl_merge{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}84.154%{opacity:1}84.615%{opacity:0}100%{opacity:0}}
 @keyframes hl_ckpt{0%{opacity:0}84.615%{opacity:0}85.077%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
 @keyframes hl_sidecar{0%{opacity:0}61.538%{opacity:0}62.000%{opacity:1}68.769%{opacity:1}69.231%{opacity:0}100%{opacity:0}}
-@media (prefers-reduced-motion:no-preference){#tplan{animation:mvplan 22.099999999999998s linear infinite}
-#tplan>.body{animation:visplan 22.099999999999998s linear infinite}
-#t12{animation:mv12 22.099999999999998s linear infinite}
-#t12>.body{animation:vis12 22.099999999999998s linear infinite}
-#t13{animation:mv13 22.099999999999998s linear infinite}
-#t13>.body{animation:vis13 22.099999999999998s linear infinite}
-#b12{animation:w_b12 22.099999999999998s linear infinite}
-#b13s{animation:w_b13s 22.099999999999998s linear infinite}
-#b13m{animation:w_b13m 22.099999999999998s linear infinite}
-#m12{animation:w_m12 22.099999999999998s linear infinite}
-#m13{animation:w_m13 22.099999999999998s linear infinite}
-#red12{animation:w_red12 22.099999999999998s linear infinite}
-#grn12{animation:w_grn12 22.099999999999998s linear infinite}
-#red13{animation:w_red13 22.099999999999998s linear infinite}
-#grn13{animation:w_grn13 22.099999999999998s linear infinite}
-#fix13{animation:w_fix13 22.099999999999998s linear infinite}
-#n1{animation:w_n1 22.099999999999998s linear infinite}
-#n2{animation:w_n2 22.099999999999998s linear infinite}
-#loop{animation:w_loop 22.099999999999998s linear infinite}
+@media (prefers-reduced-motion:no-preference){#tplan{animation:mvplan 16.900000000000002s linear infinite}
+#tplan>.body{animation:visplan 16.900000000000002s linear infinite}
+#t12{animation:mv12 16.900000000000002s linear infinite}
+#t12>.body{animation:vis12 16.900000000000002s linear infinite}
+#t13{animation:mv13 16.900000000000002s linear infinite}
+#t13>.body{animation:vis13 16.900000000000002s linear infinite}
+#b12{animation:w_b12 16.900000000000002s linear infinite}
+#b13s{animation:w_b13s 16.900000000000002s linear infinite}
+#b13m{animation:w_b13m 16.900000000000002s linear infinite}
+#m12{animation:w_m12 16.900000000000002s linear infinite}
+#m13{animation:w_m13 16.900000000000002s linear infinite}
+#red12{animation:w_red12 16.900000000000002s linear infinite}
+#grn12{animation:w_grn12 16.900000000000002s linear infinite}
+#red13{animation:w_red13 16.900000000000002s linear infinite}
+#grn13{animation:w_grn13 16.900000000000002s linear infinite}
+#fix13{animation:w_fix13 16.900000000000002s linear infinite}
+#n1{animation:w_n1 16.900000000000002s linear infinite}
+#n2{animation:w_n2 16.900000000000002s linear infinite}
+#loop{animation:w_loop 16.900000000000002s linear infinite}
 #loop .flow{animation:dash 0.8s linear infinite}
-#c0{animation:c0 22.099999999999998s linear infinite}
-#c1{animation:c1 22.099999999999998s linear infinite}
-#c2{animation:c2 22.099999999999998s linear infinite}
-#c3{animation:c3 22.099999999999998s linear infinite}
-#c4{animation:c4 22.099999999999998s linear infinite}
-#c5{animation:c5 22.099999999999998s linear infinite}
-#c6{animation:c6 22.099999999999998s linear infinite}
-#c7{animation:c7 22.099999999999998s linear infinite}
-#c8{animation:c8 22.099999999999998s linear infinite}
-#c9{animation:c9 22.099999999999998s linear infinite}
-#c10{animation:c10 22.099999999999998s linear infinite}
-#c11{animation:c11 22.099999999999998s linear infinite}
-#hl_forge{animation:hl_forge 22.099999999999998s linear infinite}
-#hl_chisel{animation:hl_chisel 22.099999999999998s linear infinite}
-#hl_gate{animation:hl_gate 22.099999999999998s linear infinite}
-#hl_ralph{animation:hl_ralph 22.099999999999998s linear infinite}
-#hl_cody{animation:hl_cody 22.099999999999998s linear infinite}
-#hl_reven{animation:hl_reven 22.099999999999998s linear infinite}
-#hl_merge{animation:hl_merge 22.099999999999998s linear infinite}
-#hl_ckpt{animation:hl_ckpt 22.099999999999998s linear infinite}
-#hl_sidecar{animation:hl_sidecar 22.099999999999998s linear infinite}}
+#c0{animation:c0 16.900000000000002s linear infinite}
+#c1{animation:c1 16.900000000000002s linear infinite}
+#c2{animation:c2 16.900000000000002s linear infinite}
+#c3{animation:c3 16.900000000000002s linear infinite}
+#c4{animation:c4 16.900000000000002s linear infinite}
+#c5{animation:c5 16.900000000000002s linear infinite}
+#c6{animation:c6 16.900000000000002s linear infinite}
+#c7{animation:c7 16.900000000000002s linear infinite}
+#c8{animation:c8 16.900000000000002s linear infinite}
+#c9{animation:c9 16.900000000000002s linear infinite}
+#c10{animation:c10 16.900000000000002s linear infinite}
+#c11{animation:c11 16.900000000000002s linear infinite}
+#hl_forge{animation:hl_forge 16.900000000000002s linear infinite}
+#hl_chisel{animation:hl_chisel 16.900000000000002s linear infinite}
+#hl_gate{animation:hl_gate 16.900000000000002s linear infinite}
+#hl_ralph{animation:hl_ralph 16.900000000000002s linear infinite}
+#hl_cody{animation:hl_cody 16.900000000000002s linear infinite}
+#hl_reven{animation:hl_reven 16.900000000000002s linear infinite}
+#hl_merge{animation:hl_merge 16.900000000000002s linear infinite}
+#hl_ckpt{animation:hl_ckpt 16.900000000000002s linear infinite}
+#hl_sidecar{animation:hl_sidecar 16.900000000000002s linear infinite}}
 @media (prefers-reduced-motion:reduce){#t12{transform:translate(875.7px,0.0px)}#t13{transform:translate(875.7px,0.0px)}#t12>.body,#t13>.body,#b12,#b13s,#cstatic,#loop{opacity:1}}
 </style>
 <rect class="bg" x="0" y="0" width="1280" height="400" rx="8"/>
