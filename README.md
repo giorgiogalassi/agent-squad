@@ -207,6 +207,7 @@ cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktre
 cp claude/hooks/squad-common.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-common.sh
 cp claude/hooks/squad-labels.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-labels.sh
 cp claude/hooks/squad-branch.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-branch.sh
+cp claude/hooks/squad-incidents.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-incidents.sh
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
@@ -232,6 +233,9 @@ agent prose only calls them (the rule is in `CLAUDE.md`):
   calls, worktree-safe, never `-f`, stash or reset. It resolves
   `origin/<base>`, then local `<base>`, and emits `BASE_REF`; detached mode
   tolerates a missing `origin`, so local-only stacks work without a remote.
+- `squad-incidents.sh` (record, summary, resolve) is the global append-only
+  incident store at `<vault>/squad-incidents.tsv`. `record` never writes
+  stdout and always exits 0; `summary` lists signatures seen in 2+ sessions.
 
 Output is `KEY=value` lines and exit codes 0, 2, 10 and 20, specified in
 [`SCRIPT_CONTRACT.md`](SCRIPT_CONTRACT.md). `TRACKER_MODE` is resolved by

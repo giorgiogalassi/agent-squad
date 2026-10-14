@@ -30,6 +30,8 @@ on:
       - "claude/hooks/squad-branch.sh"
       - "scripts/test-lore-orient.sh"
       - "claude/hooks/lore-orient.sh"
+      - "scripts/test-squad-incidents.sh"
+      - "claude/hooks/squad-incidents.sh"
       - "claude/hooks/squad-common.sh"
       - "scripts/gh-shim/**"
       - "scripts/fixtures/**"
@@ -74,3 +76,7 @@ jobs:
       - name: Run scripts/test-lore-orient.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-orient.sh; else bash scripts/test-lore-orient.sh; fi
+
+      - name: Run scripts/test-squad-incidents.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-incidents.sh; else bash scripts/test-squad-incidents.sh; fi
