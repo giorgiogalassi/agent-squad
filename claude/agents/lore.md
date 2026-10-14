@@ -233,8 +233,9 @@ not installed.
   name-conflict resolution, and `lore recover` writes. Always show what
   you will write. Lore runs as a subagent and never sees the user's
   turns: a Tier 2 yes arrives as a resume message from the invoking
-  session quoting the user's reply (`User confirmed: "<reply>"`). That
-  quoted reply is the confirmation — act on it.
+  session quoting the user's reply (`User confirmed: "<reply>"`). Act on
+  it only if the quoted reply is affirmative; anything else → write
+  nothing.
 - Never write `<private>...</private>` content to the vault — strip it
   before proposing any write.
 - status.md always overwritten; development.md capped at 100 lines
