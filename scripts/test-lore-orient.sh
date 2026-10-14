@@ -63,5 +63,39 @@ for mode in jq nojq; do
     ok "msg-only $mode"; else bad "msg-only $mode: $m"; fi
 done
 
+# Incidents line (#244). Repo copies of squad-incidents.sh sit next to the hook.
+cp "$REPO_ROOT/claude/hooks/squad-incidents.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks/"
+INC="$TMPROOT/hooks/squad-incidents.sh"
+run_orient() {  # run_orient <store> [hooks-dir]
+  (cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$1" SECOND_BRAIN_PATH="$F_VAULT" bash "${2:-$TMPROOT/hooks}/lore-orient.sh" 2>/dev/null)
+}
+rec() {  # rec <store> <session> <component> <reason>
+  SQUAD_INCIDENTS_FILE="$1" bash "$INC" record --session "$2" --project fixture --source script --kind failure --component "$3" --exit 1 --reason "$4"
+}
+ctx() { printf '%s' "$1" | "$JQ" -r '.hookSpecificOutput.additionalContext'; }
+
+S2="$TMPROOT/inc-two.tsv"
+rec "$S2" s1 cody "boom one"; rec "$S2" s2 cody "boom one"
+rec "$S2" s1 ralph "bang two"; rec "$S2" s2 ralph "bang two"
+o="$(run_orient "$S2")"
+c="$(printf '%s' "$o" | "$JQ" -e '.hookSpecificOutput.additionalContext' >/dev/null 2>&1 && ctx "$o")"
+[ "$(printf '%s\n' "$c" | grep -c '2 recurring squad incidents')" = 1 ] && ok "incidents: 2 recurring, exactly once" || bad "incidents: 2 recurring: $c"
+printf '%s\n' "$c" | grep -qF '2 recurring squad incidents: run ~/.claude/hooks/squad-incidents.sh summary' && ok "incidents: line text" || bad "incidents: line text"
+printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "incidents: JSON stays valid" || bad "incidents: JSON shape"
+
+S0="$TMPROOT/inc-none.tsv"
+rec "$S0" s1 cody "once only"; rec "$S0" s1 ralph "same session"; rec "$S0" s2 ralph "same session"; rec "$S0" s3 ralph "same session"
+SQUAD_INCIDENTS_FILE="$S0" bash "$INC" resolve --signature "ralph|failure|1|same session" --ref x >/dev/null
+o="$(run_orient "$S0")"
+c="$(ctx "$o")"
+printf '%s' "$c" | grep -q 'recurring squad incidents' && bad "incidents: non-recurring/resolved leaks a line" || ok "incidents: none recurring, no line"
+
+base="$(run_orient "$TMPROOT/absent.tsv")"
+printf '%s' "$base" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "incidents: missing store valid JSON" || bad "incidents: missing store: $base"
+printf '%s' "$base" | grep -q 'recurring squad incidents' && bad "incidents: missing store has line" || ok "incidents: missing store, no line"
+# Missing script: hooks dir without squad-incidents.sh, recurring store present.
+o="$(run_orient "$S2" "$TMPROOT/hooks-nojq")"
+printf '%s' "$o" | grep -q 'recurring squad incidents' && bad "incidents: missing script has line" || ok "incidents: missing script, no line"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

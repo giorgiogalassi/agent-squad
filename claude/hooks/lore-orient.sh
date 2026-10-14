@@ -178,6 +178,14 @@ fi
 if [ -f "$STATUS" ] && [ "$(wc -w < "$STATUS" | tr -d ' ')" -gt 300 ]; then
   SIGNALS="${SIGNALS}status.md over budget; next rebuild compresses${NL}"
 fi
+# Recurring squad incidents (one awk pass inside the store script). Silent
+# when the script or store is missing.
+if [ -x "$HOOK_DIR/squad-incidents.sh" ]; then
+  _rec="$("$HOOK_DIR/squad-incidents.sh" summary 2>/dev/null | sed -n 's/^RECURRING=//p')"
+  case "$_rec" in ''|*[!0-9]*|0) ;; *)
+    SIGNALS="${SIGNALS}${_rec} recurring squad incidents: run ~/.claude/hooks/squad-incidents.sh summary${NL}" ;;
+  esac
+fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
