@@ -8,6 +8,8 @@
 # Every invocation asserts each stdout line matches ^[A-Z_]+=. The gh shim is
 # first on PATH for every call; its log must stay empty (no gh calls).
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 SUT="${1:-$REPO_ROOT/claude/hooks/squad-branch.sh}"

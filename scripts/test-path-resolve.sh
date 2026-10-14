@@ -2,6 +2,8 @@
 # Tests TRACKER_MODE resolution in claude/hooks/path-resolve.sh.
 # Plain bash + git + coreutils; no bats. Fixtures live under one mktemp root.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PR="$REPO_ROOT/claude/hooks/path-resolve.sh"
 TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-path-resolve.XXXXXX")"

@@ -51,7 +51,7 @@ if [ "$VERB" = escalate ]; then
   [ "$HAVE_REASON" = 1 ] && [ -n "$REASON" ] || squad_fail 2 "escalate requires --reason"
 fi
 
-squad_resolve || squad_fail 20 "cannot resolve project paths"
+squad_resolve || squad_fail_incident squad-labels 20 "cannot resolve project paths"
 
 # --- detached: record only, no gh calls of any kind -------------------------
 if [ "$TRACKER_MODE" != connected ]; then
@@ -69,7 +69,7 @@ if [ "$TRACKER_MODE" != connected ]; then
   case "$rc" in
     0) OUT=recorded-local; CH=yes ;;
     1) OUT=unchanged; CH=no ;;
-    *) squad_fail 20 "cannot write handoff $HANDOFF" ;;
+    *) squad_fail_incident squad-labels 20 "cannot write handoff $HANDOFF" ;;
   esac
   squad_emit OUTCOME "$OUT"; squad_emit CHANGED "$CH"; squad_emit ISSUE "$ISSUE"
   squad_emit HANDOFF_LINE "$LINE"
@@ -78,19 +78,19 @@ fi
 
 # --- connected: label names from config -------------------------------------
 CFG="$VAULT_PATH/projects/$DISPLAY_NAME/.squad/chisel-config.json"
-[ -f "$CFG" ] && [ -r "$CFG" ] || squad_fail 20 "chisel-config.json missing or unreadable: $CFG"
+[ -f "$CFG" ] && [ -r "$CFG" ] || squad_fail_incident squad-labels 20 "chisel-config.json missing or unreadable: $CFG"
 # cfgval <key>: first string value of "<key>" in the config (keys are unique).
 cfgval() { grep -o "\"$1\" *: *\"[^\"]*\"" "$CFG" | head -1 | sed 's/^"[^"]*" *: *"//; s/"$//'; }
 L_IP="$(cfgval in_progress)"; L_IR="$(cfgval in_review)"; L_BL="$(cfgval blocked)"
 L_RV="$(cfgval review_label)"; [ -n "$L_RV" ] || L_RV=none
-[ -n "$L_IP" ] || squad_fail 20 "chisel.state_labels.in_progress missing in $CFG"
-[ -n "$L_IR" ] || squad_fail 20 "chisel.state_labels.in_review missing in $CFG"
-[ -n "$L_BL" ] || squad_fail 20 "chisel.state_labels.blocked missing in $CFG"
+[ -n "$L_IP" ] || squad_fail_incident squad-labels 20 "chisel.state_labels.in_progress missing in $CFG"
+[ -n "$L_IR" ] || squad_fail_incident squad-labels 20 "chisel.state_labels.in_review missing in $CFG"
+[ -n "$L_BL" ] || squad_fail_incident squad-labels 20 "chisel.state_labels.blocked missing in $CFG"
 
 # One repo lookup per call (read-only).
-REPO_JSON="$(gh repo view --json nameWithOwner)" || squad_fail 20 "gh repo view failed"
+REPO_JSON="$(gh repo view --json nameWithOwner)" || squad_fail_incident squad-labels 20 "gh repo view failed"
 REPO="$(printf '%s' "$REPO_JSON" | sed -n 's/.*"nameWithOwner" *: *"\([^"]*\)".*/\1/p')"
-[ -n "$REPO" ] || squad_fail 20 "cannot determine owner/repo"
+[ -n "$REPO" ] || squad_fail_incident squad-labels 20 "cannot determine owner/repo"
 
 # names_of: label names from gh JSON on stdin, one per line.
 names_of() { grep -o '"name" *: *"[^"]*"' | sed 's/^"name" *: *"//; s/"$//'; }
@@ -118,13 +118,13 @@ finish() {  # finish <outcome> <changed> <from> <to>
 }
 
 if [ "$VERB" = ensure ]; then
-  LIST="$(gh label list -R "$REPO" --json name)" || squad_fail 20 "gh label list failed"
+  LIST="$(gh label list -R "$REPO" --json name)" || squad_fail_incident squad-labels 20 "gh label list failed"
   HAVE="$(printf '%s' "$LIST" | names_of)"
   CREATED=""
   for n in "$L_RV" "$L_IP" "$L_IR" "$L_BL"; do
     [ "$n" = none ] && continue
     in_list "$HAVE" "$n" && continue
-    squad_gh_write label create "$n" -R "$REPO" || squad_fail 20 "gh label create $n failed"
+    squad_gh_write label create "$n" -R "$REPO" || squad_fail_incident squad-labels 20 "gh label create $n failed"
     CREATED="$CREATED$n
 "
   done
@@ -134,7 +134,7 @@ if [ "$VERB" = ensure ]; then
   exit 0
 fi
 
-VIEW="$(gh issue view "$ISSUE" -R "$REPO" --json labels)" || squad_fail 20 "gh issue view $ISSUE failed"
+VIEW="$(gh issue view "$ISSUE" -R "$REPO" --json labels)" || squad_fail_incident squad-labels 20 "gh issue view $ISSUE failed"
 FROM="$(printf '%s' "$VIEW" | names_of)"
 has_ip=0; has_ir=0; has_bl=0; has_rv=0
 in_list "$FROM" "$L_IP" && has_ip=1
@@ -148,23 +148,23 @@ case "$VERB" in
     [ "$has_ir" = 1 ] && squad_fail 10 "cannot claim $ISSUE: already $L_IR"
     [ "$has_bl" = 1 ] && squad_fail 10 "cannot claim $ISSUE: $L_BL present (no such transition)"
     squad_gh_write issue edit "$ISSUE" -R "$REPO" --add-assignee @me --add-label "$L_IP" \
-      || squad_fail 20 "gh issue edit failed"
+      || squad_fail_incident squad-labels 20 "gh issue edit failed"
     finish applied yes "$FROM" "$(add "$FROM" "$L_IP")" ;;
   review)
     if [ "$has_ip" = 0 ] && [ "$has_ir" = 1 ]; then
       # Already swapped; only a leftover review_label (partial failure) remains.
       [ "$has_rv" = 1 ] || finish unchanged no "$FROM" "$FROM"
       squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
-        || squad_fail 20 "gh issue edit (remove $L_RV) failed"
+        || squad_fail_incident squad-labels 20 "gh issue edit (remove $L_RV) failed"
       finish applied yes "$FROM" "$(drop "$FROM" "$L_RV")"
     fi
-    [ "$has_ip" = 0 ] && squad_fail 10 "cannot review $ISSUE: neither $L_IP nor $L_IR present"
+    [ "$has_ip" = 0 ] && squad_fail_incident squad-labels 10 "cannot review $ISSUE: neither $L_IP nor $L_IR present"
     squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_IR" \
-      || squad_fail 20 "gh issue edit failed"
+      || squad_fail_incident squad-labels 20 "gh issue edit failed"
     TO="$(add "$(drop "$FROM" "$L_IP")" "$L_IR")"
     if [ "$L_RV" != none ]; then
       squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
-        || squad_fail 20 "gh issue edit (remove $L_RV) failed; re-run review to finish"
+        || squad_fail_incident squad-labels 20 "gh issue edit (remove $L_RV) failed; re-run review to finish"
       TO="$(drop "$TO" "$L_RV")"
     fi
     finish applied yes "$FROM" "$TO" ;;
@@ -172,8 +172,9 @@ case "$VERB" in
     [ "$has_ip" = 0 ] && [ "$has_bl" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot escalate $ISSUE: $L_IP not present"
     squad_gh_write issue comment "$ISSUE" -R "$REPO" --body "$REASON" \
-      || squad_fail 20 "gh issue comment failed"
+      || squad_fail_incident squad-labels 20 "gh issue comment failed"
     squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_BL" \
-      || squad_fail 20 "gh issue edit failed after comment posted; a retry may duplicate the comment"
+      || squad_fail_incident squad-labels 20 "gh issue edit failed after comment posted; a retry may duplicate the comment"
+    squad_incident squad-labels 0 "escalated $ISSUE: $REASON" escalation
     finish applied yes "$FROM" "$(add "$(drop "$FROM" "$L_IP")" "$L_BL")" ;;
 esac

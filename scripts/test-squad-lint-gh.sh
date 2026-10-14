@@ -2,6 +2,8 @@
 # Tests for check 6 (gh write ban) of scripts/squad-lint.sh.
 # Copies the repo's claude/ tree and lint inputs into a fixture and mutates it.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-squad-lint-gh.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

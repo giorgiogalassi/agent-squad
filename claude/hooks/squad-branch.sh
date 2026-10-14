@@ -63,12 +63,12 @@ git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || squad_fail 2 "invalid
 G() { git -C "$PWD" "$@"; }
 
 G rev-parse --git-dir >/dev/null 2>&1 || squad_fail 20 "not inside a git repository"
-squad_resolve || squad_fail 20 "cannot resolve tracker mode"
+squad_resolve || squad_fail_incident squad-branch 20 "cannot resolve tracker mode"
 
 if G remote get-url origin >/dev/null 2>&1; then
   if ! G fetch -q origin >/dev/null 2>&1; then
     if [ "$TRACKER_MODE" = connected ]; then
-      squad_fail 20 "git fetch origin failed"
+      squad_fail_incident squad-branch 20 "git fetch origin failed"
     fi
     echo "squad-branch: git fetch origin failed; continuing with local refs" >&2
   fi
@@ -90,7 +90,7 @@ G rev-parse -q --verify "refs/heads/$BRANCH" >/dev/null 2>&1 && HAVE_LOCAL=1
 
 finish() {  # finish <outcome> <changed>
   local sha
-  sha="$(G rev-parse HEAD 2>/dev/null)" || squad_fail 20 "cannot read HEAD"
+  sha="$(G rev-parse HEAD 2>/dev/null)" || squad_fail_incident squad-branch 20 "cannot read HEAD"
   squad_emit OUTCOME "$1"; squad_emit CHANGED "$2"
   squad_emit BRANCH "$BRANCH"; squad_emit BASE "$BASE"
   squad_emit BASE_REF "$BASE_REF"; squad_emit HEAD_SHA "$sha"

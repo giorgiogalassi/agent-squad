@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tests claude/hooks/lore-orient.sh output shape. Plain bash 3.2; needs jq to validate.
 set -u
+# Never write the real vault incident store.
+export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 JQ="$(command -v jq)" || { echo "jq required to validate output"; exit 1; }

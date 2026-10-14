@@ -17,6 +17,9 @@
 # Directory of the sourcing script (BASH_SOURCE[1] when sourced).
 SQUAD_HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd)"
 
+# Directory of this file (squad-incidents.sh lives beside it).
+SQUAD_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # squad_fail <code> <reason>: one stderr line, then exit <code>.
 squad_fail() {
   local code="$1"; shift
@@ -24,6 +27,23 @@ squad_fail() {
   reason="$(printf '%s' "$*" | tr '\n' ' ')"
   printf '%s\n' "$reason" >&2
   exit "$code"
+}
+
+# squad_incident <component> <exit> <reason> [kind]: record an incident via
+# squad-incidents.sh (same dir as this file). Opt-in; silent, never fails,
+# safe under set -e and before squad_resolve (store path has its own fallback).
+squad_incident() {
+  bash "$SQUAD_COMMON_DIR/squad-incidents.sh" record --source script \
+    --kind "${4:-failure}" --component "${1:-}" --exit "${2:-}" --reason "${3:-}" \
+    --project "${DISPLAY_NAME:-}" --session "${CLAUDE_SESSION_ID:-}" \
+    >/dev/null 2>&1 || true
+  return 0
+}
+
+# squad_fail_incident <component> <code> <reason>: squad_incident, then squad_fail.
+squad_fail_incident() {
+  squad_incident "$1" "$2" "$3"
+  squad_fail "$2" "$3"
 }
 
 # squad_resolve: run path-resolve.sh and export VAULT_PATH, PROJECT_ROOT,
