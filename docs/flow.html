@@ -127,8 +127,8 @@
     <div class="node hook">
       <span class="cmd">SessionStart</span>
       <h3>lore-orient</h3>
-      <p>Read-only. Injects status, context refs, the last log lines and two signals: stale architecture, status over budget.</p>
-      <div class="chips"><span class="chip r">status.md</span><span class="chip r">session.log</span></div>
+      <p>Read-only. Injects status, context refs, the last log lines and three signals: stale architecture, status over budget, recurring squad incidents.</p>
+      <div class="chips"><span class="chip r">status.md</span><span class="chip r">session.log</span><span class="chip r">squad-incidents.tsv</span></div>
     </div>
     <div class="node">
       <span class="cmd">/seed</span>
@@ -172,7 +172,7 @@
     <div class="node">
       <span class="cmd">agent</span>
       <h3>Cody</h3>
-      <p>Branches from <code>origin/&lt;base&gt;</code>. Gets preferences, active decisions and the last 30 progress lines injected.</p>
+      <p>Branches from <code>origin/&lt;base&gt;</code>. Gets preferences, active decisions and the last 30 progress lines injected. Test-first when the issue has test specs: failing tests, then code until green.</p>
       <div class="chips"><span class="chip r">development.md</span><span class="chip r">decisions.md</span><span class="chip w">PR</span></div>
     </div>
     <div class="node">
@@ -190,8 +190,8 @@
     <div class="node hook">
       <span class="cmd">SessionEnd</span>
       <h3>lore-checkpoint</h3>
-      <p>Main checkout: rebuilds a stale status.md headlessly. Worktree session: appends one checkpoint line.</p>
-      <div class="chips"><span class="chip w">status.md</span></div>
+      <p>Main checkout: rebuilds a stale status.md headlessly. Worktree session: appends one checkpoint line. Always: records permission denials from the transcript.</p>
+      <div class="chips"><span class="chip w">status.md</span><span class="chip w">squad-incidents.tsv</span></div>
     </div>
     <div class="node side anytime">
       <span class="cmd">lore prefer</span>
@@ -227,6 +227,7 @@
         <tr><td>decisions.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td class="R">R <small>last 20 active</small></td><td></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td></td><td></td><td class="W">W</td></tr>
         <tr><td>preferences/development.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td></tr>
         <tr><td>golden.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>squad-incidents.tsv</td><td>vault root</td><td class="R">R <small>summary</small></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="W">W <small>denials</small></td><td></td></tr>
         <tr><td>session.log</td><td>vault</td><td class="R">R</td><td class="W">W</td><td class="W">W</td><td class="W">W</td><td class="W">W</td><td></td><td></td><td class="W">W</td><td></td><td></td></tr>
         <tr class="group"><td colspan="12">project knowledge (SQUAD_DIR: vault by default, repo when configured)</td></tr>
         <tr><td>architecture.md</td><td>SQUAD_DIR</td><td class="R">R <small>mtime only</small></td><td class="W">W</td><td class="R">R</td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td></td></tr>
@@ -243,6 +244,7 @@
   <div class="notes">
     <div class="note"><b>Reading the cells</b><p><span class="R">R</span> reads, <span class="W">W</span> writes. A qualifier says how much: "once" means scaffolded on first run and never overwritten; "+1 line" means an append; "last 20 active" means the tail of entries without a <code>Superseded by:</code> line; "last 30 lines" is what Ralph injects into Cody. "archive" means the file is moved out after being consumed.</p></div>
     <div class="note"><b>Authority order</b><p>issue text › architecture.md › scout-cache.md › decisions.md › development.md. Higher wins; Cody notes the conflict in the PR body, Reven under Observations, Forge as an open question.</p></div>
+    <div class="note"><b>Incident store</b><p>One global squad-incidents.tsv for all projects. Besides the checkpoint's denial pass, every squad script appends a line when it fails, whichever step called it. Orient only shows a count once an incident recurs.</p></div>
     <div class="note"><b>Update and forget</b><p>A decision that reverses another carries <code>Supersedes:</code>; the old one gets <code>Superseded by:</code>. At 60 active entries the superseded ones move to decisions-archive.md, which nothing loads.</p></div>
   </div>
 </div>
