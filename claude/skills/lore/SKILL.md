@@ -6,7 +6,7 @@ description: >
   This skill exists so Lore's subcommands work as slash-commands; it
   delegates immediately to the Lore agent and does no work itself.
   Do NOT use for planning, implementation, architecture, or code review.
-allowed-tools: Agent
+allowed-tools: Agent, SendMessage
 ---
 
 # Lore (entrypoint)
@@ -26,3 +26,8 @@ Never interpret, summarize, or pre-process the subcommand; never read or
 write the vault yourself. All behavior, confirmation rules, and output
 belong to the agent. No recognized subcommand → list the three above and
 stop.
+
+Lore returns any write that needs an explicit yes (Tier 2) as a proposal.
+Show the proposal to the user and ask. On a yes, resume the same agent
+(SendMessage) with `User confirmed: "<the user's reply, verbatim>"`; on
+anything else, tell the agent nothing and stop.
