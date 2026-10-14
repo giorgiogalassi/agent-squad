@@ -70,7 +70,7 @@ run_orient() {  # run_orient <store> [hooks-dir]
   (cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$1" SECOND_BRAIN_PATH="$F_VAULT" bash "${2:-$TMPROOT/hooks}/lore-orient.sh" 2>/dev/null)
 }
 rec() {  # rec <store> <session> <component> <reason>
-  SQUAD_INCIDENTS_FILE="$1" bash "$INC" record --session "$2" --project fixture --source script --kind failure --component "$3" --exit 1 --reason "$4"
+  SQUAD_INCIDENTS= SQUAD_INCIDENTS_FILE="$1" bash "$INC" record --session "$2" --project fixture --source script --kind failure --component "$3" --exit 1 --reason "$4"
 }
 ctx() { printf '%s' "$1" | "$JQ" -r '.hookSpecificOutput.additionalContext'; }
 
