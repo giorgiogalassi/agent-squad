@@ -34,6 +34,13 @@ gh and git exit codes are never passed through (gh's own 4 means auth
 required; it surfaces as 20). Stderr carries one human-readable reason
 line.
 
+## Exception: `squad-incidents.sh record`
+
+`record` writes nothing to stdout and always exits 0, even on its own I/O
+errors, so failure paths in other scripts can call it safely. It is
+best-effort capture, not a verb whose result callers act on. The other
+verbs (`summary`, `resolve`) follow the contract above.
+
 ## Idempotency
 
 Re-running an applied transition exits 0 with `OUTCOME=unchanged`.
