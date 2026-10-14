@@ -60,6 +60,10 @@ fixture detached; newstore
 check "detached refusal: rc path ran, store unchanged" 0 "$(rows)"
 lab "$TMPROOT/shimbin" claim --issue 7 --handoff "$TMPROOT/h.md"
 check "detached claim: store unchanged" 0 "$(rows)"
+mkdir -p "$TMPROOT/hdir"
+lab "$TMPROOT/shimbin" claim --issue 7 --handoff "$TMPROOT/hdir"
+check "detached unwritable handoff: exit 20" 20 "$RC"
+check "detached unwritable handoff: store unchanged" 0 "$(rows)"
 
 # 3. usage errors -> store unchanged
 fixture connected; newstore

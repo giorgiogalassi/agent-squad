@@ -69,7 +69,7 @@ if [ "$TRACKER_MODE" != connected ]; then
   case "$rc" in
     0) OUT=recorded-local; CH=yes ;;
     1) OUT=unchanged; CH=no ;;
-    *) squad_fail_incident squad-labels 20 "cannot write handoff $HANDOFF" ;;
+    *) squad_fail 20 "cannot write handoff $HANDOFF" ;;
   esac
   squad_emit OUTCOME "$OUT"; squad_emit CHANGED "$CH"; squad_emit ISSUE "$ISSUE"
   squad_emit HANDOFF_LINE "$LINE"
