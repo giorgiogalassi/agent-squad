@@ -59,9 +59,12 @@ SQUAD_PATHS='claude/skills|claude/agents|claude/hooks|\.claude/hooks/squad-|\.sq
 # scan_transcript <jsonl> <component> <all|squad>: record denials. For "squad",
 # only denials whose tool input references squad paths count.
 scan_transcript() {
-  local file="$1" comp="$2" scope="$3" id tool reason inp
+  local file="$1" comp="$2" scope="$3" id tool reason pat=""
   [ -f "$file" ] || return 0
-  jq -R -s -r --arg pat "$DENIAL_PATTERN" '
+  [ "$scope" = squad ] && pat="$SQUAD_PATHS"
+  # The squad-path filter runs inside jq and every emitted field is non-empty:
+  # tab is IFS whitespace, so an empty field would collapse and shift columns.
+  jq -R -s -r --arg pat "$DENIAL_PATTERN" --arg sq "$pat" '
     def txt: if (.content | type) == "array" then ([.content[]? | .text? // ""] | join(" ")) else (.content // "" | tostring) end;
     split("\n") | map(fromjson? // empty) as $l
     | ([$l[] | .message.content? | arrays | .[] | select(.type == "tool_use")
@@ -69,12 +72,11 @@ scan_transcript() {
     | $l[] | .message.content? | arrays | .[]
     | select(.type == "tool_result" and .is_error == true)
     | select(txt | startswith($pat))
+    | select($sq == "" or (($uses[.tool_use_id].input // "") | test($sq)))
     | [.tool_use_id, ($uses[.tool_use_id].name // "tool"),
-       (txt | capture("Reason: (?<r>\\[[^\\]]*\\])").r // ""),
-       ($uses[.tool_use_id].input // "")] | @tsv' "$file" 2>/dev/null \
-  | while IFS="$(printf '\t')" read -r id tool reason inp; do
+       (txt | capture("Reason: (?<r>\\[[^\\]]*\\])").r // "(no reason given)")] | @tsv' "$file" 2>/dev/null \
+  | while IFS="$(printf '\t')" read -r id tool reason; do
       [ -n "$id" ] || continue
-      if [ "$scope" = squad ] && ! printf '%s' "$inp" | grep -qE "$SQUAD_PATHS"; then continue; fi
       bash "$HOOK_DIR/squad-incidents.sh" record --session "$INC_SESSION" --project "$INC_PROJECT" \
         --source transcript --kind denial --component "$comp" \
         --reason "$tool denied $reason" --dedupe-id "$id" >/dev/null 2>&1

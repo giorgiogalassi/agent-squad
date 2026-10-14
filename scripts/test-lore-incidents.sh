@@ -68,6 +68,13 @@ check "subagent denial recorded (main outside squad paths skipped)" 1 "$(rows)"
 check "component=cody" cody "$(col 6)"
 check "subagent dedupe id" toolu_SUBDENY "$(col 8)"
 
+# 3b. denial WITHOUT a Reason bracket on a squad path (main transcript) is recorded
+newstore; mksession sg main-noreason.jsonl
+pass "$TMPROOT/sg/sg.jsonl" sg
+check "no-Reason denial recorded" 1 "$(rows)"
+check "no-Reason dedupe id" toolu_NOREASON "$(col 8)"
+check "no-Reason row has sane reason" "Edit denied (no reason given)" "$(col 9)"
+
 # 4. rejection + failing test only -> nothing
 newstore; mkdir -p "$TMPROOT/sc"
 grep -v 'DENY1' "$FX/main-squad.jsonl" > "$TMPROOT/sc/sc.jsonl"
@@ -93,6 +100,7 @@ check "no jq: --incidents store unchanged" 0 "$(rows)"
 
 # 7. SessionEnd hook spawns the pass detached; foreground is fast; vault not committed
 newstore; mksession sf main-squad.jsonl
+VAULT_COMMITS_BEFORE="$(git -C "$F_VAULT" rev-list --count HEAD 2>/dev/null || echo 0)"
 START="$(date +%s%N 2>/dev/null)"; case "$START" in *N) START="$(perl -MTime::HiRes=time -e 'printf "%d", time*1000000000')" ;; esac
 printf '{"cwd":"%s","transcript_path":"%s","session_id":"sf"}' "$F_PROJECT" "$TMPROOT/sf/sf.jsonl" | bash "$SUT" >/dev/null 2>&1
 END="$(date +%s%N 2>/dev/null)"; case "$END" in *N) END="$(perl -MTime::HiRes=time -e 'printf "%d", time*1000000000')" ;; esac
@@ -101,7 +109,7 @@ i=0; while [ "$(rows)" -lt 1 ] && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done
 check "hook spawned the pass (row appears)" 1 "$(rows)"
 [ $(( (END - START) / 1000000 )) -lt 1000 ] && ok "foreground < 1 s" || bad "foreground < 1 s"
 [ -f "$TMPROOT/claude-called" ] && bad "no model call" || ok "no model call"
-check "vault not committed by the pass" 0 "$(git -C "$F_VAULT" log --oneline 2>/dev/null | grep -c 'incident')"
+check "vault not committed by the pass" "$VAULT_COMMITS_BEFORE" "$(git -C "$F_VAULT" rev-list --count HEAD 2>/dev/null || echo 0)"
 
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]
