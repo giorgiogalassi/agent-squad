@@ -273,8 +273,8 @@ Cody resumes rather than restarts. Third attempt → escalate via 2c.
 
 **Success** = connected: PR opened (or branch pushed with printed manual
 instructions — Cody's defined fallback counts); detached: committed
-locally with paste-ready PR description, no push. Tests passed or
-skipped-for-none. Then:
+locally with paste-ready PR description, no push. Tests passed, or
+the issue is `exempt`/`skipped` in Test specs. Then:
 
 - **Committed, PR not opened** (detached non-last issue only —
   connected always opens): connected n/a; detached append
@@ -298,11 +298,13 @@ Retry with the error output appended to Cody's context.
 
 **Immediate escalation** (skip retries): two consecutive attempts with
 identical error and no new diff; Cody reports ambiguity needing a human;
-auth/environment failure; loop symptoms (repeated identical tool
-sequences without file changes).
+auth/environment failure; Cody reports no test runner or open Test specs;
+loop symptoms (repeated identical tool sequences without file changes).
 
-**Not a failure:** tests skipped because none exist; pre-existing
-failures on main (note in `progress.txt` and the PR body).
+Tests still red after the retries are an escalation (no PR).
+
+**Not a failure:** pre-existing failures on main (note in
+`progress.txt` and the PR body).
 
 ### 2c. Escalation
 

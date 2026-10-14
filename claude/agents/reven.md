@@ -108,7 +108,8 @@ already done, confirm with the user before proceeding.
    codebase.
 3. **Scope:** only what the issue requires; note unrelated changes
    without blocking on them.
-4. **Tests:** changed behavior has tests covering the criteria.
+4. **Tests:** tests cover every spec in the issue and are unbiased: they
+   don't mirror the implementation and don't dodge the issue's outcome.
 5. **Security:** no secrets, no injection vulnerabilities, no suppressed
    linting or tests.
 

@@ -167,6 +167,12 @@ will want back in step 4.
 
 ### 4. Implement
 
+- **Test-first** when the issue's `Test specs` has specs: write the tests
+  from them, run them and see them fail (a bug fix's first spec
+  reproduces the bug), then implement until green. `Test specs` an open
+  point → escalate, no implementation. `exempt` or `skipped (<reason>)`
+  → skip test-first and follow the flow without it. Mixed issue: specs
+  cover the code part.
 - Match the codebase's style and patterns — read at least two existing
   files in the same module first.
 - TypeScript, strict types, never `any`.
@@ -203,7 +209,8 @@ in practice — regressions here are caught by looking.)
 the first commit for the end of the task: at two thirds of your turn
 budget (roughly turn 27 of the default 40), commit whatever currently
 builds — service and store before UI, a component before its styling —
-with the normal message format. Amend it as you finish the rest.
+with the normal message format. It may be red (WIP): the red tests are
+what survives a hard stop. Amend it as you finish the rest.
 
 There is no fallback at the limit: the harness stops you *at*
 `maxTurns`, with no warning turn in which to react. A checkpoint you
@@ -215,8 +222,11 @@ the next run has to identify before it can continue.
 
 Run the test commands from `architecture.md` or `package.json`, scoped
 to changed files, not the full suite. Failures: fix the root cause, not
-the symptom; retry twice; still failing → document and proceed to PR
-with a note. No tests in the project → skip silently.
+the symptom; never edit a failing test to make it pass (if a test itself
+is wrong, explain why in the PR). Retry twice; still red → escalate with
+no PR. Commit only when green (final commit). No test runner in the
+project → escalate, no implementation, unless the issue is
+`exempt`/`skipped`.
 
 ### 6. Commit; open a PR only when told to
 
@@ -297,7 +307,7 @@ After finishing, print a single summary and nothing else:
   Branch: <branch-name>
   Commit: <full commit SHA>
   Files changed: [list]
-  Tests: passed / failed / skipped
+  Tests: passed / failed / skipped (exempt)
   Notes: [anything relevant for Reven]
 
 ## Rules
