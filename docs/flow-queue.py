@@ -39,9 +39,9 @@ STEPS = [
 ]
 # time windows (in steps) for overlays
 WINDOWS = {
-    "b12": (4.5, 11.9),            # #12 -> main
-    "b13s": (6, 8),                # #13 -> 12-... (hidden while in the sidecar)
-    "b13m": (9, 11.9),             # #13 -> main after retarget
+    "b13s": (7, 8),                # #13 -> 12-... once tests are done (hidden in the sidecar)
+    "b13m": (9, 10),               # #13 -> main: the retarget
+    "mg12": (9, 11.9), "mg13": (10, 11.9),  # merged labels, only at the end
     "m12": (9, 11.9), "m13": (10, 11.9),
     "red12": (4, 4.45), "grn12": (4.45, 5),
     "red13": (6, 6.45), "grn13": (6.45, 7),
@@ -155,7 +155,7 @@ for key in [k for k, *_r in STATIONS] + [SIDE[0]]:
 
 # reduced motion: step 7 (both PRs open, stacked, under review)
 static = (f"#t12{{{tf(pos('reven', '12'))}}}#t13{{{tf(pos('reven', '13'))}}}"
-          "#t12>.body,#t13>.body,#b12,#b13s,#cstatic,#loop{opacity:1}")
+          "#t12>.body,#t13>.body,#b13s,#cstatic,#loop{opacity:1}")
 
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="ttl dsc">',
        '<title id="ttl">Agent Squad: one batch through the pipeline</title>',
@@ -260,9 +260,9 @@ def token(tok, label, tags, plan=False):
 
 
 out.append(token("plan", "plan", [], plan=True))
-out.append(token("12", "#12", [("b12", "tag", "→ main"), ("red12", "red", "✗ tests"), ("grn12", "grn", "✓ tests")]))
+out.append(token("12", "#12", [("mg12", "grn", "✓ merged"), ("red12", "red", "✗ tests"), ("grn12", "grn", "✓ tests")]))
 out.append(token("13", "#13", [("b13s", "tag", "→ 12-…"), ("b13m", "tag", "→ main"), ("red13", "red", "✗ tests"),
-                              ("grn13", "grn", "✓ tests")]))
+                              ("grn13", "grn", "✓ tests"), ("mg13", "grn", "✓ merged")]))
 # the sidecar fix note sits beside #13 while it is in the sidecar; position it absolutely
 fx, fy = cx(SIDE_X) + BOX_W / 2 + 10, SIDE_Y + BOX_H / 2 + 4
 out.append(f'<text id="fix13" class="fix mono ov" x="{fx:.1f}" y="{fy}">fix review note</text>')

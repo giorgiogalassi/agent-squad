@@ -45,9 +45,10 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 @keyframes vis12{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
 @keyframes mv13{0%{transform:translate(247.1px,0.0px)}15.385%{transform:translate(247.1px,0.0px)}16.538%{transform:translate(404.3px,0.0px)}23.077%{transform:translate(404.3px,0.0px)}24.231%{transform:translate(561.4px,0.0px)}30.769%{transform:translate(561.4px,0.0px)}31.923%{transform:translate(561.4px,0.0px)}38.462%{transform:translate(561.4px,0.0px)}39.615%{transform:translate(718.6px,0.0px)}46.154%{transform:translate(718.6px,0.0px)}47.308%{transform:translate(718.6px,0.0px)}53.846%{transform:translate(718.6px,0.0px)}55.000%{transform:translate(875.7px,0.0px)}61.538%{transform:translate(875.7px,0.0px)}62.692%{transform:translate(850.3px,72.0px)}69.231%{transform:translate(850.3px,72.0px)}70.385%{transform:translate(875.7px,0.0px)}76.923%{transform:translate(875.7px,0.0px)}78.077%{transform:translate(1032.9px,0.0px)}84.615%{transform:translate(1032.9px,0.0px)}85.769%{transform:translate(1190.0px,0.0px)}92.308%{transform:translate(1190.0px,0.0px)}93.462%{transform:translate(1190.0px,0.0px)}100%{transform:translate(1190.0px,0.0px)}}
 @keyframes vis13{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
-@keyframes w_b12{0%{opacity:0}34.615%{opacity:0}35.077%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
-@keyframes w_b13s{0%{opacity:0}46.154%{opacity:0}46.615%{opacity:1}61.077%{opacity:1}61.538%{opacity:0}100%{opacity:0}}
-@keyframes w_b13m{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
+@keyframes w_b13s{0%{opacity:0}53.846%{opacity:0}54.308%{opacity:1}61.077%{opacity:1}61.538%{opacity:0}100%{opacity:0}}
+@keyframes w_b13m{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}76.462%{opacity:1}76.923%{opacity:0}100%{opacity:0}}
+@keyframes w_mg12{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
+@keyframes w_mg13{0%{opacity:0}76.923%{opacity:0}77.385%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
 @keyframes w_m12{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
 @keyframes w_m13{0%{opacity:0}76.923%{opacity:0}77.385%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
 @keyframes w_red12{0%{opacity:0}30.769%{opacity:0}31.231%{opacity:1}33.769%{opacity:1}34.231%{opacity:0}100%{opacity:0}}
@@ -86,9 +87,10 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 #t12>.body{animation:vis12 16.9s linear infinite}
 #t13{animation:mv13 16.9s linear infinite}
 #t13>.body{animation:vis13 16.9s linear infinite}
-#b12{animation:w_b12 16.9s linear infinite}
 #b13s{animation:w_b13s 16.9s linear infinite}
 #b13m{animation:w_b13m 16.9s linear infinite}
+#mg12{animation:w_mg12 16.9s linear infinite}
+#mg13{animation:w_mg13 16.9s linear infinite}
 #m12{animation:w_m12 16.9s linear infinite}
 #m13{animation:w_m13 16.9s linear infinite}
 #red12{animation:w_red12 16.9s linear infinite}
@@ -121,7 +123,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 #hl_merge{animation:hl_merge 16.9s linear infinite}
 #hl_ckpt{animation:hl_ckpt 16.9s linear infinite}
 #hl_sidecar{animation:hl_sidecar 16.9s linear infinite}}
-@media (prefers-reduced-motion:reduce){#t12{transform:translate(875.7px,0.0px)}#t13{transform:translate(875.7px,0.0px)}#t12>.body,#t13>.body,#b12,#b13s,#cstatic,#loop{opacity:1}}
+@media (prefers-reduced-motion:reduce){#t12{transform:translate(875.7px,0.0px)}#t13{transform:translate(875.7px,0.0px)}#t12>.body,#t13>.body,#b13s,#cstatic,#loop{opacity:1}}
 </style>
 <rect class="bg" x="0" y="0" width="1280" height="400" rx="8"/>
 <line class="track" x1="90.0" y1="146" x2="1190.0" y2="146"/>
@@ -149,8 +151,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 <g id="n1" class="ov"><rect class="badge" x="589.4" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="605.4" y="72" text-anchor="middle">1/2</text></g>
 <g id="n2" class="ov"><rect class="badge" x="589.4" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="605.4" y="72" text-anchor="middle">2/2</text></g>
 <g id="tplan"><g class="body ov"><rect class="pill plan" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="178.5" text-anchor="middle">plan</text></g></g>
-<g id="t12"><g class="body ov"><rect class="pill" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="178.5" text-anchor="middle">#12</text><g id="m12" class="ov"><rect class="pill merged" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="178.5" text-anchor="middle">#12</text></g><text id="b12" class="tag mono ov" x="36.0" y="178.5">→ main</text><text id="red12" class="red mono ov" x="36.0" y="178.5">✗ tests</text><text id="grn12" class="grn mono ov" x="36.0" y="178.5">✓ tests</text></g></g>
-<g id="t13"><g class="body ov"><rect class="pill" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="214.5" text-anchor="middle">#13</text><g id="m13" class="ov"><rect class="pill merged" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="214.5" text-anchor="middle">#13</text></g><text id="b13s" class="tag mono ov" x="36.0" y="214.5">→ 12-…</text><text id="b13m" class="tag mono ov" x="36.0" y="214.5">→ main</text><text id="red13" class="red mono ov" x="36.0" y="214.5">✗ tests</text><text id="grn13" class="grn mono ov" x="36.0" y="214.5">✓ tests</text></g></g>
+<g id="t12"><g class="body ov"><rect class="pill" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="178.5" text-anchor="middle">#12</text><g id="m12" class="ov"><rect class="pill merged" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="178.5" text-anchor="middle">#12</text></g><text id="mg12" class="grn mono ov" x="36.0" y="178.5">✓ merged</text><text id="red12" class="red mono ov" x="36.0" y="178.5">✗ tests</text><text id="grn12" class="grn mono ov" x="36.0" y="178.5">✓ tests</text></g></g>
+<g id="t13"><g class="body ov"><rect class="pill" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="214.5" text-anchor="middle">#13</text><g id="m13" class="ov"><rect class="pill merged" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="214.5" text-anchor="middle">#13</text></g><text id="b13s" class="tag mono ov" x="36.0" y="214.5">→ 12-…</text><text id="b13m" class="tag mono ov" x="36.0" y="214.5">→ main</text><text id="red13" class="red mono ov" x="36.0" y="214.5">✗ tests</text><text id="grn13" class="grn mono ov" x="36.0" y="214.5">✓ tests</text><text id="mg13" class="grn mono ov" x="36.0" y="214.5">✓ merged</text></g></g>
 <text id="fix13" class="fix mono ov" x="1030.3" y="286.0">fix review note</text>
 <g id="c0" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 1 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Forge plans the change and sizes it</text></g>
 <g id="c1" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 2 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Chisel turns the plan into issues #12 and #13, both labelled needs-review</text></g>
