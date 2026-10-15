@@ -253,6 +253,7 @@ agent-squad/
       chisel-config-validate.py
                        Validates chisel-config.json shape
       squad-stats.py   Transcript importer and report behind /stats
+      squad-doctor.sh  Report-only install-freshness check
 ```
 
 ## Installation
@@ -276,7 +277,24 @@ cp claude/hooks/squad-labels.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squ
 cp claude/hooks/squad-branch.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-branch.sh
 cp claude/hooks/squad-incidents.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-incidents.sh
 cp claude/hooks/squad-stats.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-stats.py
+cp claude/hooks/squad-doctor.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-doctor.sh
+pwd > ~/.claude/.agent-squad-source   # run from the repo root: records the source for squad doctor
 ```
+
+### Squad doctor
+
+`squad-doctor.sh` is a report-only freshness check for the manual copy
+install. It reads the repo path from `~/.claude/.agent-squad-source`,
+compares `~/.claude/{agents,skills,hooks}` with the repo's `claude/` copies
+by content hash and prints `STALE=<n>` plus `STALE_FILE=` / `ORPHAN_FILE=`
+lines (orphans are files the repo once shipped and later removed; your own
+files are never flagged). It never modifies anything and is silent when the
+record, the repo or an install directory is missing. With
+`lore-orient.sh` installed, a session start shows one
+`squad doctor: N installed files stale — reinstall per README` signal
+when N is above 0. Run it by hand with `~/.claude/hooks/squad-doctor.sh`;
+`SQUAD_DOCTOR_HOME` overrides the install dir. If agent-squad later ships
+as a native plugin, doctor becomes redundant and should be removed.
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see

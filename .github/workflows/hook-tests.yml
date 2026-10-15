@@ -35,6 +35,8 @@ on:
       - "claude/hooks/squad-common.sh"
       - "scripts/test-lore-incidents.sh"
       - "claude/hooks/lore-checkpoint.sh"
+      - "scripts/test-squad-doctor.sh"
+      - "claude/hooks/squad-doctor.sh"
       - "scripts/gh-shim/**"
       - "claude/hooks/squad-stats.py"
       - "scripts/test-squad-stats.sh"
@@ -92,3 +94,7 @@ jobs:
       - name: Run scripts/test-squad-stats.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-stats.sh; else bash scripts/test-squad-stats.sh; fi
+
+      - name: Run scripts/test-squad-doctor.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-doctor.sh; else bash scripts/test-squad-doctor.sh; fi
