@@ -48,6 +48,7 @@ asst() {  # asst <ts> <id> <model> <in> <cw> <cw1h> <read> <out> <session> <cwd>
   printf '{"type":"user","timestamp":"2026-10-14T10:30:00.000Z","sessionId":"s1","cwd":"%s","message":{"role":"user","content":"<command-name>/clear</command-name>"}}\n' "$APP"
   asst 2026-10-14T10:31:00.000Z msg_2 claude-opus-5-5 10000 0 0 0 1000 s1 "$APP"
   printf '{"type":"assistant","timestamp":"2026-10-14T10:32:00.000Z","sessionId":"s1","message":{"id":"msg_syn","model":"<synthetic>","usage":{"input_tokens":5,"output_tokens":5}}}\n'
+  printf '{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-10-14T10:40:00.000Z","sessionId":"s1","uuid":"h1","hookInfos":[{"command":"~/.claude/stop-check.sh","durationMs":55}],"hookErrors":[],"hookAdditionalContext":[],"preventedContinuation":false}\n'
 } > "$P1/s1.jsonl"
 asst 2026-10-14T10:10:00.000Z msg_c1 claude-sonnet-5-5 50000 0 0 0 100000 s1 "$APP" > "$P1/s1/subagents/agent-a1.jsonl"
 echo '{"agentType":"cody"}' > "$P1/s1/subagents/agent-a1.meta.json"
@@ -161,7 +162,10 @@ check "HOOK_BLOCKS" 1 "$(key HOOK_BLOCKS)"
 check "MCP_SERVERS" demo "$(key MCP_SERVERS)"
 grep -q "| demo | 1 | 1 / 3 | \$1.20 / \$2.22 |" "$REPORT" && ok "MCP with/without row" || bad "MCP with/without row"
 grep -q "| 2.0 / 0.0 |" "$REPORT" && ok "blocked calls per session" || bad "blocked calls per session"
-grep -q "^| Grep | 1 | 20% | 1 | 1 | 1 | 0 | 0 | 0 |" "$REPORT" && ok "tool table" || bad "tool table"
+grep -q "^| Grep | 1 | 20% | 1 | 1 | 1 | 0 | 0 | 0 | 0 |" "$REPORT" && ok "tool table" || bad "tool table"
+grep -q "^| stop-check.sh | stop | 1 | 1 | 55 | 0 | 0 | 0 |" "$REPORT" && ok "hooks section" || bad "hooks section"
+grep -q "^## By Claude Code version" "$REPORT" && ok "version section" || bad "version section"
+grep -q "^| Cost per session | lower | n/a |" "$REPORT" && ok "trend: no previous period" || bad "trend: no previous period"
 HTML="$(key HTML)"
 check "HTML next to the Markdown report" "${REPORT%.md}.html" "$HTML"
 grep -q "<svg" "$HTML" && ok "HTML has charts" || bad "HTML has charts"
@@ -179,14 +183,20 @@ printf '%s' "$PRICES" > "$STORE/prices.json"
 check "prices.json override" 27.86 "$(key COST_USD)"
 rm -f "$STORE/prices.json"
 
-# error-patterns.json: a hook's own denial reason, recognized only when configured.
-printf '%s\n' '{"type":"assistant","timestamp":"2026-10-14T14:00:00.000Z","sessionId":"s5","cwd":"/work/fifth","message":{"id":"msg_y1","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0},"content":[{"type":"tool_use","id":"y1","name":"Grep","input":{}}]}}' \
-  '{"type":"user","timestamp":"2026-10-14T14:00:01.000Z","sessionId":"s5","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"y1","is_error":true,"content":"Use demo_lookup instead of grep for symbols"}]}}' \
-  > "$CLAUDE_PROJECTS_DIR/-work-fourth/s5.jsonl"
-echo '{"hook":["^Use demo_lookup instead"]}' > "$STORE/error-patterns.json"
+# Native permissionDecision: a hook's own denial reason carries no marker
+# in the text; the structured decision on the result line classifies it.
+PD='{"type":"user","timestamp":"2026-10-14T14:00:01.000Z","sessionId":"s5","permissionDecision":%s,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"%s","is_error":true,"content":"%s"}]}}'
+{
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-14T14:00:00.000Z","sessionId":"s5","cwd":"/work/fifth","version":"2.1.300","message":{"id":"msg_y1","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":0},"content":[{"type":"tool_use","id":"y1","name":"Grep","input":{}},{"type":"tool_use","id":"y2","name":"Bash","input":{}}]}}'
+  printf "$PD\n" '{"decision":"reject","source":"hook","reasonType":"hook"}' y1 "Use demo_lookup instead of grep"
+  printf "$PD\n" '{"decision":"reject","source":"config","reasonType":"rule"}' y2 "Permission to use Bash with command rm has been denied."
+} > "$CLAUDE_PROJECTS_DIR/-work-fourth/s5.jsonl"
+# The same message copied into a second transcript without its version
+# (a resumed session): blanks are filled from the other copy.
+sed 's/,"version":"2.1.300"//' "$CLAUDE_PROJECTS_DIR/-work-fourth/s5.jsonl" > "$CLAUDE_PROJECTS_DIR/-work-fourth/a-s5-copy.jsonl"
 python3 "$SUT" collect >/dev/null 2>&1
-check "custom hook reason via error-patterns.json" "hook:Grep" "$(row msg_y1 14)"
-rm -f "$STORE/error-patterns.json"
+check "hook denial from permissionDecision" "hook:Grep,policy:Bash" "$(row msg_y1 14)"
+check "Claude Code version recorded" 2.1.300 "$(row msg_y1 15)"
 
 # ---- report, connected with fake gh ---------------------------------------
 SQ="$SECOND_BRAIN_PATH/projects/app-display/.squad"; mkdir -p "$SQ"
@@ -229,6 +239,30 @@ EOF
 OUT="$(cat "$TMPROOT/out")"
 check "gh failure is not fatal" 0 "$RC"
 check "QUALITY gh-error" gh-error "$(key QUALITY)"
+
+# ---- trend: 12 sessions per period, last period 20% cheaper per session ----
+export SQUAD_STATS_DIR="$TMPROOT/trendstore"; mkdir -p "$SQUAD_STATS_DIR"
+export CLAUDE_PROJECTS_DIR="$TMPROOT/trendprojects"; mkdir -p "$CLAUDE_PROJECTS_DIR/-t"
+i=0
+while [ $i -lt 12 ]; do
+  d=$(printf '%02d' $((i + 1)))
+  asst "2026-08-${d}T10:00:00.000Z" "p$i" claude-opus-5-5 250000 0 0 0 0 "tp$i" /t > "$CLAUDE_PROJECTS_DIR/-t/tp$i.jsonl"
+  asst "2026-09-${d}T10:00:00.000Z" "l$i" claude-opus-5-5 200000 0 0 0 0 "tl$i" /t > "$CLAUDE_PROJECTS_DIR/-t/tl$i.jsonl"
+  i=$((i + 1))
+done
+asst 2026-09-05T11:00:00.000Z q1 claude-opus-5-5 1 0 0 0 0 tq /t > "$CLAUDE_PROJECTS_DIR/-t/tq.jsonl"
+printf '{"type":"user","timestamp":"2026-09-05T10:59:00.000Z","sessionId":"tq","cwd":"/t","message":{"role":"user","content":"<command-name>/ralph</command-name>"}}\n' >> "$CLAUDE_PROJECTS_DIR/-t/tq.jsonl"
+asst 2026-08-05T11:00:00.000Z q0 claude-opus-5-5 1 0 0 0 0 tq0 /t > "$CLAUDE_PROJECTS_DIR/-t/tq0.jsonl"
+printf '{"type":"user","timestamp":"2026-08-05T10:59:00.000Z","sessionId":"tq0","cwd":"/t","message":{"role":"user","content":"<command-name>/ralph</command-name>"}}\n' >> "$CLAUDE_PROJECTS_DIR/-t/tq0.jsonl"
+python3 "$SUT" collect >/dev/null 2>&1
+( cd "$TMPROOT" && SQUAD_STATS_NOW=2026-09-20T00:00:00Z python3 "$SUT" report ) > "$TMPROOT/out" 2>/dev/null; OUT="$(cat "$TMPROOT/out")"
+REPORT="$(key REPORT)"
+check "TREND_COST_PER_SESSION (a tiny 13th session each)" "-20%" "$(key TREND_COST_PER_SESSION)"
+check "TREND_SESSIONS (prev/last)" "13/13" "$(key TREND_SESSIONS)"
+grep -q "^| Cost per session | lower | \$0.92 | \$0.74 | -20% | 13 / 13 |" "$REPORT" && ok "trend row" || bad "trend row"
+grep -q "^| Cost per vanilla session | lower | \$1.00 | \$0.80 | -20% | 12 / 12 |" "$REPORT" && ok "trend row per kind" || bad "trend row per kind"
+grep -q "^| Cost per squad session | lower | \$0.00 | \$0.00 | too few units | 1 / 1 |" "$REPORT" && ok "trend: too few units" || bad "trend: too few units"
+grep -q "^| Squad cost per merged PR | lower | n/a | n/a | n/a | 0 / 0 |" "$REPORT" && ok "trend: n/a without PRs" || bad "trend: n/a without PRs"
 
 echo
 echo "$PASS passed, $FAIL failed"

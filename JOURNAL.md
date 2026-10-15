@@ -1330,10 +1330,18 @@ tool pays off, there has to be a baseline of sessions without it.
 Tools in the middle (MCP servers, hooks) are measured by technology,
 never by product: tool calls by name, MCP servers parsed from the
 `mcp__<server>__` prefix, failed calls classified by who stopped them.
-A new server or hook shows up in the report without a code change. Hook
-denials are matched on Claude Code's own wording; a hook's custom
-denial reason carries no marker, so `error-patterns.json` extends the
-match per installation.
+A new server or hook shows up in the report without a code change. Who
+stopped a call comes from the structured `permissionDecision` Claude
+Code writes on the tool-result line (decision, source, reason type);
+matching the result text is only a fallback for older transcripts,
+because a hook that denies with its own reason leaves no marker in the
+text. Hook runs come from Claude Code's `<event>_hook_summary` records
+and `hook_*` attachments, so hook duration and injected context are
+measured too.
+
+Improvement is measured per unit of work, never as cost alone: the last
+28 days against the 28 before, with the unit count beside every change
+and no change shown below 10 units per period.
 
 **Deliberately not measured yet:** "your commits on top of Cody's PR".
 Cody commits under the user's git identity, so authorship cannot separate

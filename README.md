@@ -159,10 +159,20 @@ connected mode, the outcomes of the PRs recorded in `progress.txt`
   report shows the tool mix and, for each MCP server (`mcp__<server>__*`),
   sessions that used it against sessions that did not: cost, tokens and
   cache hit per session, and blocked calls. Failed calls are split by who
-  stopped them: a hook, the auto-mode classifier, you, or the tool itself.
-  A hook that denies with its own reason reaches the model as that reason
-  alone; teach the report to recognize it in
-  `<vault>/squad-stats/error-patterns.json` (`{"hook": ["<regex>"]}`).
+  stopped them (a hook, the auto-mode classifier, a permission rule or
+  mode, you, or the tool itself), read from the `permissionDecision`
+  Claude Code writes next to each tool result. Hook runs come from Claude
+  Code's own hook records: which hook, on which event, how long it took,
+  whether it blocked, and how much context it added to the prompt.
+- **Are you improving?** The last 28 days against the 28 before, per unit
+  of work: cost per session by kind, tokens per session, cache hit,
+  blocked calls, Reven approval at first review, squad cost per merged PR
+  and the rework proxy. A change is shown only with at least 10 units in
+  both periods. Read cost next to outcome: cost down with more rework is
+  not an improvement.
+- **Claude Code version** is recorded per call (the transcript's own
+  `version` field) and the report has a table by version, because an
+  update can move cost more than any change of yours.
 - **Attribution is approximate.** A slash command you type stays active
   until the next command or a resetting built-in such as `/clear`; a skill
   the model loads on its own lasts until your next message, so a turn that

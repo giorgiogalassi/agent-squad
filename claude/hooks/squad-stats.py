@@ -112,59 +112,48 @@ HAIKU_TIER_LIMIT = 100_000
 
 USAGE_COLS = ["ts", "session_id", "project", "agent", "skill", "model",
               "input", "cache_write_5m", "cache_write_1h", "cache_read",
-              "output", "message_id", "tools", "tool_errors"]
+              "output", "message_id", "tools", "tool_errors", "cc_version"]
 VERDICT_COLS = ["ts", "session_id", "project", "verdict", "message_id"]
-TOOL_COLS = ["ts", "session_id", "project", "agent", "skill", "tool", "family",
-             "outcome", "result_chars", "tool_use_id"]
 HOOK_COLS = ["ts", "session_id", "project", "event", "hook", "outcome",
              "duration_ms", "chars", "hook_id"]
 # store file -> (columns, dedupe key)
 TABLES = {
     "usage": (USAGE_COLS, "message_id"),
     "verdicts": (VERDICT_COLS, "message_id"),
-    "tools": (TOOL_COLS, "tool_use_id"),
     "hooks": (HOOK_COLS, "hook_id"),
 }
-CLASSIFIER_DENIAL = "Permission for this action was denied by the Claude Code auto mode classifier"
-USER_DENIAL = "The user doesn't want to proceed"
-HOOK_DENIAL_RE = re.compile(r"(?i)\b(pre|post)?tool ?use\b.*\bhook\b|\bhook\b.*\b(denied|blocked|blocking)\b")
 VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT)\b", re.M)
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
-# Failed tool calls, by who stopped them. Matched on the tool_result text
-# with the wording Claude Code uses; anything else that is_error is a
-# plain tool failure ("error"). A hook that denies with its own reason
-# reaches the model as that reason alone, with no marker: add a pattern
-# for it in <store>/error-patterns.json, e.g. {"hook": ["use tokensave_"]}.
-ERROR_KINDS = [
-    ("classifier", [r"denied by the Claude Code auto mode classifier",
-                    r"^Classifier '[^']+' requires approval"]),
-    ("user", [r"^The user doesn't want to proceed"]),
-    ("hook", [r"Hook (PreToolUse|PermissionRequest)\S* (denied|blocked|asked)",
-              r"\b(PreToolUse|PermissionRequest)(:\S+)? hook (blocking )?error",
-              r"Hook '[^']+' (blocked this action|requires approval)",
-              r"blocked by a \w+ hook"]),
+# Failed tool calls, by who stopped them: hook, classifier (auto mode),
+# policy (a permission rule or mode), user, or the tool itself (error).
+# Claude Code records the decision on the tool_result line as
+# permissionDecision {decision, source, reasonType}; that is the source of
+# truth. Text matching is only a fallback for transcripts without it.
+ERROR_KINDS = ["hook", "classifier", "policy", "user", "error"]
+TEXT_FALLBACK = [
+    ("classifier", re.compile(r"denied by the Claude Code auto mode classifier|^Classifier '[^']+' requires approval")),
+    ("user", re.compile(r"^The user doesn't want to proceed")),
+    ("hook", re.compile(r"Hook (PreToolUse|PermissionRequest)\S* (denied|blocked|asked)"
+                        r"|\b(PreToolUse|PermissionRequest)(:\S+)? hook (blocking )?error"
+                        r"|Hook '[^']+' (blocked this action|requires approval)")),
 ]
-_ERROR_RX = None
 
 
-def error_patterns():
-    """Built-in patterns plus <store>/error-patterns.json, compiled once."""
-    global _ERROR_RX
-    if _ERROR_RX is None:
-        extra = {}
-        try:
-            with open(os.path.join(store_dir(), "error-patterns.json")) as f:
-                extra = json.load(f)
-        except FileNotFoundError:
-            pass
-        except (OSError, ValueError) as e:
-            sys.stderr.write("squad-stats: error-patterns.json ignored: %s\n" % e)
-        _ERROR_RX = []
-        for kind, pats in ERROR_KINDS:
-            more = extra.get(kind) if isinstance(extra, dict) else None
-            pats = pats + [x for x in (more or []) if isinstance(x, str)]
-            _ERROR_RX.append((kind, [re.compile(x) for x in pats]))
-    return _ERROR_RX
+def decision_kind(pd):
+    """Kind for a rejected permissionDecision, None when not a rejection."""
+    if not isinstance(pd, dict) or pd.get("decision") != "reject":
+        return None
+    reason = str(pd.get("reasonType") or "")
+    source = str(pd.get("source") or "")
+    if reason == "hook" or source == "hook":
+        return "hook"
+    if "classifier" in reason or "classifier" in source:
+        return "classifier"
+    if source.startswith("user"):
+        return "user"
+    return "policy"
+
+
 PR_RE = re.compile(r"^\[[^\]]+\]\s+(\d{4}-\d{2}-\d{2})\b.*?\bPR:\s*#(\d+)")
 
 
@@ -370,11 +359,14 @@ def result_text(block):
     return str(c or "")
 
 
-def error_kind(block):
+def error_kind(block, pd=None):
+    kind = decision_kind(pd)
+    if kind:
+        return kind
     text = result_text(block)
-    for kind, rxs in error_patterns():
-        if any(rx.search(text) for rx in rxs):
-            return kind
+    for k, rx in TEXT_FALLBACK:
+        if rx.search(text):
+            return k
     return "error"
 
 
@@ -382,14 +374,16 @@ def usage_rows(records, agent, events, project):
     """One row per API message id. A message can span several lines (one
     per content block): usage comes from the last line, tool calls from
     all of them. Tool errors are joined back from the tool_result that
-    answers each call: "<kind>:<tool>", kind in hook, classifier, user,
-    error."""
+    answers each call: "<kind>:<tool>", kind in ERROR_KINDS."""
     errors = {}
     for rec in records:
         if rec.get("type") == "user":
+            pd = rec.get("permissionDecision")
             for blk in content_blocks(rec.get("message") or {}):
-                if blk.get("type") == "tool_result" and blk.get("is_error"):
-                    errors[blk.get("tool_use_id")] = error_kind(blk)
+                if blk.get("type") != "tool_result":
+                    continue
+                if blk.get("is_error") or decision_kind(pd):
+                    errors[blk.get("tool_use_id")] = error_kind(blk, pd)
     by_id, tools = {}, {}
     for rec in records:
         if rec.get("type") != "assistant":
@@ -425,6 +419,7 @@ def usage_rows(records, agent, events, project):
             "cache_read": int(usage.get("cache_read_input_tokens") or 0),
             "output": int(usage.get("output_tokens") or 0),
             "message_id": mid,
+            "cc_version": rec.get("version") or "",
         }
     for mid, row in by_id.items():
         calls = tools.get(mid, [])
@@ -445,64 +440,6 @@ def verdict_rows(records, session_id, project):
                 mid = (msg.get("id") or rec.get("uuid") or "") + ":verdict"
                 rows[mid] = {"ts": rec.get("timestamp") or "", "session_id": session_id,
                              "project": project, "verdict": m.group(1), "message_id": mid}
-    return list(rows.values())
-
-
-def tool_family(name):
-    """builtin, or mcp:<server> for tools named mcp__<server>__<tool>."""
-    if name.startswith("mcp__"):
-        parts = name.split("__")
-        return "mcp:" + (parts[1] if len(parts) > 2 else "unknown")
-    return "builtin"
-
-
-def result_text(block):
-    c = block.get("content")
-    if isinstance(c, list):
-        return " ".join(str(b.get("text") or "") for b in c if isinstance(b, dict))
-    return str(c or "")
-
-
-def result_outcome(block):
-    if not block.get("is_error"):
-        return "ok"
-    text = result_text(block)
-    if text.startswith(CLASSIFIER_DENIAL):
-        return "denied-classifier"
-    if text.startswith(USER_DENIAL):
-        return "denied-user"
-    if HOOK_DENIAL_RE.search(text[:400]):
-        return "denied-hook"
-    return "error"
-
-
-def tool_rows(records, agent, events, project, session_id):
-    """One row per tool call, joined to its result. A call with no result
-    yet (session still running, or interrupted) is 'no-result'."""
-    results = {}
-    for rec in records:
-        if rec.get("type") == "user":
-            for b in content_blocks(rec.get("message") or {}):
-                if b.get("type") == "tool_result" and b.get("tool_use_id"):
-                    results[b["tool_use_id"]] = b
-    rows = {}
-    for rec in records:
-        if rec.get("type") != "assistant":
-            continue
-        ts = rec.get("timestamp") or ""
-        for b in content_blocks(rec.get("message") or {}):
-            if b.get("type") != "tool_use" or not b.get("id"):
-                continue
-            name = b.get("name") or "unknown"
-            res = results.get(b["id"])
-            rows[b["id"]] = {
-                "ts": ts, "session_id": rec.get("sessionId") or session_id, "project": project,
-                "agent": agent, "skill": skill_at(events, ts), "tool": name,
-                "family": tool_family(name),
-                "outcome": result_outcome(res) if res else "no-result",
-                "result_chars": len(result_text(res)) if res else 0,
-                "tool_use_id": b["id"],
-            }
     return list(rows.values())
 
 
@@ -578,7 +515,6 @@ def import_transcripts(pmap):
         project = project_name(cwd, pmap)
         events = skill_events(records)
         usage = usage_rows(records, "main", events, project)
-        tools = tool_rows(records, "main", events, project, session_id)
         hooks = hook_rows(records, session_id, project)
         verdicts = []
         subdir = os.path.join(os.path.splitext(main)[0], "subagents")
@@ -594,11 +530,10 @@ def import_transcripts(pmap):
             for r in srecs:
                 r.setdefault("sessionId", session_id)
             usage.extend(usage_rows(srecs, agent, events, project))
-            tools.extend(tool_rows(srecs, agent, events, project, session_id))
             hooks.extend(hook_rows(srecs, session_id, project))
             if agent == "reven":
                 verdicts.extend(verdict_rows(srecs, session_id, project))
-        yield main, {"usage": usage, "verdicts": verdicts, "tools": tools, "hooks": hooks}
+        yield main, {"usage": usage, "verdicts": verdicts, "hooks": hooks}
 
 
 # ------------------------------------------------------------------ store
@@ -648,6 +583,7 @@ def cmd_collect(args):
     seen = {t: {r[key] for r in read_tsv(os.path.join(d, t + ".tsv"), cols)}
             for t, (cols, key) in TABLES.items()}
     new = {t: [] for t in TABLES}
+    pending = {t: {} for t in TABLES}
     files, oldest = 0, None
     for path, tables in import_transcripts(load_project_map()):
         files += 1
@@ -659,9 +595,20 @@ def cmd_collect(args):
         for t, rows in tables.items():
             key = TABLES[t][1]
             for r in rows:
-                if r[key] and r[key] not in seen[t]:
+                if not r[key]:
+                    continue
+                if r[key] not in seen[t]:
                     seen[t].add(r[key])
+                    pending[t][r[key]] = r
                     new[t].append(r)
+                elif r[key] in pending[t]:
+                    # The same message can appear in two transcripts (a
+                    # session resumed in another directory copies its
+                    # history, without some fields): fill the blanks.
+                    kept = pending[t][r[key]]
+                    for c, v in r.items():
+                        if v not in ("", None) and kept.get(c) in ("", None):
+                            kept[c] = v
     for t, (cols, _) in TABLES.items():
         new[t].sort(key=lambda r: r["ts"])
         append_tsv(os.path.join(d, t + ".tsv"), cols, new[t])
@@ -670,7 +617,6 @@ def cmd_collect(args):
     emit("CHANGED", "yes" if changed else "no")
     emit("ROWS_ADDED", len(new["usage"]))
     emit("VERDICTS_ADDED", len(new["verdicts"]))
-    emit("TOOL_CALLS_ADDED", len(new["tools"]))
     emit("HOOK_RUNS_ADDED", len(new["hooks"]))
     emit("FILES_SCANNED", files)
     emit("OLDEST_TRANSCRIPT", oldest.strftime("%Y-%m-%d") if oldest else "")
@@ -837,7 +783,7 @@ def pr_outcomes(since, paths):
             later = sum(1 for c in d.get("commits") or []
                         if created and (parse_ts(c.get("committedDate")) or created) > created)
             results.append({"number": n, "state": d.get("state"), "created": created,
-                            "merged": merged, "followups": later})
+                            "merged": merged, "followups": later, "date": prs[n]})
     except (RuntimeError, ValueError) as e:
         sys.stderr.write("squad-stats: GitHub section skipped: %s\n" % e)
         return "gh-error", None
@@ -857,35 +803,42 @@ def cmd_report(args):
     since = now - dt.timedelta(days=days)
     prices = load_prices(d)
 
-    rows = [to_int_row(r) for r in read_tsv(os.path.join(d, "usage.tsv"), USAGE_COLS)]
-    rows = [r for r in rows if r["_t"] and since <= r["_t"] <= now]
-    unpriced = set()
-    for r in rows:
+    # Everything is classified over the whole store, then cut to the
+    # window: the trend section compares against the weeks before it.
+    all_rows = [to_int_row(r) for r in read_tsv(os.path.join(d, "usage.tsv"), USAGE_COLS)]
+    all_rows = [r for r in all_rows if r["_t"] and r["_t"] <= now]
+    for r in all_rows:
         r["_cost"] = row_cost(r, prices)
-        if r["_cost"] is None:
-            unpriced.add(r["model"])
         r["_squad"] = is_squad(r)
-    verdicts = [v for v in read_tsv(os.path.join(d, "verdicts.tsv"), VERDICT_COLS)
-                if parse_ts(v["ts"]) and since <= parse_ts(v["ts"]) <= now]
-
     # Session kind, decided over the whole session: squad beats custom
     # beats vanilla (nothing but built-in Claude Code).
     kind = {}
-    for r in rows:
+    for r in all_rows:
         k = "squad" if r["_squad"] else ("custom" if is_custom(r) else "vanilla")
         prev = kind.get(r["session_id"], "vanilla")
         kind[r["session_id"]] = min(prev, k, key=KIND_ORDER.index)
-    for r in rows:
+    for r in all_rows:
         r["_kind"] = kind[r["session_id"]]
+    rows = [r for r in all_rows if since <= r["_t"]]
+    unpriced = {r["model"] for r in rows if r["_cost"] is None}
+    all_verdicts = [v for v in read_tsv(os.path.join(d, "verdicts.tsv"), VERDICT_COLS)
+                    if parse_ts(v["ts"]) and parse_ts(v["ts"]) <= now]
+    for v in all_verdicts:
+        v["_t"] = parse_ts(v["ts"])
+    verdicts = [v for v in all_verdicts if since <= v["_t"]]
+    hook_runs = [h for h in read_tsv(os.path.join(d, "hooks.tsv"), HOOK_COLS)
+                 if parse_ts(h["ts"]) and since <= parse_ts(h["ts"]) <= now]
 
     total = sum(r["_cost"] or 0 for r in rows)
-    sessions = set(kind)
+    sessions = {r["session_id"] for r in rows}
     squad_cost = sum(r["_cost"] or 0 for r in rows if r["_squad"])
     squad_rows = [r for r in rows if r["_squad"]]
     by_skill = group(rows, lambda r: r["skill"] or "(no skill)")
     named = [kv for kv in by_skill if kv[0] != "(no skill)"]
 
-    quality, gh = pr_outcomes(since, resolve_paths())
+    horizon = now - dt.timedelta(days=max(days, 2 * TREND_DAYS))
+    quality, gh = pr_outcomes(horizon, resolve_paths())
+    all_prs = gh["prs"] if gh else []
 
     L = ["# Claude Code stats: last %d days" % days, "",
          "Window: %s to %s (UTC). Generated by `squad-stats.py report`." % (
@@ -914,6 +867,12 @@ def cmd_report(args):
     L += table("Cost by model", group(rows, lambda r: r["model"]), total, "Model")
     tool_lines, tstats = tool_sections(rows)
     L += tool_lines
+    L += hook_section(hook_runs)
+    L += ["## By Claude Code version", "",
+          "An update of Claude Code can move cost more than any change of yours.", ""]
+    L += normalized_table("Version", sorted(
+        group_rows(rows, lambda r: r["cc_version"] or "(unknown)").items(),
+        key=lambda kv: version_key(kv[0])), total)
 
     weeks = {}
     for r in rows:
@@ -951,7 +910,7 @@ def cmd_report(args):
     merged_n = total_prs = 0
     L += ["## PR outcomes (GitHub)", ""]
     if gh:
-        prs = gh["prs"]
+        prs = [p for p in all_prs if p["date"] >= since.strftime("%Y-%m-%d")]
         total_prs = len(prs)
         merged = [p for p in prs if p["merged"]]
         merged_n = len(merged)
@@ -976,6 +935,10 @@ def cmd_report(args):
                   "gh-error": "gh failed; see stderr."}.get(quality, quality)
         L += ["Skipped: %s" % reason, ""]
 
+    trend_lines, trend = trend_section(all_rows, all_verdicts, all_prs,
+                                       gh["project"] if gh else None, now)
+    L += trend_lines
+
     L += ["## Questions", "",
           "Write down the questions you ask while reading this in `questions.md`, "
           "one level up from this report. The ones that keep coming back become the KPIs.", ""]
@@ -992,7 +955,7 @@ def cmd_report(args):
     pt = prompt_tokens(rows)
     ctx = {
         "total": total, "days": days, "sessions": len(sessions),
-        "kinds": tuple(sum(1 for v in kind.values() if v == k) for k in KIND_ORDER),
+        "kinds": tuple(sum(1 for sid in sessions if kind[sid] == k) for k in KIND_ORDER),
         "cache": pct(cache_read(rows), pt),
         "prs": "%d/%d" % (merged_n, total_prs) if gh else "n/a",
         "prs_note": "project %s" % gh["project"] if gh else "connected mode only",
@@ -1014,7 +977,7 @@ def cmd_report(args):
     emit("DAYS", days)
     emit("SESSIONS", len(sessions))
     for k in KIND_ORDER:
-        emit("%s_SESSIONS" % k.upper(), sum(1 for v in kind.values() if v == k))
+        emit("%s_SESSIONS" % k.upper(), sum(1 for sid in sessions if kind[sid] == k))
         emit("%s_COST_USD" % k.upper(), "%.2f" % sum(r["_cost"] or 0 for r in rows if r["_kind"] == k))
     emit("COST_USD", "%.2f" % total)
     emit("CACHE_HIT_PCT", "%.0f" % (100.0 * cache_read(rows) / pt) if pt else "")
@@ -1028,6 +991,9 @@ def cmd_report(args):
     emit("TOOL_FAILED", tstats["failed"])
     emit("HOOK_BLOCKS", tstats["hook"])
     emit("MCP_SERVERS", ",".join(tstats["servers"]))
+    emit("HOOK_RUNS", len(hook_runs))
+    emit("TREND_COST_PER_SESSION", trend["cost_per_session"])
+    emit("TREND_SESSIONS", trend["sessions"])
 
 
 # ------------------------------------------------------------------- html
@@ -1267,7 +1233,7 @@ def tool_sections(rows):
     """Tool mix and MCP servers: every tool the model called, failures by
     who stopped them, and for each MCP server the sessions that used it
     against those that did not, in the same window."""
-    kinds = [k for k, _ in ERROR_KINDS] + ["error"]
+    kinds = ERROR_KINDS
     tools = {}
     for r in rows:
         for name in split_list(r["tools"]):
@@ -1281,15 +1247,16 @@ def tool_sections(rows):
     total_calls = sum(e["calls"] for e in tools.values())
     L = ["## Tools", "",
          "Every tool call the model made. Failed calls are split by who stopped "
-         "them: a hook, the auto-mode classifier, you, or the tool itself (error).", ""]
+         "them: a hook, the auto-mode classifier, a permission rule or mode "
+         "(policy), you, or the tool itself (error).", ""]
     if tools:
-        L += ["| Tool | Calls | Share | Sessions | Failed | Hook | Classifier | User | Error |",
-              "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        L += ["| Tool | Calls | Share | Sessions | Failed | Hook | Classifier | Policy | User | Error |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
         for name, e in sorted(tools.items(), key=lambda kv: -kv[1]["calls"])[:25]:
             failed = sum(e[k] for k in kinds)
-            L.append("| %s | %s | %s | %d | %d | %d | %d | %d | %d |" % (
+            L.append("| %s | %s | %s | %d | %d | %s |" % (
                 name, "{:,}".format(e["calls"]), pct(e["calls"], total_calls), len(e["sessions"]),
-                failed, e["hook"], e["classifier"], e["user"], e["error"]))
+                failed, " | ".join(str(e[k]) for k in kinds)))
     else:
         L.append("No tool calls in the window.")
     L.append("")
@@ -1340,6 +1307,137 @@ def tool_sections(rows):
         "servers": sorted(servers),
     }
     return L, stats
+
+
+TREND_DAYS = 28
+MIN_UNITS = 10
+
+
+def group_rows(rows, key):
+    g = {}
+    for r in rows:
+        g.setdefault(key(r), []).append(r)
+    return g
+
+
+def version_key(v):
+    return [int(x) if x.isdigit() else -1 for x in re.split(r"[.\-]", v)]
+
+
+def hook_section(runs):
+    """Hook executions recorded natively by Claude Code: which hooks ran on
+    which event, how long they took, how often they blocked, and how much
+    context they added to the prompt."""
+    L = ["## Hooks", "",
+         "Hook runs as Claude Code records them (hook summaries and hook "
+         "attachments). Context is what a hook added to the prompt, in "
+         "characters: it costs input tokens on every later call.", ""]
+    if not runs:
+        return L + ["No hook runs in the window.", ""]
+    g = {}
+    for h in runs:
+        e = g.setdefault((h["hook"], h["event"]), {"runs": 0, "sessions": set(), "ms": 0,
+                                                   "blocking": 0, "error": 0, "chars": 0})
+        e["runs"] += 1
+        e["sessions"].add(h["session_id"])
+        e["ms"] += int(h["duration_ms"] or 0)
+        e["chars"] += int(h["chars"] or 0)
+        if h["outcome"] in ("blocking", "error"):
+            e[h["outcome"]] += 1
+    L += ["| Hook | Event | Runs | Sessions | Avg ms | Blocking | Errors | Context chars |",
+          "|---|---|---:|---:|---:|---:|---:|---:|"]
+    for (hook, event), e in sorted(g.items(), key=lambda kv: -kv[1]["runs"]):
+        L.append("| %s | %s | %s | %d | %d | %d | %d | %s |" % (
+            hook, event, "{:,}".format(e["runs"]), len(e["sessions"]), e["ms"] // e["runs"],
+            e["blocking"], e["error"], "{:,}".format(e["chars"])))
+    return L + [""]
+
+
+def trend_section(all_rows, all_verdicts, all_prs, project, now):
+    """Last TREND_DAYS against the TREND_DAYS before: cost and outcome per
+    unit of work, never cost alone. A change is shown only when both
+    periods have at least MIN_UNITS units."""
+    cut = now - dt.timedelta(days=TREND_DAYS)
+    start = cut - dt.timedelta(days=TREND_DAYS)
+    periods = {"prev": lambda t: start <= t < cut, "last": lambda t: cut <= t <= now}
+
+    def metrics(inp):
+        rs = [r for r in all_rows if inp(r["_t"])]
+        sess = group_rows(rs, lambda r: r["session_id"])
+        m = {}
+
+        def per_session(sids, f):
+            return (sum(f(sess[s]) for s in sids) / len(sids) if sids else None, len(sids))
+        cost = lambda x: sum(r["_cost"] or 0 for r in x)
+        m["cost_session"] = per_session(list(sess), cost)
+        for k in KIND_ORDER:
+            m["cost_" + k] = per_session([s for s in sess if sess[s][0]["_kind"] == k], cost)
+        m["tok_session"] = per_session(list(sess), lambda x: prompt_tokens(x) + sum(r["output"] for r in x))
+        pt = prompt_tokens(rs)
+        m["cache"] = (100.0 * cache_read(rs) / pt if pt else None, len(sess))
+        m["blocked"] = per_session(list(sess), lambda x: sum(
+            1 for r in x for i in split_list(r["tool_errors"]) if not i.startswith("error:")))
+        first = {}
+        for v in sorted((v for v in all_verdicts if inp(v["_t"])), key=lambda v: v["ts"]):
+            first.setdefault(v["session_id"], v["verdict"])
+        m["first_pass"] = (100.0 * sum(1 for v in first.values() if v == "APPROVED") / len(first)
+                           if first else None, len(first))
+        prs = [p for p in all_prs if inp(dt.datetime.fromisoformat(p["date"]).replace(tzinfo=dt.timezone.utc))]
+        merged = [p for p in prs if p["merged"]]
+        pcost = sum(r["_cost"] or 0 for r in rs if r["_squad"] and r["project"] == project)
+        m["cost_pr"] = (pcost / len(merged) if merged else None, len(merged))
+        m["rework"] = (100.0 * sum(1 for p in prs if p["followups"] > 0) / len(prs) if prs else None, len(prs))
+        return m
+
+    prev, last = metrics(periods["prev"]), metrics(periods["last"])
+    spec = [
+        ("Cost per session", "cost_session", "$", "lower"),
+        ("Cost per squad session", "cost_squad", "$", "lower"),
+        ("Cost per custom session", "cost_custom", "$", "lower"),
+        ("Cost per vanilla session", "cost_vanilla", "$", "lower"),
+        ("Tokens per session", "tok_session", "n", "lower"),
+        ("Cache hit ratio", "cache", "%", "higher"),
+        ("Blocked calls per session", "blocked", "x", "lower"),
+        ("Reven approval at first review", "first_pass", "%", "higher"),
+        ("Squad cost per merged PR", "cost_pr", "$", "lower"),
+        ("PRs with commits after opening", "rework", "%", "lower"),
+    ]
+
+    def fmt(v, unit):
+        if v is None:
+            return "n/a"
+        return {"$": money(v), "%": "%.0f%%" % v, "n": "{:,}".format(int(v)), "x": "%.1f" % v}[unit]
+
+    def change(a, b, unit):
+        (va, na), (vb, nb) = a, b
+        if va is None or vb is None:
+            return "n/a", ""
+        if na < MIN_UNITS or nb < MIN_UNITS:
+            return "too few units", ""
+        if unit == "%":
+            d = vb - va
+            return "%+.0f pp" % d, d
+        if va == 0:
+            return "n/a", ""
+        d = 100.0 * (vb - va) / va
+        return "%+.0f%%" % d, d
+
+    L = ["## Are you improving?", "",
+         "Last %d days against the %d days before, per unit of work. Read cost "
+         "next to outcome: cost down with more rework is not an improvement. A "
+         "change needs at least %d units in both periods; below that it is "
+         "noise. Not an experiment: the work itself differs between periods." % (
+             TREND_DAYS, TREND_DAYS, MIN_UNITS), "",
+         "| Metric | Better if | Previous | Last | Change | Units (prev / last) |",
+         "|---|---|---:|---:|---:|---:|"]
+    for label, key, unit, better in spec:
+        ch, _ = change(prev[key], last[key], unit)
+        L.append("| %s | %s | %s | %s | %s | %d / %d |" % (
+            label, better, fmt(prev[key][0], unit), fmt(last[key][0], unit), ch,
+            prev[key][1], last[key][1]))
+    L.append("")
+    ch, _ = change(prev["cost_session"], last["cost_session"], "$")
+    return L, {"cost_per_session": ch, "sessions": "%d/%d" % (prev["cost_session"][1], last["cost_session"][1])}
 
 
 def render_html(md_lines, ctx):
