@@ -135,6 +135,34 @@ input skips both steps (noted in `notes`) — there is still no
 user-facing flag to skip it otherwise, so plans get the same scrutiny
 before they are chiseled into issues.
 
+## Stats: what the squad costs and what it produces
+
+`/stats [--days <n>]` imports Claude Code transcripts into a store in the
+vault (`<vault>/squad-stats/`), then writes a Markdown report: cost by
+skill, agent, project and model, cache hit ratio, daily trend, Reven
+verdicts and, in connected mode, the outcomes of the PRs recorded in
+`progress.txt` (merged, open, rework proxy, hours to merge, squad cost
+per merged PR). It covers all your Claude Code sessions, not only squad
+ones, and labels which are which.
+
+- **Cost is the API list-price equivalent.** On a subscription it is a
+  unit for comparing skills and agents, not your bill. Prices live in
+  `squad-stats.py`; `<vault>/squad-stats/prices.json` overrides them, and
+  an unknown model is reported as unpriced, never guessed.
+- **Run it at least weekly.** Claude Code deletes transcripts older than
+  `cleanupPeriodDays` (default 30). Rows already in the store survive;
+  raising the setting in `~/.claude/settings.json` gives more slack.
+- **Questions are the point.** After each report the skill asks what
+  question the numbers raise and appends it to
+  `<vault>/squad-stats/questions.md`. After a month, the questions that
+  keep coming back are the KPIs worth keeping.
+- **Source and model are separate.** The importer writes normalized rows
+  (`usage.tsv`, `verdicts.tsv`); the report reads only those. An
+  OpenTelemetry importer can be added later without touching the report.
+
+Needs `python3` (standard library only). GitHub reads use `gh pr view`,
+connected mode only.
+
 ## What's in this repo
 
 ```text
@@ -169,6 +197,7 @@ agent-squad/
       reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
       challenge/    Slash-command wrapper delegating to the Challenge agent
+      stats/        Usage, cost and outcome report (squad-stats.py)
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
@@ -186,6 +215,7 @@ agent-squad/
                        SessionEnd status.md refresh (optional)
       chisel-config-validate.py
                        Validates chisel-config.json shape
+      squad-stats.py   Transcript importer and report behind /stats
 ```
 
 ## Installation
@@ -194,7 +224,7 @@ Squad is installed globally. No files need to be added to any host project.
 After install, Squad is available in every project immediately.
 
 > Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
-> `archy`, `chisel`, `seed`, `ralph`, or `challenge` in `~/.claude/agents/`
+> `archy`, `chisel`, `seed`, `ralph`, `challenge`, or `stats` in `~/.claude/agents/`
 > or `~/.claude/skills/`, they will be overwritten by the commands below.
 
 ```bash
@@ -208,6 +238,7 @@ cp claude/hooks/squad-common.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squ
 cp claude/hooks/squad-labels.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-labels.sh
 cp claude/hooks/squad-branch.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-branch.sh
 cp claude/hooks/squad-incidents.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-incidents.sh
+cp claude/hooks/squad-stats.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-stats.py
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path

@@ -1301,6 +1301,37 @@ both shapes. The installed `~/.claude/hooks` copy needs a re-sync.
 
 ---
 
+### Iteration 30: Stats, the start of the monitoring arc
+
+**Problem:** the squad runs every day and nothing says what it costs or
+how often its PRs land without manual fixing. Every tuning decision so
+far (turn budgets, model choice, the Forge challenge) was made on feel.
+
+**Change:** `/stats` and `claude/hooks/squad-stats.py`. `collect` imports
+Claude Code transcripts (main thread plus `subagents/`) into normalized
+rows in `<vault>/squad-stats/usage.tsv`, one per API message, deduped by
+message id, with the active squad skill attributed by time and the agent
+type taken from the subagent meta file. Reven verdicts land in
+`verdicts.tsv`. `report` aggregates the window and, in connected mode,
+reads the PRs recorded in `progress.txt` with `gh pr view`.
+
+> **Key decision:** importer and report are separate layers joined only by
+> the normalized rows. Transcripts are the first source because they
+> already exist and need no setup; OpenTelemetry becomes a second
+> importer when batch import is no longer enough (live cost during a run,
+> several machines). The report does not change when it lands.
+
+**Deliberately not measured yet:** "your commits on top of Cody's PR".
+Cody commits under the user's git identity, so authorship cannot separate
+them; commits after the PR opened is the stand-in (rework proxy). A
+commit trailer from Cody would make it exact, a later step.
+
+**Open point:** the KPIs are not fixed. The skill logs the questions the
+user asks about each report in `questions.md`; after a month the
+recurring ones become the KPI set and the rest of the report gets cut.
+
+---
+
 ## 7. Skill and Agent Definitions
 
 Canonical definitions live in `claude/`, the sole distribution tree since
@@ -1318,6 +1349,7 @@ claude/
     reven/SKILL.md
     lore/SKILL.md
     challenge/SKILL.md
+    stats/SKILL.md
   agents/
     cody.md
     reven.md
@@ -1331,6 +1363,7 @@ claude/
     squad-common.sh
     squad-labels.sh
     squad-branch.sh
+    squad-stats.py
   evals/
     connected-claim, detached-claim, worktree-continue
   .claude-plugin/plugin.json   (eval-only manifest)
