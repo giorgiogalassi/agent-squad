@@ -176,6 +176,16 @@ will want back in step 4.
 - Match the codebase's style and patterns — read at least two existing
   files in the same module first.
 - TypeScript, strict types, never `any`.
+- **Stop rule: no knowing twins.** Follows the anti-duplication
+  preference in `development.md`. If you need a twin of something that
+  already exists and dependency rules block importing it, or the issue's
+  `Owner:` line (or the `## Owners` map in `architecture.md`) names an
+  owner that does not fit, do not duplicate or work around it: make no
+  commit for that part and stop, putting this as the first line of your
+  final summary (Ralph treats it as ambiguity needing a human):
+  `ESCALATION: ownership — concept: <name>; existing: <path>;
+  blocked by: <dependency rule or misfit>; proposed owner: <lib/module>`.
+  A twin knowingly noted in `progress.txt` counts as a stop-rule failure.
 - Extend existing abstractions over inventing new ones; keep changes
   minimal; no unrelated refactors.
 - Architectural decision not in `architecture.md` → simplest defensible

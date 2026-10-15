@@ -146,6 +146,18 @@ Every issue gets a `Test specs` section (given/when/then):
 - Docs/prose, config or CSS/layout-only → `Test specs: exempt (<class>)`.
   Mixed issue: specs cover the code part, note the exempt part.
 
+## Owner lines
+
+An issue that introduces a new shared concept (a type, map, derivation
+or wire key) carries one `Owner: <concept>: <owning lib/module>` line per
+concept, placed under the description. Only for issues that introduce
+one; no codebase scan; "new shared concept" is Chisel's judgment (Forge's
+`owners` field, if present, is the starting point). When an Owner line
+names a concept missing from the `## Owners` section of
+`<SQUAD_DIR>/architecture.md`, append a row for it there (create the
+section if absent) before creating the issues; skip it when the row
+already exists; never rewrite or drop existing rows.
+
 ## Issue creation (connected mode)
 
 `gh` via Bash. Titles: verb + noun, ≤60 chars. Bodies: markdown —
@@ -217,6 +229,7 @@ Status: pending
 Parent: [SQ-1]
 
 <description: context, what and why>
+Owner: <concept>: <owning lib/module>   (only when the issue introduces a new shared concept)
 
 ### Acceptance criteria
 - ...

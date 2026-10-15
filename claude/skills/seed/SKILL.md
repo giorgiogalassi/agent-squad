@@ -96,6 +96,7 @@ Write `.squad/architecture.md` — specific and factual, nothing invented:
 ## Patterns and conventions
 ## Build and test commands
 ## Data flow
+## Owners
 ```
 
 `## Data flow` subsections: `### Collected data`, `### Storage and third
@@ -108,6 +109,13 @@ No evidence → `—` placeholder. Never assert a data flow without
 evidence; the user completes and verifies manually. Consumers: Archy and
 Reven today; a future Lex agent reads this section for compliance
 audits.
+
+`## Owners` is a short map of where mappings, shared types and wire keys
+live: one row per concept, `<concept>: <owning lib/module>`. Fill rows
+only from evidence already read; none → `—`. Chisel appends rows later
+as issues introduce shared concepts, so a refresh merges: keep every
+existing row (never drop a Chisel-appended one), add or correct only
+rows the current state contradicts or extends.
 
 Budget: ≤ 800 words. Over budget → compress (drop prose, merge entries)
 before writing; never truncate mid-section.

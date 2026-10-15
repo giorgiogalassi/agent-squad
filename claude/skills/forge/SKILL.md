@@ -279,6 +279,8 @@ edge_cases:
   - ""
 affected_modules:
   - ""
+owners:
+  - ""
 open_questions:
   - ""
 notes: ""
@@ -287,6 +289,10 @@ notes: ""
 YAML rules: English regardless of conversation language;
 `open_questions` = anything unresolved Archy or Cody should know;
 `affected_modules` = paths/modules mentioned in session (may be empty);
+`owners` = one `<concept>: <owning lib/module>` line per new shared
+concept (type, map, derivation, wire key) the analysis introduces, so
+Chisel can carry it into the issue's `Owner:` line; no codebase scan,
+omit when none;
 `notes` = decisions or assumptions not captured elsewhere; omit empty
 optional fields.
 
