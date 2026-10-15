@@ -480,7 +480,7 @@ vault files directly when needed.
   lore-config.json                 Vault config. Written by Lore on first start.
   INDEX.md                         Vault entry point. Read by all companions via Lore at session start.
   preferences/
-    development.md                 Global cross-tool preferences. Written by Lore via `lore prefer`. Capped at 100 lines.
+    development.md                 Global cross-tool preferences, tagged `[global]` / `[global, from <project>]`. Written by Lore via `lore prefer` (global rules only). Capped at 100 lines.
   projects/<name>/
     .squad/
       architecture.md              written by Seed
@@ -495,7 +495,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. Fed back: Forge reads the last 20 active decisions, Ralph injects `development.md` plus that tail into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
