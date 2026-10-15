@@ -362,6 +362,9 @@ Detached: first set `Status: executed` in the batch file. Set `Status: complete`
   Escalated: [#13] -- <reason>
   Skipped:   [#15] -- blocked by escalated issue
 
+A batch that ran in worktrees ends with
+`bash ~/.claude/hooks/lore-checkpoint.sh --note "<line>"` (one `[YYYY-MM-DD HH:MM] [ralph] ...` line).
+
 ## Context between iterations
 
 Each Cody invocation is a fresh context. Persist in

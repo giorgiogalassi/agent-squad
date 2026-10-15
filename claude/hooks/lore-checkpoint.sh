@@ -6,8 +6,14 @@
 # - Linked worktree session: append ONE checkpoint line for the branch,
 #   never rebuild (only the main checkout rebuilds).
 # - Main checkout session: apply Lore's staleness rule (a checkpoint newer
-#   than Last updated, or Last updated older than 7 days). Stale -> headless
-#   `claude -p` reconstruct of status.md from git evidence. Fresh -> no write.
+#   than Last updated, Last updated older than 7 days, or any LOCAL branch
+#   with a commit after Last updated). Stale -> headless `claude -p`
+#   reconstruct of status.md from git evidence. Fresh -> no write.
+#   "Local branch" = refs/heads only (git log --branches): remote-tracking refs
+#   and stash never count, so `git fetch` / `gh pr merge` trigger nothing.
+#   Known limits: --since compares COMMITTER dates, not ref-move time, so a
+#   rebase/cherry-pick that keeps old committer dates is missed; a worktree on
+#   a detached HEAD has no branch ref and is invisible.
 #
 # Claude Code gives SessionEnd hooks a shared 1.5 s budget, so the foreground
 # part only does file edits and git reads; the model rebuild is spawned
@@ -229,6 +235,7 @@ STALE=0
 if [ -z "$UPDATED" ]; then STALE=1
 elif [ -n "$LATEST_CP" ] && [[ "$LATEST_CP" > "$UPDATED" ]]; then STALE=1
 elif [ -n "$WEEK_AGO" ] && [[ "$UPDATED" < "$WEEK_AGO" ]]; then STALE=1
+elif [ -n "$(git log --branches --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then STALE=1
 fi
 if [ "$MODE" = hook ]; then
   # Repair strays on every main-checkout exit (cheap awk, no model).
@@ -238,7 +245,7 @@ if [ "$MODE" = hook ]; then
   [ "$STALE" = "1" ] || exit 0
   command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
   # No commits since Last updated -> a model call would add nothing.
-  if [ -n "$UPDATED" ] && [ -z "$(git log --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
+  if [ -n "$UPDATED" ] && [ -z "$(git log --branches --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
   # Fresh lock held -> a rebuild is already running (stale after 10 min).
   if [ -d "$LOCK" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then exit 0; fi
   LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
@@ -254,10 +261,20 @@ HOLD_LOCK=1
 command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
 
 SINCE="${UPDATED:-7 days ago}"
+# Local branches (refs/heads) with a commit since Last updated, newest first,
+# with their tips: work done on worktree branches is invisible to HEAD's log.
+TOUCHED=""
+for _b in $(git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/heads 2>/dev/null | head -n 10); do
+  _t="$(git log -1 --since="$SINCE" --format='%h %s' "refs/heads/$_b" 2>/dev/null)"
+  [ -n "$_t" ] && TOUCHED="$TOUCHED$_b @ $_t
+"
+done
 EVIDENCE="Branch: $BRANCH
 Now: $NOW
 Git log since '$SINCE':
 $(git log --oneline --since="$SINCE" -20 2>/dev/null)
+Local branches touched since '$SINCE' (branch @ tip):
+$TOUCHED
 Recent commits:
 $(git log --oneline -10 2>/dev/null)
 
