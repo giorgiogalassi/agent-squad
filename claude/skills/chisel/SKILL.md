@@ -155,7 +155,8 @@ one; no codebase scan; "new shared concept" is Chisel's judgment (Forge's
 `owners` field, if present, is the starting point). When an Owner line
 names a concept missing from the `## Owners` section of
 `<SQUAD_DIR>/architecture.md`, append a row for it there (create the
-section if absent); never rewrite or drop existing rows.
+section if absent) before creating the issues; skip it when the row
+already exists; never rewrite or drop existing rows.
 
 ## Issue creation (connected mode)
 
@@ -228,6 +229,7 @@ Status: pending
 Parent: [SQ-1]
 
 <description: context, what and why>
+Owner: <concept>: <owning lib/module>   (only when the issue introduces a new shared concept)
 
 ### Acceptance criteria
 - ...
