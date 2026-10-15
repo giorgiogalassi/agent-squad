@@ -576,7 +576,7 @@ def normalized_table(label, groups, total):
         tok = prompt_tokens(rs) + sum(r["output"] for r in rs)
         lines.append("| %s | %d | %s | %s | %s | %s | %s |" % (
             k, n, money(cost), pct(cost, total), money(cost / n) if n else "n/a",
-            "%d" % (tok / n) if n else "n/a", pct(cache_read(rs), prompt_tokens(rs))))
+            "{:,}".format(int(tok / n)) if n else "n/a", pct(cache_read(rs), prompt_tokens(rs))))
     return lines + [""]
 
 
@@ -770,8 +770,8 @@ def cmd_report(args):
         L += ["Skipped: %s" % reason, ""]
 
     L += ["## Questions", "",
-          "Write down the questions you ask while reading this in `../questions.md` (the stats folder) "
-          "next to this folder. The ones that keep coming back become the KPIs.", ""]
+          "Write down the questions you ask while reading this in `questions.md`, "
+          "one level up from this report. The ones that keep coming back become the KPIs.", ""]
 
     rdir = os.path.join(d, "reports")
     rpath = os.path.join(rdir, "report-%s.md" % now.strftime("%Y-%m-%d"))
