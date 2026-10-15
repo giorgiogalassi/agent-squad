@@ -207,7 +207,8 @@ project: <project-name>
 # Decisions — <project-name>
 
 > Key architectural decisions made during development.
-> Format: `## [YYYY-MM-DD] <decision title>`
+> Format: `## [YYYY-MM-DD] <decision title>`; project-wide rules use
+> `## [YYYY-MM-DD] [rule] <decision title>` (always loaded, cap 15 active).
 > A reversing entry may add `Supersedes: [YYYY-MM-DD] <title>`; the replaced
 > entry gets `Superseded by: [YYYY-MM-DD] <title>`.
 > Cap: 60 active entries; at the cap superseded entries move to

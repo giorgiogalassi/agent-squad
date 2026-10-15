@@ -193,7 +193,7 @@ Detached mode uses the same file (branch = chain branch).
 
 Spawn Cody as a subagent with: the full issue description, acceptance
 criteria, contents of `.squad/architecture.md`, `scout-cache.md`, and
-the last 30 lines of `progress.txt` (`tail -n 30`, if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones) — superseded entries are never injected; bounded at 100 lines + 20 entries. Missing files are skipped. Plus per Phase 1b:
+the last 30 lines of `progress.txt` (`tail -n 30`, if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and `<VAULT_PATH>/projects/<display-name>/decisions.md`. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load. Bounded at 100 lines + 15 rules + 20 entries. Missing files are skipped. Plus per Phase 1b:
 
 - `mode: connected` or `mode: detached`
 - `branch: <branch>` — the issue's own branch (connected); its chain's

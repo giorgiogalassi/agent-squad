@@ -33,9 +33,8 @@ PATH_RESOLUTION.md). Git and source files use CWD.
 `<SQUAD_DIR>/architecture.md`, `<SQUAD_DIR>/scout-cache.md` (`SQUAD_DIR`
 from the `path-resolve.sh` output; if it does not exist, say so and
 continue without — never fall back to the vault). Also read
-`<vault>/preferences/development.md` (full, ≤100 lines) and the last 20
-active entries of `<vault>/projects/<display-name>/decisions.md` (active
-= no `Superseded by:` line), each if present, and review against them.
+`<vault>/preferences/development.md` (full, ≤100 lines) and
+`<vault>/projects/<display-name>/decisions.md`, each if present, and review against them. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load.
 Then read the
 issue and PR from your prompt.
 

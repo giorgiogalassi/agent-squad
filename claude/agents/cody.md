@@ -42,10 +42,10 @@ never pushes or opens PRs (steps 0 and 6).
 `<vault>/projects/<display-name>/.squad/` — each if present; continue
 without missing ones. Never fall back to the vault for the first two when
 `SQUAD_DIR` is the repo. Also use `<vault>/preferences/development.md`
-(full, ≤100 lines) and the last 20 active entries of
-`<vault>/projects/<display-name>/decisions.md` (active = no
-`Superseded by:` line; never superseded ones): if your prompt already
-contains them (Ralph injects them), do not re-read; otherwise (direct
+(full, ≤100 lines) and
+`<vault>/projects/<display-name>/decisions.md`. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load.
+If your prompt already contains them (Ralph injects them), do not re-read;
+otherwise (direct
 invocation) read them yourself, each if present. Then read the issue in your prompt: what to build, the
 acceptance criteria, any first-line `Blocked by:` (informational only —
 if you were invoked, the blocker is resolved).

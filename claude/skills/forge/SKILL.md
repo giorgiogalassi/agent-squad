@@ -36,7 +36,7 @@ confirm with the user before invoking it.
 Read `.squad/architecture.md` if it exists and ground your questions in
 it — never ask about things it already establishes.
 
-Also read the last 20 active entries of `<VAULT_PATH>/projects/<display-name>/decisions.md` (active = no `Superseded by:` line; never superseded ones). During discovery, cite a decision (by its `## [date] title`) when a question's premise conflicts with it. Missing file → continue.
+Also read `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines) and `<VAULT_PATH>/projects/<display-name>/decisions.md`, each if present. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load. During discovery, cite a decision (by its `## [date] title`) when a question's premise conflicts with it. Missing file → continue.
 
 **Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: as an `open_question`.
 
