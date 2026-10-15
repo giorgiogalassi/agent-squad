@@ -137,6 +137,69 @@ input skips both steps (noted in `notes`) — there is still no
 user-facing flag to skip it otherwise, so plans get the same scrutiny
 before they are chiseled into issues.
 
+## Stats: what Claude Code costs and what it produces
+
+`/stats [--days <n>]` imports Claude Code transcripts into a store in the
+vault (`<vault>/squad-stats/`), then writes a Markdown report and, next to
+it, a self-contained HTML view of the same report with charts (daily cost
+by session kind, cost per session by week, top skills) that opens
+offline in any browser. It covers
+every session, squad or not, and classifies each one as **squad** (used a
+squad skill or agent), **custom** (another skill, command or agent) or
+**vanilla** (built-in Claude Code only). The report has sessions by kind,
+cost by skill and agent (with a Squad column), project and model, a
+weekly per-session trend, cache hit ratio, Reven verdicts and, in
+connected mode, the outcomes of the PRs recorded in `progress.txt`
+(merged, open, rework proxy, hours to merge, squad cost per merged PR).
+
+- **Comparing before and after a change** (a new skill, a token-saving
+  tool): read the weekly trend, which is per session. It is a
+  correlation, not an experiment: a week of heavy `/ralph` runs is not a
+  week of small fixes.
+- **Layers between you, the model and the result are measured by
+  technology, not by product.** Every tool call is recorded, so the
+  report shows the tool mix and, for each MCP server (`mcp__<server>__*`),
+  sessions that used it against sessions that did not: cost, tokens and
+  cache hit per session, and blocked calls. Failed calls are split by who
+  stopped them (a hook, the auto-mode classifier, a permission rule or
+  mode, you, or the tool itself), read from the `permissionDecision`
+  Claude Code writes next to each tool result. Hook runs come from Claude
+  Code's own hook records: which hook, on which event, how long it took,
+  whether it blocked, and how much context it added to the prompt.
+- **Are you improving?** The last 28 days against the 28 before, per unit
+  of work: cost per session by kind, tokens per session, cache hit,
+  blocked calls, Reven approval at first review, squad cost per merged PR
+  and the rework proxy. A change is shown only with at least 10 units in
+  both periods. Read cost next to outcome: cost down with more rework is
+  not an improvement.
+- **Claude Code version** is recorded per call (the transcript's own
+  `version` field) and the report has a table by version, because an
+  update can move cost more than any change of yours.
+- **Attribution is approximate.** A slash command you type stays active
+  until the next command or a resetting built-in such as `/clear`; a skill
+  the model loads on its own lasts until your next message, so a turn that
+  loads a reference skill and then does unrelated work is charged to it. Prompt built-ins
+  (`/init`, `/review`, `/compact`, ...) show as `builtin:<name>`; a new
+  built-in missing from the script's list shows up as a custom skill.
+
+- **Cost is the API list-price equivalent.** On a subscription it is a
+  unit for comparing skills and agents, not your bill. Prices live in
+  `squad-stats.py`; `<vault>/squad-stats/prices.json` overrides them, and
+  an unknown model is reported as unpriced, never guessed.
+- **Run it at least weekly.** Claude Code deletes transcripts older than
+  `cleanupPeriodDays` (default 30). Rows already in the store survive;
+  raising the setting in `~/.claude/settings.json` gives more slack.
+- **Questions are the point.** After each report the skill asks what
+  question the numbers raise and appends it to
+  `<vault>/squad-stats/questions.md`. After a month, the questions that
+  keep coming back are the KPIs worth keeping.
+- **Source and model are separate.** The importer writes normalized rows
+  (`usage.tsv`, `verdicts.tsv`); the report reads only those. An
+  OpenTelemetry importer can be added later without touching the report.
+
+Needs `python3` (standard library only). GitHub reads use `gh pr view`,
+connected mode only.
+
 ## What's in this repo
 
 ```text
@@ -171,6 +234,7 @@ agent-squad/
       reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
       challenge/    Slash-command wrapper delegating to the Challenge agent
+      stats/        Usage, cost and outcome report (squad-stats.py)
     agents/
       cody.md       Claude agent definition for implementation
       reven.md      Claude agent definition for review
@@ -188,6 +252,7 @@ agent-squad/
                        SessionEnd status.md refresh (optional)
       chisel-config-validate.py
                        Validates chisel-config.json shape
+      squad-stats.py   Transcript importer and report behind /stats
 ```
 
 ## Installation
@@ -196,7 +261,7 @@ Squad is installed globally. No files need to be added to any host project.
 After install, Squad is available in every project immediately.
 
 > Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
-> `archy`, `chisel`, `seed`, `ralph`, or `challenge` in `~/.claude/agents/`
+> `archy`, `chisel`, `seed`, `ralph`, `challenge`, or `stats` in `~/.claude/agents/`
 > or `~/.claude/skills/`, they will be overwritten by the commands below.
 
 ```bash
@@ -210,6 +275,7 @@ cp claude/hooks/squad-common.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squ
 cp claude/hooks/squad-labels.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-labels.sh
 cp claude/hooks/squad-branch.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-branch.sh
 cp claude/hooks/squad-incidents.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-incidents.sh
+cp claude/hooks/squad-stats.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-stats.py
 ```
 
 `path-resolve.sh` is not optional: every skill and agent's "Path

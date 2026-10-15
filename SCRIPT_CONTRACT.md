@@ -41,6 +41,13 @@ errors, so failure paths in other scripts can call it safely. It is
 best-effort capture, not a verb whose result callers act on. The other
 verbs (`summary`, `resolve`) follow the contract above.
 
+## Exception: `squad-stats.py report`
+
+A `gh` failure while reading PR outcomes does not exit 20: the report is
+written without its GitHub section, `QUALITY=gh-error` is emitted and the
+exit code is 0. The report is still useful without that section. `collect`
+and every other failure follow the contract above.
+
 ## Idempotency
 
 Re-running an applied transition exits 0 with `OUTCOME=unchanged`.
