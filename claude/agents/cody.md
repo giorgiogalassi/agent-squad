@@ -110,6 +110,8 @@ later step needs the base to diff against. Act on the exit code:
 | 10 | Stop and report the stderr reason. Never repair another branch (no stash, reset, forced checkout, or removing another worktree). |
 | 20 | Stop and report the stderr reason as a retryable failure for Ralph. |
 
+`squad-branch.sh` is the only way you create or switch branches: never raw `git checkout -b`, `git switch -c` or `git branch <name>`, in fix rounds, follow-ups and recovery too.
+
 Naming (when you choose): issue-ID prefix + short kebab-case, e.g.
 `12-add-reservation-table`.
 
