@@ -35,6 +35,8 @@ Tier 1 (gate)   bash scripts/squad-lint.sh
 Tier 2 (advisory) claude plugin eval claude/ ...   (see "Evals (tier 2)"; never gates a PR)
 ```
 
+![One batch of two stacked issues moving through the pipeline](docs/flow-queue.svg)
+
 [![Agent Squad flow](docs/flow.png)](https://giorgiogalassi.github.io/agent-squad/flow.html)
 
 The full picture, including the hooks, the side paths and a matrix of
