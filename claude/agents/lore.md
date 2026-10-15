@@ -32,7 +32,7 @@ switch is written there even if auto-memory captured it too. Lore owns:
 deduce project from git, name and map it, migrate legacy `.squad/`,
 update INDEX;
 `lore recover` = explicit rebuild from git evidence, confirm, write;
-`lore prefer "<x>"` = record a global cross-tool preference.
+`lore prefer "<x>"` = record a preference, global or project-only.
 
 **Vault location:** `SECOND_BRAIN_PATH` if set and non-empty, else
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
@@ -49,7 +49,7 @@ project workspace.
 
 **Loading discipline.** Never load the full vault: INDEX.md + active
 project status.md by default; decisions.md only on explicit request;
-preferences/development.md only during `lore prefer`. Superseded entries
+preferences/development.md only during a global `lore prefer`. Superseded entries
 and `decisions-archive.md` are never injected by default; load them only
 when explicitly requested or named by a context ref.
 
@@ -145,20 +145,33 @@ to the vault.
 - <path/to/file>
 ```
 
-## `lore prefer "<decision>"`
+## `lore prefer "<decision>" [--global | --project]`
 
-1. Read `preferences/development.md`; check the line count.
-2. Ask once before writing: "Does this replace an existing decisions.md
-   entry? [n / <entry>]". On an entry, apply both markers to
-   `decisions.md` (see Decision format). `development.md` bullets carry
-   no markers: when a new bullet replaces an old one, delete the old
-   bullet in the same write.
-3. Adding would exceed 100 lines → propose a consolidation and apply it
-   (Tier 1; reversible via vault git); drop bullets whose decision is
-   superseded in `decisions.md` first, then consolidate the rest.
-4. Append `- [YYYY-MM-DD] [<project>] <decision>`; also append to
-   `projects/<n>/decisions.md` with project context; commit the vault.
-5. Output: `Lore: preference recorded.`
+Each rule goes to exactly one file: global → `preferences/development.md`
+only; project-only → `projects/<n>/decisions.md` only. Never both.
+
+1. **Classify.** `--global` / `--project` decide it and skip the question.
+   Otherwise judge: cross-tool, philosophy-level, applies to every project
+   → global; tied to this project's code, layout or conventions →
+   project-only. Unsure → ask exactly one question: "Global (every
+   project) or project-only? [g / p]". Cannot ask (non-interactive,
+   relayed without a reply) → project-only, never global.
+2. **Global.** Read `preferences/development.md`; check the line count.
+   A new bullet that replaces an old one deletes the old bullet in the
+   same write (bullets carry no markers). Adding would exceed 100 lines
+   → propose a consolidation and apply it (Tier 1; reversible via vault
+   git), merging overlapping bullets. Append exactly one line:
+   `- [YYYY-MM-DD] [global] <rule>`, or
+   `- [YYYY-MM-DD] [global, from <project>] <rule>` when validated on a
+   project. Never a `[<project>]`-only tag. Write nothing to decisions.md.
+3. **Project-only.** Append exactly one `[rule]` entry to
+   `projects/<n>/decisions.md` (see Decision format), with project
+   context. Ask once "Does this replace an existing decisions.md entry?
+   [n / <entry>]"; on an entry, apply both markers. Apply the 60-active
+   and 15-rule caps of that file. Write nothing to development.md.
+4. Commit the vault.
+5. Output: `Lore: preference recorded (global)` or
+   `Lore: preference recorded (project: <n>).`
 
 **Decision format.** `decisions.md` entries are
 `## [YYYY-MM-DD] <title>`; a project-wide rule is
@@ -175,12 +188,10 @@ default). At the cap with nothing superseded, append anyway and print
 A superseded entry named by a context ref stays loadable on explicit
 request.
 
-Record only preferences that are cross-tool, philosophy-level
-(architecture, patterns, decision style), and validated by
-implementation — not things Claude auto-memory already captures locally
-(unsure → ask "Is this cross-tool or Claude-only?"). A preference
-appearing in decisions across 2+ projects → propose promotion to
-development.md; never promote automatically.
+Record only preferences validated by implementation, and not things
+Claude auto-memory already captures locally. A rule recorded
+project-only that appears in decisions across 2+ projects → propose
+promotion to development.md; never promote automatically.
 
 ## `lore recover`
 

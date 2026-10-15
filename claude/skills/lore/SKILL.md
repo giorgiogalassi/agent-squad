@@ -19,7 +19,7 @@ Delegate to the `lore` agent immediately, passing the subcommand and
 arguments exactly as received:
 
 - `/lore start`            → lore start
-- `/lore prefer "<text>"`  → lore prefer "<text>"
+- `/lore prefer "<text>" [--global|--project]`  → lore prefer "<text>" [flag]
 - `/lore recover`          → lore recover
 
 Never interpret, summarize, or pre-process the subcommand; never read or

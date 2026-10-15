@@ -257,7 +257,9 @@ tags: [preferences]
 > Cross-tool preferences validated by implementation.
 > Cap: 100 lines; curation demotes superseded entries first.
 > Managed by Lore via `lore prefer`.
-> Format: `- [YYYY-MM-DD] [project] <preference>`
+> Format: `- [YYYY-MM-DD] [global] <preference>` or
+> `- [YYYY-MM-DD] [global, from <project>] <preference>`.
+> Project-only rules live in the project's decisions.md as `[rule]` entries.
 ```
 
 Project already in the vault → add it to INDEX.md's Projects table if

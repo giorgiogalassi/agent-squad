@@ -196,8 +196,8 @@
     <div class="node side anytime">
       <span class="cmd">lore prefer</span>
       <h3>Record a preference</h3>
-      <p>Any time. Asks whether it replaces an entry and applies the supersede markers.</p>
-      <div class="chips"><span class="chip w">development.md</span><span class="chip w">decisions.md</span></div>
+      <p>Any time. Classifies the rule as global or project-only (one question if unsure; <code>--global</code> / <code>--project</code> skip it). Global goes to development.md, project-only to decisions.md as a <code>[rule]</code> entry; never both.</p>
+      <div class="chips"><span class="chip w">development.md or decisions.md</span></div>
     </div>
   </div>
 
@@ -224,7 +224,7 @@
       <tbody>
         <tr class="group"><td colspan="12">about you and the project (always in the vault)</td></tr>
         <tr><td>status.md</td><td>vault</td><td class="R">R</td><td class="W">W <small>once</small></td><td></td><td></td><td></td><td class="W">W <small>+1 line</small></td><td></td><td class="W">W <small>+1 line</small></td><td class="W">W</td><td></td></tr>
-        <tr><td>decisions.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td class="R">R <small>last 20 active</small></td><td></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td class="R">R <small>last 20 active</small></td><td></td><td></td><td class="W">W</td></tr>
+        <tr><td>decisions.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td class="R">R <small>rules + last 20</small></td><td></td><td class="R">R <small>rules + last 20</small></td><td class="R">R <small>rules + last 20</small></td><td class="R">R <small>rules + last 20</small></td><td></td><td></td><td class="W">W</td></tr>
         <tr><td>preferences/development.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td class="R">R</td><td class="R">R</td><td class="R">R</td><td></td><td></td><td class="RW"><span class="R">R</span><span class="W">W</span></td></tr>
         <tr><td>golden.md</td><td>vault</td><td></td><td class="W">W <small>once</small></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
         <tr><td>squad-incidents.tsv</td><td>vault root</td><td class="R">R <small>summary</small></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="W">W <small>denials</small></td><td></td></tr>
@@ -242,7 +242,7 @@
     </table>
   </div>
   <div class="notes">
-    <div class="note"><b>Reading the cells</b><p><span class="R">R</span> reads, <span class="W">W</span> writes. A qualifier says how much: "once" means scaffolded on first run and never overwritten; "+1 line" means an append; "last 20 active" means the tail of entries without a <code>Superseded by:</code> line; "last 30 lines" is what Ralph injects into Cody. "archive" means the file is moved out after being consumed.</p></div>
+    <div class="note"><b>Reading the cells</b><p><span class="R">R</span> reads, <span class="W">W</span> writes. A qualifier says how much: "once" means scaffolded on first run and never overwritten; "+1 line" means an append; "rules + last 20" means every active <code>[rule]</code> entry (cap 15) plus the last 20 active untagged entries, active meaning no <code>Superseded by:</code> line; "last 30 lines" is what Ralph injects into Cody. "archive" means the file is moved out after being consumed.</p></div>
     <div class="note"><b>Authority order</b><p>issue text › architecture.md › scout-cache.md › decisions.md › development.md. Higher wins; Cody notes the conflict in the PR body, Reven under Observations, Forge as an open question.</p></div>
     <div class="note"><b>Incident store</b><p>One global squad-incidents.tsv for all projects. Besides the checkpoint's denial pass, every squad script appends a line when it fails, whichever step called it. Orient only shows a count once an incident recurs.</p></div>
     <div class="note"><b>Update and forget</b><p>A decision that reverses another carries <code>Supersedes:</code>; the old one gets <code>Superseded by:</code>. At 60 active entries the superseded ones move to decisions-archive.md, which nothing loads.</p></div>
