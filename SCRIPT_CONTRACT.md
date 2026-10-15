@@ -48,6 +48,15 @@ written without its GitHub section, `QUALITY=gh-error` is emitted and the
 exit code is 0. The report is still useful without that section. `collect`
 and every other failure follow the contract above.
 
+## Exception: `squad-doctor.sh`
+
+Doctor is a read-only report, not a verb that changes state, so it emits
+no `OUTCOME=` or `CHANGED=`. It reports `STALE=`, `CHECKED=` and one
+`STALE_FILE=` or `ORPHAN_FILE=` line per file. A missing source record,
+repo path or install directory is not a precondition failure: it emits
+`STALE=0` and `CHECKED=no` and exits 0, so the SessionStart hook stays
+silent. Usage errors and a missing hash tool follow the contract above.
+
 ## Idempotency
 
 Re-running an applied transition exits 0 with `OUTCOME=unchanged`.

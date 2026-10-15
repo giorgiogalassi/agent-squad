@@ -186,6 +186,14 @@ if [ -x "$HOOK_DIR/squad-incidents.sh" ]; then
     SIGNALS="${SIGNALS}${_rec} recurring squad incidents: run ~/.claude/hooks/squad-incidents.sh summary${NL}" ;;
   esac
 fi
+# Install freshness (squad-doctor.sh hashes only agents/skills/hooks). Silent
+# when the script, the source record or an install dir is missing, or N=0.
+if [ -x "$HOOK_DIR/squad-doctor.sh" ]; then
+  _stale="$("$HOOK_DIR/squad-doctor.sh" 2>/dev/null | sed -n 's/^STALE=//p')"
+  case "$_stale" in ''|*[!0-9]*|0) ;; *)
+    SIGNALS="${SIGNALS}squad doctor: ${_stale} installed files stale — reinstall per README${NL}" ;;
+  esac
+fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"

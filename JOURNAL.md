@@ -1354,6 +1354,26 @@ recurring ones become the KPI set and the rest of the report gets cut.
 
 ---
 
+### Iteration 31: Squad doctor, install freshness
+
+**Problem:** hooks, agents and skills are consumed from `~/.claude`, not
+from the checkout, so a merged change does nothing until reinstalled. An
+earlier spec was written against a `~/.claude` 27 commits behind main.
+
+**Decision (plugin gate, resolved 2026-10-15):** the user chose to build
+doctor for the manual `cp` install. Plugin distribution stays undecided;
+if a native plugin install ships, doctor is redundant and gets removed.
+
+**Change:** `claude/hooks/squad-doctor.sh` (report-only, `STALE=N`,
+`STALE_FILE=`, `ORPHAN_FILE=`) hashes `~/.claude/{agents,skills,hooks}`
+against the repo recorded in `~/.claude/.agent-squad-source` (written by
+the README install step). Orphans come from git history of `claude/`, so
+files the repo never shipped are never flagged. Missing record, repo or
+install directory is silent. `lore-orient.sh` adds one Signals line when
+N>0. Hooks absent from the install are not counted (some are optional).
+
+---
+
 ## 7. Skill and Agent Definitions
 
 Canonical definitions live in `claude/`, the sole distribution tree since
