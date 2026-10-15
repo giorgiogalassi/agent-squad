@@ -161,7 +161,9 @@ to the vault.
 5. Output: `Lore: preference recorded.`
 
 **Decision format.** `decisions.md` entries are
-`## [YYYY-MM-DD] <title>`. A reversing entry may add
+`## [YYYY-MM-DD] <title>`; a project-wide rule is
+`## [YYYY-MM-DD] [rule] <title>` (always loaded by Forge, Ralph, Cody and
+Reven, cap 15 active, never back-tagged). A reversing entry may add
 `Supersedes: [YYYY-MM-DD] <title>`; the replaced entry gets
 `Superseded by: [YYYY-MM-DD] <title>`. Both markers sit on the line
 directly under the entry heading. Never delete a superseded entry in
