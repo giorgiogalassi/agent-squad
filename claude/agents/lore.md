@@ -4,8 +4,8 @@ description: >
   Use this agent to manage second-brain memory. Invoke with
   `lore start` for setup and repair only (naming, migrating a legacy
   `.squad/`, re-mapping a moved checkout; Seed handles first contact),
-  `lore prefer "<decision>"` when a global preference should be
-  recorded, and `lore recover` when no recent status exists.
+  `lore prefer "<decision>"` when a global or project-only rule should
+  be recorded, and `lore recover` when no recent status exists.
   Do NOT invoke for planning, implementation, architecture, or code review.
 tools: Read, Write, Bash
 model: sonnet
@@ -168,9 +168,10 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    `projects/<n>/decisions.md` (see Decision format), with project
    context. Ask once "Does this replace an existing decisions.md entry?
    [n / <entry>]"; on an entry, apply both markers. Apply the 60-active
-   and 15-rule caps of that file. Write nothing to development.md.
+   and 15-rule caps of that file; over 15 active `[rule]` entries, print
+   `Lore: decisions.md over rule cap (N active [rule]) — supersede one manually.` Write nothing to development.md.
 4. Commit the vault.
-5. Output: `Lore: preference recorded (global)` or
+5. Output: `Lore: preference recorded (global).` or
    `Lore: preference recorded (project: <n>).`
 
 **Decision format.** `decisions.md` entries are
