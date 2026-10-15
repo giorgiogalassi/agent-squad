@@ -7,6 +7,14 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
   report [--days N]   Aggregate the store (plus GitHub PR outcomes in
                       connected mode) into a Markdown report.
 
+Every Claude Code session is recorded, squad or not. Each row carries
+the active skill (any skill or slash command; prompt built-ins as
+"builtin:<name>") and the agent type, and the report classifies each
+session as squad, custom (another skill, command or agent) or vanilla
+(built-in Claude Code only). A skill stays active until the next skill
+or a resetting built-in such as /clear: an approximation, since the
+transcript does not mark where a skill's work ends.
+
 Two layers, kept apart on purpose: importers turn a source into
 normalized rows; the report reads only normalized rows. Transcripts are
 the first importer. A later OpenTelemetry importer writes the same rows
@@ -51,6 +59,24 @@ SQUAD_SKILLS = {
     "sidecar", "challenge", "stats",
 }
 SQUAD_AGENTS = {"cody", "reven", "lore", "challenge"}
+SQUAD_PLUGIN = "agent-squad"
+
+# Built-in slash commands. RESET ones spend no tokens and end the active
+# skill; PROMPT ones run a model turn and are recorded as "builtin:<name>".
+# A built-in missing here shows up as a custom skill: add it.
+BUILTIN_RESET = {
+    "add-dir", "agents", "btw", "bug", "clear", "config", "context", "cost",
+    "doctor", "effort", "exit", "export", "fast", "feedback", "help", "hooks",
+    "ide", "install-github-app", "login", "logout", "mcp", "memory",
+    "migrate-installer", "model", "output-style", "permissions", "plugin",
+    "plugins", "privacy-settings", "quit", "release-notes", "resume", "rewind",
+    "sandbox", "skills", "status", "statusline", "tasks", "terminal-setup",
+    "theme", "todos", "upgrade", "usage", "vim",
+}
+BUILTIN_PROMPT = {"compact", "init", "pr-comments", "review", "security-review"}
+# Built-in subagent types: part of vanilla Claude Code, not customizations.
+BUILTIN_AGENTS = {"main", "subagent", "general-purpose", "explore", "plan",
+                  "statusline-setup", "output-style-setup", "claude-code-guide"}
 
 # USD per million tokens: input, cache write 5m, cache write 1h, cache read, output.
 # Source: platform.claude.com/docs/en/about-claude/pricing (October 2026).
@@ -182,11 +208,34 @@ def project_name(cwd, pmap):
 
 # ------------------------------------------------------------- importers
 
-def norm_skill(name):
-    name = (name or "").strip().lstrip("/")
-    if ":" in name:
-        name = name.split(":", 1)[1]
-    return name.lower()
+def norm_name(name):
+    """Lowercase, no leading slash. The squad's own plugin prefix is dropped
+    (a copy install has none); any other plugin prefix is kept, so two
+    plugins' skills with the same name stay apart."""
+    name = (name or "").strip().lstrip("/").lower()
+    if name.startswith(SQUAD_PLUGIN + ":"):
+        name = name[len(SQUAD_PLUGIN) + 1:]
+    return name
+
+
+def command_skill(name):
+    """Active-skill value after a slash command."""
+    name = norm_name(name)
+    if name in BUILTIN_RESET:
+        return ""
+    if name in BUILTIN_PROMPT:
+        return "builtin:" + name
+    return name
+
+
+def is_squad(row):
+    return row["skill"] in SQUAD_SKILLS or row["agent"] in SQUAD_AGENTS
+
+
+def is_custom(row):
+    """A skill, command or agent that is not built into Claude Code."""
+    skill = row["skill"]
+    return bool(skill and not skill.startswith("builtin:")) or row["agent"] not in BUILTIN_AGENTS
 
 
 def read_jsonl(path):
@@ -214,8 +263,9 @@ def content_blocks(msg):
 
 
 def skill_events(records):
-    """(ts, skill) each time the main thread switches skill. A non-squad
-    slash command (e.g. /clear) resets the active skill to ''."""
+    """(ts, skill) each time the main thread switches skill: any slash
+    command or Skill tool call. A skill stays active until the next one or
+    a resetting built-in such as /clear."""
     events = []
     for rec in records:
         ts = rec.get("timestamp") or ""
@@ -223,14 +273,13 @@ def skill_events(records):
         if rec.get("type") == "user":
             for b in content_blocks(msg):
                 for m in COMMAND_RE.finditer(b.get("text") or ""):
-                    s = norm_skill(m.group(1))
-                    events.append((ts, s if s in SQUAD_SKILLS else ""))
+                    events.append((ts, command_skill(m.group(1))))
         elif rec.get("type") == "assistant":
             for b in content_blocks(msg):
                 if b.get("type") == "tool_use" and b.get("name") == "Skill":
                     inp = b.get("input") or {}
-                    s = norm_skill(inp.get("skill") or inp.get("command") or "")
-                    if s in SQUAD_SKILLS:
+                    s = norm_name(inp.get("skill") or inp.get("command") or "")
+                    if s:
                         events.append((ts, s))
     events.sort(key=lambda e: e[0])
     return events
@@ -318,7 +367,7 @@ def import_transcripts(pmap):
                     agent = (json.load(f).get("agentType") or "subagent").lower()
             except (OSError, ValueError, AttributeError):
                 pass
-            agent = norm_skill(agent) or "subagent"
+            agent = norm_name(agent) or "subagent"
             srecs = list(read_jsonl(sub))
             for r in srecs:
                 r.setdefault("sessionId", session_id)
@@ -472,15 +521,43 @@ def group(rows, key):
     return sorted(g.items(), key=lambda kv: -kv[1]["cost"])
 
 
-def table(title, groups, total, label):
+def table(title, groups, total, label, flag=None):
+    """flag(key) -> bool adds a Squad column."""
+    sq = " Squad |" if flag else ""
     lines = ["## %s" % title, "",
-             "| %s | Sessions | API calls | Output tokens | Cost | Share | Cost/session |" % label,
-             "|---|---:|---:|---:|---:|---:|---:|"]
+             "| %s |%s Sessions | API calls | Output tokens | Cost | Share | Cost/session |" % (label, sq),
+             "|---|" + ("---|" if flag else "") + "---:|---:|---:|---:|---:|---:|"]
     for k, e in groups:
         n = len(e["sessions"])
-        lines.append("| %s | %d | %d | %d | %s | %s | %s |" % (
-            k, n, e["calls"], e["out"], money(e["cost"]), pct(e["cost"], total),
+        cell = (" %s |" % ("yes" if flag(k) else "no")) if flag else ""
+        lines.append("| %s |%s %d | %d | %d | %s | %s | %s |" % (
+            k, cell, n, e["calls"], e["out"], money(e["cost"]), pct(e["cost"], total),
             money(e["cost"] / n) if n else "n/a"))
+    return lines + [""]
+
+
+KIND_ORDER = ["squad", "custom", "vanilla"]
+
+
+def prompt_tokens(rows):
+    return sum(r["input"] + r["cache_write_5m"] + r["cache_write_1h"] + r["cache_read"] for r in rows)
+
+
+def cache_read(rows):
+    return sum(r["cache_read"] for r in rows)
+
+
+def normalized_table(label, groups, total):
+    """Per-session cost and tokens plus cache hit ratio, one line per group."""
+    lines = ["| %s | Sessions | Cost | Share | Cost/session | Tokens/session | Cache hit |" % label,
+             "|---|---:|---:|---:|---:|---:|---:|"]
+    for k, rs in groups:
+        n = len({r["session_id"] for r in rs})
+        cost = sum(r["_cost"] or 0 for r in rs)
+        tok = prompt_tokens(rs) + sum(r["output"] for r in rs)
+        lines.append("| %s | %d | %s | %s | %s | %s | %s |" % (
+            k, n, money(cost), pct(cost, total), money(cost / n) if n else "n/a",
+            "%d" % (tok / n) if n else "n/a", pct(cache_read(rs), prompt_tokens(rs))))
     return lines + [""]
 
 
@@ -563,53 +640,74 @@ def cmd_report(args):
         r["_cost"] = row_cost(r, prices)
         if r["_cost"] is None:
             unpriced.add(r["model"])
-        r["_squad"] = bool(r["skill"]) or r["agent"] in SQUAD_AGENTS
+        r["_squad"] = is_squad(r)
     verdicts = [v for v in read_tsv(os.path.join(d, "verdicts.tsv"), VERDICT_COLS)
                 if parse_ts(v["ts"]) and since <= parse_ts(v["ts"]) <= now]
 
+    # Session kind, decided over the whole session: squad beats custom
+    # beats vanilla (nothing but built-in Claude Code).
+    kind = {}
+    for r in rows:
+        k = "squad" if r["_squad"] else ("custom" if is_custom(r) else "vanilla")
+        prev = kind.get(r["session_id"], "vanilla")
+        kind[r["session_id"]] = min(prev, k, key=KIND_ORDER.index)
+    for r in rows:
+        r["_kind"] = kind[r["session_id"]]
+
     total = sum(r["_cost"] or 0 for r in rows)
-    sessions = {r["session_id"] for r in rows}
-    squad_sessions = {r["session_id"] for r in rows if r["_squad"]}
+    sessions = set(kind)
     squad_cost = sum(r["_cost"] or 0 for r in rows if r["_squad"])
-    prompt_tok = sum(r["input"] + r["cache_write_5m"] + r["cache_write_1h"] + r["cache_read"] for r in rows)
-    read_tok = sum(r["cache_read"] for r in rows)
     squad_rows = [r for r in rows if r["_squad"]]
-    by_skill = group(squad_rows, lambda r: r["skill"])
+    by_skill = group(rows, lambda r: r["skill"] or "(no skill)")
+    named = [kv for kv in by_skill if kv[0] != "(no skill)"]
 
     quality, gh = pr_outcomes(since, resolve_paths())
 
-    L = ["# Squad stats: last %d days" % days, "",
+    L = ["# Claude Code stats: last %d days" % days, "",
          "Window: %s to %s (UTC). Generated by `squad-stats.py report`." % (
              since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")), "",
          "> Cost is the API list-price equivalent. On a subscription it is a unit "
-         "for comparing skills and agents, not what you pay.", "",
+         "for comparing sessions, skills and agents, not what you pay.", "",
          "## Totals", "",
          "| Metric | Value |", "|---|---:|",
          "| Sessions | %d |" % len(sessions),
-         "| Squad sessions | %d (%s) |" % (len(squad_sessions), pct(len(squad_sessions), len(sessions))),
          "| API calls | %d |" % len(rows),
-         "| Cost, all Claude Code | %s |" % money(total),
-         "| Cost, squad | %s (%s) |" % (money(squad_cost), pct(squad_cost, total)),
-         "| Cache hit ratio (cache reads / prompt tokens) | %s |" % pct(read_tok, prompt_tok),
+         "| Cost | %s |" % money(total),
+         "| Squad cost (squad skills and agents only) | %s (%s) |" % (money(squad_cost), pct(squad_cost, total)),
+         "| Cache hit ratio (cache reads / prompt tokens) | %s |" % pct(cache_read(rows), prompt_tokens(rows)),
          ""]
     if unpriced:
         L += ["Unpriced models (tokens counted, cost missing; add them to "
               "`prices.json`): %s" % ", ".join(sorted(unpriced)), ""]
-    L += table("Squad cost by skill", by_skill, squad_cost, "Skill")
-    L += table("Cost by agent", group(rows, lambda r: r["agent"]), total, "Agent")
+    L += ["## Sessions by kind", "",
+          "squad: used a squad skill or agent. custom: used another skill, command "
+          "or agent. vanilla: built-in Claude Code only.", ""]
+    L += normalized_table("Kind", [(k, [r for r in rows if r["_kind"] == k]) for k in KIND_ORDER], total)
+    L += table("Cost by skill", by_skill, total, "Skill", flag=lambda k: k in SQUAD_SKILLS)
+    L += table("Cost by agent", group(rows, lambda r: r["agent"]), total, "Agent",
+               flag=lambda k: k in SQUAD_AGENTS)
     L += table("Cost by project", group(rows, lambda r: r["project"]), total, "Project")
     L += table("Cost by model", group(rows, lambda r: r["model"]), total, "Model")
 
-    daily = {}
+    weeks = {}
     for r in rows:
-        k = r["_t"].strftime("%Y-%m-%d")
-        e = daily.setdefault(k, [set(), 0.0, 0.0])
-        e[0].add(r["session_id"])
-        e[1] += r["_cost"] or 0
-        e[2] += (r["_cost"] or 0) if r["_squad"] else 0
-    L += ["## Daily", "", "| Day | Sessions | Cost | Squad cost |", "|---|---:|---:|---:|"]
-    L += ["| %s | %d | %s | %s |" % (k, len(v[0]), money(v[1]), money(v[2]))
-          for k, v in sorted(daily.items())]
+        y, w, _ = r["_t"].isocalendar()
+        weeks.setdefault("%d-W%02d" % (y, w), []).append(r)
+    L += ["## Weekly trend", "",
+          "Per-session figures, so a change such as a token-saving tool shows up "
+          "even when the number of sessions moves. Compare like with like: a week "
+          "of heavy /ralph runs is not a week of small fixes.", ""]
+    L += normalized_table("Week", sorted(weeks.items()), total)
+    L += ["## Daily", "", "| Day | Sessions | Cost | Squad | Custom | Vanilla |",
+          "|---|---:|---:|---:|---:|---:|"]
+    days_map = {}
+    for r in rows:
+        days_map.setdefault(r["_t"].strftime("%Y-%m-%d"), []).append(r)
+    for k, rs in sorted(days_map.items()):
+        by = {kk: sum(r["_cost"] or 0 for r in rs if r["_kind"] == kk) for kk in KIND_ORDER}
+        L.append("| %s | %d | %s | %s | %s | %s |" % (
+            k, len({r["session_id"] for r in rs}), money(sum(r["_cost"] or 0 for r in rs)),
+            money(by["squad"]), money(by["custom"]), money(by["vanilla"])))
     L.append("")
 
     counts = {}
@@ -670,11 +768,13 @@ def cmd_report(args):
     emit("REPORT", rpath)
     emit("DAYS", days)
     emit("SESSIONS", len(sessions))
-    emit("SQUAD_SESSIONS", len(squad_sessions))
+    for k in KIND_ORDER:
+        emit("%s_SESSIONS" % k.upper(), sum(1 for v in kind.values() if v == k))
+        emit("%s_COST_USD" % k.upper(), "%.2f" % sum(r["_cost"] or 0 for r in rows if r["_kind"] == k))
     emit("COST_USD", "%.2f" % total)
-    emit("SQUAD_COST_USD", "%.2f" % squad_cost)
-    emit("CACHE_HIT_PCT", "%.0f" % (100.0 * read_tok / prompt_tok) if prompt_tok else "")
-    emit("TOP_SKILL", by_skill[0][0] if by_skill else "")
+    pt = prompt_tokens(rows)
+    emit("CACHE_HIT_PCT", "%.0f" % (100.0 * cache_read(rows) / pt) if pt else "")
+    emit("TOP_SKILL", named[0][0] if named else "")
     emit("VERDICTS", nv)
     emit("QUALITY", quality)
     emit("PRS_TOTAL", total_prs)

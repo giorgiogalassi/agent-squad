@@ -135,15 +135,26 @@ input skips both steps (noted in `notes`) — there is still no
 user-facing flag to skip it otherwise, so plans get the same scrutiny
 before they are chiseled into issues.
 
-## Stats: what the squad costs and what it produces
+## Stats: what Claude Code costs and what it produces
 
 `/stats [--days <n>]` imports Claude Code transcripts into a store in the
-vault (`<vault>/squad-stats/`), then writes a Markdown report: cost by
-skill, agent, project and model, cache hit ratio, daily trend, Reven
-verdicts and, in connected mode, the outcomes of the PRs recorded in
-`progress.txt` (merged, open, rework proxy, hours to merge, squad cost
-per merged PR). It covers all your Claude Code sessions, not only squad
-ones, and labels which are which.
+vault (`<vault>/squad-stats/`), then writes a Markdown report. It covers
+every session, squad or not, and classifies each one as **squad** (used a
+squad skill or agent), **custom** (another skill, command or agent) or
+**vanilla** (built-in Claude Code only). The report has sessions by kind,
+cost by skill and agent (with a Squad column), project and model, a
+weekly per-session trend, cache hit ratio, Reven verdicts and, in
+connected mode, the outcomes of the PRs recorded in `progress.txt`
+(merged, open, rework proxy, hours to merge, squad cost per merged PR).
+
+- **Comparing before and after a change** (a new skill, a token-saving
+  tool): read the weekly trend, which is per session. It is a
+  correlation, not an experiment: a week of heavy `/ralph` runs is not a
+  week of small fixes.
+- **Attribution is approximate.** A skill stays active until the next
+  skill or a resetting built-in such as `/clear`. Prompt built-ins
+  (`/init`, `/review`, `/compact`, ...) show as `builtin:<name>`; a new
+  built-in missing from the script's list shows up as a custom skill.
 
 - **Cost is the API list-price equivalent.** On a subscription it is a
   unit for comparing skills and agents, not your bill. Prices live in

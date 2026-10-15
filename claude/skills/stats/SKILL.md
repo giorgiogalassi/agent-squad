@@ -1,8 +1,9 @@
 ---
 name: stats
 description: >
-  Use this skill to show what the squad and Claude Code cost and what they
-  produced: cost by skill, agent, project and model, cache hit ratio,
+  Use this skill to show what Claude Code costs and what it produced,
+  squad or not: sessions by kind (squad, custom, vanilla), cost by skill,
+  agent, project and model, weekly per-session trend, cache hit ratio,
   Reven verdicts and, in connected mode, PR outcomes. Triggers: /stats,
   /stats --days <n>, "squad stats", "how much did the squad cost",
   "usage report". Do NOT trigger for questions about a single PR or
@@ -48,8 +49,9 @@ Read `ROWS_ADDED`, `VERDICTS_ADDED`, `OLDEST_TRANSCRIPT`.
 python3 ~/.claude/hooks/squad-stats.py report --days <n>
 ```
 
-Read `REPORT`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `COST_USD`,
-`SQUAD_COST_USD`, `CACHE_HIT_PCT`, `TOP_SKILL`, `VERDICTS`, `QUALITY`,
+Read `REPORT`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `CUSTOM_SESSIONS`,
+`VANILLA_SESSIONS`, `COST_USD`, `SQUAD_COST_USD`, `CUSTOM_COST_USD`,
+`VANILLA_COST_USD`, `CACHE_HIT_PCT`, `TOP_SKILL`, `VERDICTS`, `QUALITY`,
 `PRS_TOTAL`, `PRS_MERGED`, `UNPRICED_MODELS`.
 
 | Exit | Action |
@@ -63,9 +65,9 @@ Read `REPORT`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `COST_USD`,
 Print, in this order and nothing more:
 
 ```
-Squad stats, last <DAYS> days (API-equivalent cost)
-  Sessions:      <SESSIONS> (<SQUAD_SESSIONS> squad)
-  Cost:          $<COST_USD> (squad $<SQUAD_COST_USD>)
+Claude Code stats, last <DAYS> days (API-equivalent cost)
+  Sessions:      <SESSIONS>: <SQUAD_SESSIONS> squad, <CUSTOM_SESSIONS> custom, <VANILLA_SESSIONS> vanilla
+  Cost:          $<COST_USD>: squad $<SQUAD_COST_USD>, custom $<CUSTOM_COST_USD>, vanilla $<VANILLA_COST_USD>
   Cache hits:    <CACHE_HIT_PCT>%
   Top skill:     <TOP_SKILL>
   Reven:         <VERDICTS> verdicts
@@ -81,8 +83,8 @@ Then one line per condition that holds:
 - `OLDEST_TRANSCRIPT` is more than 25 days before today:
   `Claude Code prunes transcripts after cleanupPeriodDays (default 30). Run /stats at least weekly, or raise cleanupPeriodDays in ~/.claude/settings.json.`
 
-If the user asks about a section (skills, agents, projects, models,
-daily, verdicts, PRs), Read the report file and answer from its table.
+If the user asks about a section (kinds, skills, agents, projects,
+models, weekly, daily, verdicts, PRs), Read the report file and answer from its table.
 Never re-derive a number from `usage.tsv`.
 
 ## Step 4: questions

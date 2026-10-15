@@ -1315,6 +1315,12 @@ type taken from the subagent meta file. Reven verdicts land in
 `verdicts.tsv`. `report` aggregates the window and, in connected mode,
 reads the PRs recorded in `progress.txt` with `gh pr view`.
 
+Scope is all of Claude Code, not only the squad: every skill, command
+and agent is recorded under its own name (other plugins keep their
+prefix), and each session is classified squad, custom or vanilla. The
+reason is comparison: to know whether a squad skill or a token-saving
+tool pays off, there has to be a baseline of sessions without it.
+
 > **Key decision:** importer and report are separate layers joined only by
 > the normalized rows. Transcripts are the first source because they
 > already exist and need no setup; OpenTelemetry becomes a second

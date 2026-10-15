@@ -35,6 +35,7 @@ printf '{"projects":{"%s":"app-display"}}\n' "$APP" > "$SECOND_BRAIN_PATH/lore-c
 # ---- fixtures ----------------------------------------------------------
 P1="$CLAUDE_PROJECTS_DIR/-work-app"; mkdir -p "$P1/s1/subagents"
 P2="$CLAUDE_PROJECTS_DIR/-work-other"; mkdir -p "$P2"
+P3="$CLAUDE_PROJECTS_DIR/-work-third"; mkdir -p "$P3/s3/subagents"
 U='"usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_creation":{"ephemeral_1h_input_tokens":%s},"cache_read_input_tokens":%s,"output_tokens":%s}'
 asst() {  # asst <ts> <id> <model> <in> <cw> <cw1h> <read> <out> <session> <cwd>
   printf '{"type":"assistant","timestamp":"%s","sessionId":"%s","cwd":"%s","message":{"id":"%s","model":"%s",'"$U"',"content":[{"type":"text","text":"x"}]}}\n' \
@@ -53,11 +54,22 @@ echo '{"agentType":"cody"}' > "$P1/s1/subagents/agent-a1.meta.json"
 printf '{"type":"assistant","timestamp":"2026-10-14T10:20:00.000Z","sessionId":"s1","message":{"id":"msg_r1","model":"claude-sonnet-5-5","usage":{"input_tokens":20000,"output_tokens":30000},"content":[{"type":"text","text":"Summary\\nVerdict: CHANGES REQUESTED\\nmore"}]}}\n' > "$P1/s1/subagents/agent-r1.jsonl"
 echo '{"agentType":"reven"}' > "$P1/s1/subagents/agent-r1.meta.json"
 {
+  printf '{"type":"user","timestamp":"2026-10-14T10:59:00.000Z","sessionId":"s2","cwd":"/work/other","message":{"role":"user","content":"<command-name>/init</command-name>"}}\n'
   asst 2026-10-14T11:00:00.000Z msg_h1 claude-haiku-5-5 1500000 0 0 0 100000 s2 /work/other
   asst 2026-10-14T11:01:00.000Z msg_h2 claude-haiku-5-5 50000 0 0 0 10000 s2 /work/other
   asst 2026-10-14T11:02:00.000Z msg_u1 claude-unknown-9 10 0 0 0 10 s2 /work/other
   asst 2026-08-01T11:00:00.000Z msg_old claude-opus-5-5-20260101 1000000 0 0 0 0 s2 /work/other
 } > "$P2/s2.jsonl"
+
+# s3: custom plugin command, then a custom skill via the Skill tool, then a custom agent.
+{
+  printf '{"type":"user","timestamp":"2026-10-14T12:00:00.000Z","sessionId":"s3","cwd":"/work/third","message":{"role":"user","content":"<command-name>/My-Plugin:deploy</command-name>"}}\n'
+  asst 2026-10-14T12:01:00.000Z msg_d1 claude-opus-5-5 100000 0 0 0 0 s3 /work/third
+  printf '{"type":"assistant","timestamp":"2026-10-14T12:02:00.000Z","sessionId":"s3","message":{"id":"msg_t1","model":"claude-opus-5-5","usage":{"input_tokens":100000,"output_tokens":0},"content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"tokensave"}}]}}\n'
+  asst 2026-10-14T12:03:00.000Z msg_t2 claude-opus-5-5 100000 0 0 0 0 s3 /work/third
+} > "$P3/s3.jsonl"
+asst 2026-10-14T12:04:00.000Z msg_m1 claude-sonnet-5-5 100000 0 0 0 0 s3 /work/third > "$P3/s3/subagents/agent-m1.jsonl"
+echo '{"agentType":"my-reviewer"}' > "$P3/s3/subagents/agent-m1.meta.json"
 
 # ---- usage errors and preconditions --------------------------------------
 run; check "no verb exits 2" 2 "$RC"
@@ -70,9 +82,9 @@ check "missing vault exits 10" 10 "$RC"
 run collect
 check "collect exit 0" 0 "$RC"
 check "collect OUTCOME applied" applied "$(key OUTCOME)"
-check "ROWS_ADDED 8 (dedup by id, synthetic skipped)" 8 "$(key ROWS_ADDED)"
+check "ROWS_ADDED 12 (dedup by id, synthetic skipped)" 12 "$(key ROWS_ADDED)"
 check "VERDICTS_ADDED 1 (reven only)" 1 "$(key VERDICTS_ADDED)"
-check "FILES_SCANNED 2" 2 "$(key FILES_SCANNED)"
+check "FILES_SCANNED 3" 3 "$(key FILES_SCANNED)"
 check "STORE path" "$STORE" "$(key STORE)"
 BAD="$(printf '%s\n' "$OUT" | grep -cvE '^[A-Z_]+=')"
 check "stdout is KEY=value only" 0 "$BAD"
@@ -85,6 +97,11 @@ check "subagent inherits skill by time" ralph "$(row msg_c1 5)"
 check "subagent agent type" cody "$(row msg_c1 4)"
 check "project from lore-config" app-display "$(row msg_1 3)"
 check "project fallback basename" other "$(row msg_h1 3)"
+check "prompt built-in recorded" builtin:init "$(row msg_h1 5)"
+check "custom plugin command keeps prefix" my-plugin:deploy "$(row msg_d1 5)"
+check "Skill tool switches to a custom skill" tokensave "$(row msg_t2 5)"
+check "custom agent type" my-reviewer "$(row msg_m1 4)"
+check "custom agent inherits custom skill" tokensave "$(row msg_m1 5)"
 
 run collect
 check "re-collect unchanged" unchanged "$(key OUTCOME)"
@@ -94,11 +111,15 @@ check "re-collect adds nothing" 0 "$(key ROWS_ADDED)"
 ( cd "$APP" && python3 "$SUT" report --days 30 ) > "$TMPROOT/out" 2>"$TMPROOT/err"; RC=$?
 OUT="$(cat "$TMPROOT/out")"
 check "report exit 0" 0 "$RC"
-check "COST_USD (window excludes old row, haiku tiers)" 4.46 "$(key COST_USD)"
-check "SQUAD_COST_USD" 3.39 "$(key SQUAD_COST_USD)"
-check "SESSIONS" 2 "$(key SESSIONS)"
+check "COST_USD (window excludes old row, haiku tiers)" 5.86 "$(key COST_USD)"
+check "SESSIONS" 3 "$(key SESSIONS)"
 check "SQUAD_SESSIONS" 1 "$(key SQUAD_SESSIONS)"
-check "CACHE_HIT_PCT" 34 "$(key CACHE_HIT_PCT)"
+check "CUSTOM_SESSIONS" 1 "$(key CUSTOM_SESSIONS)"
+check "VANILLA_SESSIONS" 1 "$(key VANILLA_SESSIONS)"
+check "SQUAD_COST_USD (whole squad sessions)" 3.45 "$(key SQUAD_COST_USD)"
+check "CUSTOM_COST_USD" 1.40 "$(key CUSTOM_COST_USD)"
+check "VANILLA_COST_USD" 1.01 "$(key VANILLA_COST_USD)"
+check "CACHE_HIT_PCT" 30 "$(key CACHE_HIT_PCT)"
 check "TOP_SKILL" ralph "$(key TOP_SKILL)"
 check "VERDICTS" 1 "$(key VERDICTS)"
 check "QUALITY detached" skipped-detached "$(key QUALITY)"
@@ -106,12 +127,16 @@ check "UNPRICED_MODELS" claude-unknown-9 "$(key UNPRICED_MODELS)"
 REPORT="$(key REPORT)"
 [ -f "$REPORT" ] && ok "report file written" || bad "report file written ($REPORT)"
 grep -q "CHANGES REQUESTED | 1 | 100%" "$REPORT" && ok "verdict table" || bad "verdict table"
-grep -q "| ralph | 1 |" "$REPORT" && ok "skill table" || bad "skill table"
+grep -q "| ralph | yes | 1 |" "$REPORT" && ok "skill table, squad flag" || bad "skill table, squad flag"
+grep -q "| tokensave | no | 1 |" "$REPORT" && ok "custom skill listed" || bad "custom skill listed"
+grep -q "| my-reviewer | no | 1 |" "$REPORT" && ok "custom agent listed" || bad "custom agent listed"
+grep -q "| vanilla | 1 | \$1.01 |" "$REPORT" && ok "vanilla kind row" || bad "vanilla kind row"
+grep -q "^| 2026-W42 | 3 |" "$REPORT" && ok "weekly trend row" || bad "weekly trend row"
 
 PRICES='{"unknown-9":[1000000,0,0,0,1000000]}'
 printf '%s' "$PRICES" > "$STORE/prices.json"
 ( cd "$APP" && python3 "$SUT" report ) > "$TMPROOT/out" 2>/dev/null; OUT="$(cat "$TMPROOT/out")"
-check "prices.json override" 24.46 "$(key COST_USD)"
+check "prices.json override" 25.86 "$(key COST_USD)"
 rm -f "$STORE/prices.json"
 
 # ---- report, connected with fake gh ---------------------------------------
