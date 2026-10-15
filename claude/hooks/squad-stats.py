@@ -5,7 +5,8 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
   collect             Import Claude Code transcripts into the stats store.
   report [--days N]   Aggregate the store (plus GitHub PR outcomes in
-                      connected mode) into a Markdown report.
+                      connected mode) into a Markdown report and an HTML
+                      view of it with charts (self-contained, offline).
 
 Every Claude Code session is recorded, squad or not. Each row carries
 the active skill (any skill or slash command; prompt built-ins as
@@ -49,6 +50,7 @@ import bisect
 import datetime as dt
 import glob
 import json
+import math
 import os
 import re
 import statistics
@@ -549,8 +551,8 @@ def table(title, groups, total, label, flag=None):
     for k, e in groups:
         n = len(e["sessions"])
         cell = (" %s |" % ("yes" if flag(k) else "no")) if flag else ""
-        lines.append("| %s |%s %d | %d | %d | %s | %s | %s |" % (
-            k, cell, n, e["calls"], e["out"], money(e["cost"]), pct(e["cost"], total),
+        lines.append("| %s |%s %d | %s | %s | %s | %s | %s |" % (
+            k, cell, n, "{:,}".format(e["calls"]), "{:,}".format(e["out"]), money(e["cost"]), pct(e["cost"], total),
             money(e["cost"] / n) if n else "n/a"))
     return lines + [""]
 
@@ -782,16 +784,34 @@ def cmd_report(args):
     except OSError as e:
         fail(20, "cannot write %s: %s" % (rpath, e))
 
+    pt = prompt_tokens(rows)
+    ctx = {
+        "total": total, "days": days, "sessions": len(sessions),
+        "kinds": tuple(sum(1 for v in kind.values() if v == k) for k in KIND_ORDER),
+        "cache": pct(cache_read(rows), pt),
+        "prs": "%d/%d" % (merged_n, total_prs) if gh else "n/a",
+        "prs_note": "project %s" % gh["project"] if gh else "connected mode only",
+        "window": "Last %d days, %s to %s (UTC). Cost is the API list-price equivalent." % (
+            days, since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")),
+        "days_map": days_map, "weeks": weeks, "by_skill": by_skill,
+    }
+    hpath = rpath[:-3] + ".html"
+    try:
+        with open(hpath, "w", encoding="utf-8") as f:
+            f.write(render_html(L, ctx))
+    except OSError as e:
+        fail(20, "cannot write %s: %s" % (hpath, e))
+
     emit("OUTCOME", "applied")
     emit("CHANGED", "yes")
     emit("REPORT", rpath)
+    emit("HTML", hpath)
     emit("DAYS", days)
     emit("SESSIONS", len(sessions))
     for k in KIND_ORDER:
         emit("%s_SESSIONS" % k.upper(), sum(1 for v in kind.values() if v == k))
         emit("%s_COST_USD" % k.upper(), "%.2f" % sum(r["_cost"] or 0 for r in rows if r["_kind"] == k))
     emit("COST_USD", "%.2f" % total)
-    pt = prompt_tokens(rows)
     emit("CACHE_HIT_PCT", "%.0f" % (100.0 * cache_read(rows) / pt) if pt else "")
     emit("TOP_SKILL", named[0][0] if named else "")
     emit("VERDICTS", nv)
@@ -799,6 +819,256 @@ def cmd_report(args):
     emit("PRS_TOTAL", total_prs)
     emit("PRS_MERGED", merged_n)
     emit("UNPRICED_MODELS", ",".join(sorted(unpriced)))
+
+
+# ------------------------------------------------------------------- html
+# A second view of the same report: the Markdown tables converted to HTML,
+# plus three charts drawn as inline SVG. Self-contained (no network), so
+# it opens from the vault offline. Palette: the dataviz reference
+# categorical slots 1-3, validated light and dark (aqua is under 3:1 on
+# the light surface, so every chart has a legend, tooltips and a table).
+
+HTML_CSS = """
+:root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;
+--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+--page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;
+--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70}}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;
+--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);
+font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 12px}
+.sub,.note{color:var(--ink2);margin:0 0 16px}.note{font-size:13px}
+code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:24px 0}
+.tile,.card{background:var(--surface);border:1px solid var(--grid);border-radius:12px;padding:16px}
+.tile .k{color:var(--ink2);font-size:12px}.tile .v{font-size:26px;font-weight:600;
+font-variant-numeric:tabular-nums;margin-top:4px}.tile .d{color:var(--muted);font-size:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.card{margin-bottom:12px;overflow-x:auto}
+svg{display:block;width:100%;height:auto}svg.wide{min-width:640px}svg text{fill:var(--muted);font-size:11px}
+svg .lbl{fill:var(--ink2)}svg .val{fill:var(--ink);font-weight:600}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--ink2);font-size:12px;margin:0 0 8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:6px 10px;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
+th{color:var(--ink2);font-weight:500;font-size:12px}td.n,th.n{text-align:right}
+.tag{font-size:11px;color:var(--ink2);border:1px solid var(--axis);border-radius:6px;padding:0 5px;margin-left:6px}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12px;
+padding:6px 8px;border-radius:6px;opacity:0;transition:opacity .1s;max-width:280px;z-index:9}
+[data-tip]{cursor:default}
+"""
+
+HTML_JS = """
+const t=document.getElementById('tip');
+document.addEventListener('pointerover',e=>{const el=e.target.closest('[data-tip]');
+if(!el){t.style.opacity=0;return}t.textContent=el.dataset.tip;t.style.opacity=1});
+document.addEventListener('pointermove',e=>{t.style.left=Math.min(e.clientX+12,innerWidth-290)+'px';
+t.style.top=(e.clientY+14)+'px'});
+"""
+
+
+def esc(x):
+    return (str(x).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def inline_md(text):
+    out = esc(text)
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+
+
+def md_table(rows):
+    head, body = rows[0], rows[2:]
+    num = [bool(body) and all(j < len(r) and re.search(r"\d", r[j])
+                              and re.match(r"^[\d$.,%()\- ]*$", r[j])
+                              and not re.match(r"^\d{4}-\d{2}", r[j]) for r in body)
+           for j in range(len(head))]
+    th = "".join('<th class="%s">%s</th>' % ("n" if num[j] else "", inline_md(h))
+                 for j, h in enumerate(head))
+    tr = "".join("<tr>%s</tr>" % "".join(
+        '<td class="%s">%s</td>' % ("n" if j < len(num) and num[j] else "", inline_md(c))
+        for j, c in enumerate(r)) for r in body)
+    return "<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table>" % (th, tr)
+
+
+def md_to_html(lines):
+    """The subset of Markdown the report writes, one card per h2 section:
+    tables, blockquotes and paragraphs. Numeric columns align right."""
+    sections, cur, i = [], None, 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith("## "):
+            cur = ["<h2>%s</h2>" % inline_md(ln[3:])]
+            sections.append(cur)
+        elif cur is None:
+            pass
+        elif ln.startswith("|"):
+            rows = []
+            while i < len(lines) and lines[i].startswith("|"):
+                rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                i += 1
+            cur.append(md_table(rows))
+            continue
+        elif ln.strip():
+            cur.append('<p class="note">%s</p>' % inline_md(ln.lstrip("> ")))
+        i += 1
+    return "".join('<section class="card">%s</section>' % "".join(c) for c in sections)
+
+
+def nice_max(v):
+    if v <= 0:
+        return 1.0
+    mag = 10 ** math.floor(math.log10(v))
+    for m in (1, 2, 2.5, 5, 10):
+        if v <= m * mag:
+            return m * mag
+    return 10 * mag
+
+
+def fmt_usd(v, top):
+    return "$%.0f" % v if top >= 10 else "$%.2f" % v
+
+
+def y_axis(W, H, P, top):
+    out = []
+    for k in range(5):
+        val = top * k / 4
+        y = H - P["b"] - (H - P["t"] - P["b"]) * k / 4
+        out.append('<line x1="%d" x2="%d" y1="%.1f" y2="%.1f" stroke="var(%s)" stroke-width="1"/>' % (
+            P["l"], W - P["r"], y, y, "--axis" if k == 0 else "--grid"))
+        out.append('<text x="%d" y="%.1f" text-anchor="end" dominant-baseline="middle">%s</text>' % (
+            P["l"] - 8, y, fmt_usd(val, top)))
+    return out
+
+
+def col_path(x, y, w, h, rounded):
+    """Column segment; the top one gets a 4px rounded data-end."""
+    if h <= 0:
+        return ""
+    r = min(4, w / 2, h) if rounded else 0
+    return ('M%.1f,%.1f V%.1f Q%.1f,%.1f %.1f,%.1f H%.1f Q%.1f,%.1f %.1f,%.1f V%.1f Z' % (
+        x, y + h, y + r, x, y, x + r, y, x + w - r, x + w, y, x + w, y + r, y + h))
+
+
+def daily_chart(days_map):
+    keys = sorted(days_map)
+    if not keys:
+        return "<p class='note'>No usage in the window.</p>"
+    d0 = dt.date.fromisoformat(keys[0])
+    d1 = dt.date.fromisoformat(keys[-1])
+    span = [(d0 + dt.timedelta(n)).isoformat() for n in range((d1 - d0).days + 1)]
+    W, H, P = 960, 240, {"l": 52, "r": 12, "t": 12, "b": 28}
+    totals = {k: {kk: sum(r["_cost"] or 0 for r in days_map.get(k, []) if r["_kind"] == kk)
+                  for kk in KIND_ORDER} for k in span}
+    top = nice_max(max(sum(v.values()) for v in totals.values()))
+    band = (W - P["l"] - P["r"]) / len(span)
+    bw = min(24, band * 0.6)
+    ph = H - P["t"] - P["b"]
+    out = y_axis(W, H, P, top)
+    every = max(1, len(span) // 8)
+    for i, k in enumerate(span):
+        x = P["l"] + band * i + (band - bw) / 2
+        y = H - P["b"]
+        segs = [(kk, totals[k][kk] / top * ph) for kk in KIND_ORDER if totals[k][kk] > 0]
+        for j, (kk, h) in enumerate(segs):
+            gap = 2 if j < len(segs) - 1 else 0
+            out.append('<path d="%s" fill="var(--s%d)"/>' % (
+                col_path(x, y - h + gap, bw, h - gap, j == len(segs) - 1), KIND_ORDER.index(kk) + 1))
+            y -= h
+        tip = "%s: %s (squad %s, custom %s, vanilla %s)" % (
+            k, money(sum(totals[k].values())), money(totals[k]["squad"]),
+            money(totals[k]["custom"]), money(totals[k]["vanilla"]))
+        out.append('<rect x="%.1f" y="%d" width="%.1f" height="%d" fill="transparent" data-tip="%s"/>' % (
+            P["l"] + band * i, P["t"], band, ph, esc(tip)))
+        if i % every == 0 or i == len(span) - 1:
+            out.append('<text x="%.1f" y="%d" text-anchor="middle">%s</text>' % (
+                x + bw / 2, H - 8, k[5:]))
+    legend = "".join('<span><i style="background:var(--s%d)"></i>%s</span>' % (n + 1, k)
+                     for n, k in enumerate(KIND_ORDER))
+    return '<div class="legend">%s</div><svg class="wide" viewBox="0 0 %d %d" role="img" aria-label="Daily cost by session kind">%s</svg>' % (
+        legend, W, H, "".join(out))
+
+
+def weekly_chart(weeks):
+    pts = []
+    for k, rs in sorted(weeks.items()):
+        n = len({r["session_id"] for r in rs})
+        pts.append((k, sum(r["_cost"] or 0 for r in rs) / n if n else 0, n))
+    if not pts:
+        return "<p class='note'>No usage in the window.</p>"
+    W, H, P = 460, 220, {"l": 52, "r": 56, "t": 16, "b": 28}
+    top = nice_max(max(p[1] for p in pts))
+    ph = H - P["t"] - P["b"]
+    step = (W - P["l"] - P["r"]) / max(len(pts) - 1, 1)
+    xy = [(P["l"] + (step * i if len(pts) > 1 else (W - P["l"] - P["r"]) / 2),
+           H - P["b"] - v / top * ph) for i, (_, v, _) in enumerate(pts)]
+    out = y_axis(W, H, P, top)
+    if len(xy) > 1:
+        out.append('<polyline points="%s" fill="none" stroke="var(--s1)" stroke-width="2" '
+                   'stroke-linejoin="round" stroke-linecap="round"/>' % " ".join("%.1f,%.1f" % p for p in xy))
+    for (k, v, n), (x, y) in zip(pts, xy):
+        out.append('<circle cx="%.1f" cy="%.1f" r="5" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/>' % (x, y))
+        out.append('<circle cx="%.1f" cy="%.1f" r="14" fill="transparent" data-tip="%s: %s per session (%d sessions)"/>' % (
+            x, y, k, money(v), n))
+        out.append('<text x="%.1f" y="%d" text-anchor="middle">%s</text>' % (x, H - 8, k[5:]))
+    x, y = xy[-1]
+    out.append('<text class="val" x="%.1f" y="%.1f" dominant-baseline="middle">%s</text>' % (
+        x + 10, y, money(pts[-1][1])))
+    return '<svg viewBox="0 0 %d %d" role="img" aria-label="Cost per session by week">%s</svg>' % (W, H, "".join(out))
+
+
+def skills_chart(by_skill, total):
+    items = by_skill[:8]
+    if not items:
+        return "<p class='note'>No usage in the window.</p>"
+    W, rowh, P = 460, 30, {"l": 150, "r": 64}
+    H = rowh * len(items) + 8
+    top = max(e["cost"] for _, e in items) or 1
+    out = []
+    for i, (k, e) in enumerate(items):
+        y = 4 + i * rowh
+        w = max((W - P["l"] - P["r"]) * e["cost"] / top, 1)
+        name = k if len(k) <= 22 else k[:21] + "…"
+        out.append('<text class="lbl" x="%d" y="%.1f" text-anchor="end" dominant-baseline="middle">%s%s</text>' % (
+            P["l"] - 10, y + rowh / 2, esc(name), " · squad" if k in SQUAD_SKILLS else ""))
+        out.append('<path d="M%d,%.1f H%.1f Q%.1f,%.1f %.1f,%.1f V%.1f Q%.1f,%.1f %.1f,%.1f H%d Z" fill="var(--s1)"/>' % (
+            P["l"], y + 7, P["l"] + w - 4, P["l"] + w, y + 7, P["l"] + w, y + 11, y + rowh - 11,
+            P["l"] + w, y + rowh - 7, P["l"] + w - 4, y + rowh - 7, P["l"]))
+        out.append('<text class="val" x="%.1f" y="%.1f" dominant-baseline="middle">%s</text>' % (
+            P["l"] + w + 8, y + rowh / 2, money(e["cost"])))
+        out.append('<rect x="0" y="%.1f" width="%d" height="%d" fill="transparent" data-tip="%s: %s, %s of total, %d sessions, %d calls"/>' % (
+            y, W, rowh, esc(k), money(e["cost"]), pct(e["cost"], total), len(e["sessions"]), e["calls"]))
+    return '<svg viewBox="0 0 %d %d" role="img" aria-label="Cost by skill">%s</svg>' % (W, H, "".join(out))
+
+
+def render_html(md_lines, ctx):
+    tiles = [
+        ("Cost", money(ctx["total"]), "API-equivalent, %d days" % ctx["days"]),
+        ("Sessions", "%d" % ctx["sessions"], "%d squad, %d custom, %d vanilla" % ctx["kinds"]),
+        ("Cache hit ratio", ctx["cache"], "cache reads / prompt tokens"),
+        ("PRs merged", ctx["prs"], ctx["prs_note"]),
+    ]
+    tiles_html = "".join('<div class="tile"><div class="k">%s</div><div class="v">%s</div>'
+                         '<div class="d">%s</div></div>' % tuple(esc(x) for x in t) for t in tiles)
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Code stats</title><style>%s</style></head><body><main>
+<h1>Claude Code stats</h1><p class="sub">%s</p>
+<div class="tiles">%s</div>
+<section class="card"><h2>Daily cost by session kind</h2>%s</section>
+<div class="grid2"><section class="card"><h2>Cost per session, by week</h2>%s</section>
+<section class="card"><h2>Top skills by cost</h2>%s</section></div>
+%s
+</main><div id="tip" role="tooltip"></div><script>%s</script></body></html>""" % (
+        HTML_CSS, esc(ctx["window"]), tiles_html, daily_chart(ctx["days_map"]),
+        weekly_chart(ctx["weeks"]), skills_chart(ctx["by_skill"], ctx["total"]),
+        md_to_html(md_lines), HTML_JS)
+
 
 
 def main(argv):

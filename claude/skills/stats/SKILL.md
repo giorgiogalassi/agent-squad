@@ -49,7 +49,7 @@ Read `ROWS_ADDED`, `VERDICTS_ADDED`, `OLDEST_TRANSCRIPT`.
 python3 ~/.claude/hooks/squad-stats.py report --days <n>
 ```
 
-Read `REPORT`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `CUSTOM_SESSIONS`,
+Read `REPORT`, `HTML`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `CUSTOM_SESSIONS`,
 `VANILLA_SESSIONS`, `COST_USD`, `SQUAD_COST_USD`, `CUSTOM_COST_USD`,
 `VANILLA_COST_USD`, `CACHE_HIT_PCT`, `TOP_SKILL`, `VERDICTS`, `QUALITY`,
 `PRS_TOTAL`, `PRS_MERGED`, `UNPRICED_MODELS`.
@@ -73,6 +73,7 @@ Claude Code stats, last <DAYS> days (API-equivalent cost)
   Reven:         <VERDICTS> verdicts
   PRs:           <PRS_MERGED>/<PRS_TOTAL> merged      (only when QUALITY=github)
   Report:        <REPORT>
+  Charts:        <HTML>
 ```
 
 Then one line per condition that holds:

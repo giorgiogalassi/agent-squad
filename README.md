@@ -138,7 +138,10 @@ before they are chiseled into issues.
 ## Stats: what Claude Code costs and what it produces
 
 `/stats [--days <n>]` imports Claude Code transcripts into a store in the
-vault (`<vault>/squad-stats/`), then writes a Markdown report. It covers
+vault (`<vault>/squad-stats/`), then writes a Markdown report and, next to
+it, a self-contained HTML view of the same report with charts (daily cost
+by session kind, cost per session by week, top skills) that opens
+offline in any browser. It covers
 every session, squad or not, and classifies each one as **squad** (used a
 squad skill or agent), **custom** (another skill, command or agent) or
 **vanilla** (built-in Claude Code only). The report has sessions by kind,
