@@ -154,6 +154,15 @@ connected mode, the outcomes of the PRs recorded in `progress.txt`
   tool): read the weekly trend, which is per session. It is a
   correlation, not an experiment: a week of heavy `/ralph` runs is not a
   week of small fixes.
+- **Layers between you, the model and the result are measured by
+  technology, not by product.** Every tool call is recorded, so the
+  report shows the tool mix and, for each MCP server (`mcp__<server>__*`),
+  sessions that used it against sessions that did not: cost, tokens and
+  cache hit per session, and blocked calls. Failed calls are split by who
+  stopped them: a hook, the auto-mode classifier, you, or the tool itself.
+  A hook that denies with its own reason reaches the model as that reason
+  alone; teach the report to recognize it in
+  `<vault>/squad-stats/error-patterns.json` (`{"hook": ["<regex>"]}`).
 - **Attribution is approximate.** A slash command you type stays active
   until the next command or a resetting built-in such as `/clear`; a skill
   the model loads on its own lasts until your next message, so a turn that

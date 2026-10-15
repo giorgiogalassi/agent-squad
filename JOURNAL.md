@@ -1327,6 +1327,14 @@ tool pays off, there has to be a baseline of sessions without it.
 > importer when batch import is no longer enough (live cost during a run,
 > several machines). The report does not change when it lands.
 
+Tools in the middle (MCP servers, hooks) are measured by technology,
+never by product: tool calls by name, MCP servers parsed from the
+`mcp__<server>__` prefix, failed calls classified by who stopped them.
+A new server or hook shows up in the report without a code change. Hook
+denials are matched on Claude Code's own wording; a hook's custom
+denial reason carries no marker, so `error-patterns.json` extends the
+match per installation.
+
 **Deliberately not measured yet:** "your commits on top of Cody's PR".
 Cody commits under the user's git identity, so authorship cannot separate
 them; commits after the PR opened is the stand-in (rework proxy). A

@@ -52,7 +52,8 @@ python3 ~/.claude/hooks/squad-stats.py report --days <n>
 Read `REPORT`, `HTML`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `CUSTOM_SESSIONS`,
 `VANILLA_SESSIONS`, `COST_USD`, `SQUAD_COST_USD`, `CUSTOM_COST_USD`,
 `VANILLA_COST_USD`, `CACHE_HIT_PCT`, `TOP_SKILL`, `VERDICTS`, `QUALITY`,
-`PRS_TOTAL`, `PRS_MERGED`, `UNPRICED_MODELS`.
+`PRS_TOTAL`, `PRS_MERGED`, `UNPRICED_MODELS`, `TOOL_CALLS`, `TOOL_FAILED`,
+`HOOK_BLOCKS`, `MCP_SERVERS`.
 
 | Exit | Action |
 |---|---|
@@ -70,6 +71,8 @@ Claude Code stats, last <DAYS> days (API-equivalent cost)
   Cost:          $<COST_USD>: squad $<SQUAD_COST_USD>, custom $<CUSTOM_COST_USD>, vanilla $<VANILLA_COST_USD>
   Cache hits:    <CACHE_HIT_PCT>%
   Top skill:     <TOP_SKILL>
+  Tools:         <TOOL_CALLS> calls, <TOOL_FAILED> failed (<HOOK_BLOCKS> blocked by hooks)
+  MCP servers:   <MCP_SERVERS>                     (only when non-empty)
   Reven:         <VERDICTS> verdicts
   PRs:           <PRS_MERGED>/<PRS_TOTAL> merged      (only when QUALITY=github)
   Report:        <REPORT>
@@ -85,7 +88,7 @@ Then one line per condition that holds:
   `Claude Code prunes transcripts after cleanupPeriodDays (default 30). Run /stats at least weekly, or raise cleanupPeriodDays in ~/.claude/settings.json.`
 
 If the user asks about a section (kinds, skills, agents, projects,
-models, weekly, daily, verdicts, PRs), Read the report file and answer from its table.
+models, tools, MCP servers, weekly, daily, verdicts, PRs), Read the report file and answer from its table.
 Never re-derive a number from `usage.tsv`.
 
 ## Step 4: questions

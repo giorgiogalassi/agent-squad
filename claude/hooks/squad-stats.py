@@ -112,10 +112,59 @@ HAIKU_TIER_LIMIT = 100_000
 
 USAGE_COLS = ["ts", "session_id", "project", "agent", "skill", "model",
               "input", "cache_write_5m", "cache_write_1h", "cache_read",
-              "output", "message_id"]
+              "output", "message_id", "tools", "tool_errors"]
 VERDICT_COLS = ["ts", "session_id", "project", "verdict", "message_id"]
+TOOL_COLS = ["ts", "session_id", "project", "agent", "skill", "tool", "family",
+             "outcome", "result_chars", "tool_use_id"]
+HOOK_COLS = ["ts", "session_id", "project", "event", "hook", "outcome",
+             "duration_ms", "chars", "hook_id"]
+# store file -> (columns, dedupe key)
+TABLES = {
+    "usage": (USAGE_COLS, "message_id"),
+    "verdicts": (VERDICT_COLS, "message_id"),
+    "tools": (TOOL_COLS, "tool_use_id"),
+    "hooks": (HOOK_COLS, "hook_id"),
+}
+CLASSIFIER_DENIAL = "Permission for this action was denied by the Claude Code auto mode classifier"
+USER_DENIAL = "The user doesn't want to proceed"
+HOOK_DENIAL_RE = re.compile(r"(?i)\b(pre|post)?tool ?use\b.*\bhook\b|\bhook\b.*\b(denied|blocked|blocking)\b")
 VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT)\b", re.M)
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
+# Failed tool calls, by who stopped them. Matched on the tool_result text
+# with the wording Claude Code uses; anything else that is_error is a
+# plain tool failure ("error"). A hook that denies with its own reason
+# reaches the model as that reason alone, with no marker: add a pattern
+# for it in <store>/error-patterns.json, e.g. {"hook": ["use tokensave_"]}.
+ERROR_KINDS = [
+    ("classifier", [r"denied by the Claude Code auto mode classifier",
+                    r"^Classifier '[^']+' requires approval"]),
+    ("user", [r"^The user doesn't want to proceed"]),
+    ("hook", [r"Hook (PreToolUse|PermissionRequest)\S* (denied|blocked|asked)",
+              r"\b(PreToolUse|PermissionRequest)(:\S+)? hook (blocking )?error",
+              r"Hook '[^']+' (blocked this action|requires approval)",
+              r"blocked by a \w+ hook"]),
+]
+_ERROR_RX = None
+
+
+def error_patterns():
+    """Built-in patterns plus <store>/error-patterns.json, compiled once."""
+    global _ERROR_RX
+    if _ERROR_RX is None:
+        extra = {}
+        try:
+            with open(os.path.join(store_dir(), "error-patterns.json")) as f:
+                extra = json.load(f)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError) as e:
+            sys.stderr.write("squad-stats: error-patterns.json ignored: %s\n" % e)
+        _ERROR_RX = []
+        for kind, pats in ERROR_KINDS:
+            more = extra.get(kind) if isinstance(extra, dict) else None
+            pats = pats + [x for x in (more or []) if isinstance(x, str)]
+            _ERROR_RX.append((kind, [re.compile(x) for x in pats]))
+    return _ERROR_RX
 PR_RE = re.compile(r"^\[[^\]]+\]\s+(\d{4}-\d{2}-\d{2})\b.*?\bPR:\s*#(\d+)")
 
 
@@ -314,10 +363,34 @@ def skill_at(events, ts):
     return events[i][1] if i >= 0 else ""
 
 
+def result_text(block):
+    c = block.get("content")
+    if isinstance(c, list):
+        return " ".join(x.get("text") or "" for x in c if isinstance(x, dict))
+    return str(c or "")
+
+
+def error_kind(block):
+    text = result_text(block)
+    for kind, rxs in error_patterns():
+        if any(rx.search(text) for rx in rxs):
+            return kind
+    return "error"
+
+
 def usage_rows(records, agent, events, project):
-    """One row per API message id; later lines of the same message carry
-    the final usage, so the last one wins."""
-    by_id = {}
+    """One row per API message id. A message can span several lines (one
+    per content block): usage comes from the last line, tool calls from
+    all of them. Tool errors are joined back from the tool_result that
+    answers each call: "<kind>:<tool>", kind in hook, classifier, user,
+    error."""
+    errors = {}
+    for rec in records:
+        if rec.get("type") == "user":
+            for blk in content_blocks(rec.get("message") or {}):
+                if blk.get("type") == "tool_result" and blk.get("is_error"):
+                    errors[blk.get("tool_use_id")] = error_kind(blk)
+    by_id, tools = {}, {}
     for rec in records:
         if rec.get("type") != "assistant":
             continue
@@ -325,7 +398,12 @@ def usage_rows(records, agent, events, project):
         usage = msg.get("usage")
         model = msg.get("model") or ""
         mid = msg.get("id") or rec.get("requestId") or rec.get("uuid")
-        if not isinstance(usage, dict) or not mid or model.startswith("<"):
+        if not mid or model.startswith("<"):
+            continue
+        for blk in content_blocks(msg):
+            if blk.get("type") == "tool_use" and blk.get("name"):
+                tools.setdefault(mid, []).append((blk.get("id"), blk["name"]))
+        if not isinstance(usage, dict):
             continue
         cc = usage.get("cache_creation") or {}
         w1h = int(cc.get("ephemeral_1h_input_tokens") or 0)
@@ -348,6 +426,10 @@ def usage_rows(records, agent, events, project):
             "output": int(usage.get("output_tokens") or 0),
             "message_id": mid,
         }
+    for mid, row in by_id.items():
+        calls = tools.get(mid, [])
+        row["tools"] = ",".join(name for _, name in calls)
+        row["tool_errors"] = ",".join("%s:%s" % (errors[i], name) for i, name in calls if i in errors)
     return list(by_id.values())
 
 
@@ -366,8 +448,125 @@ def verdict_rows(records, session_id, project):
     return list(rows.values())
 
 
+def tool_family(name):
+    """builtin, or mcp:<server> for tools named mcp__<server>__<tool>."""
+    if name.startswith("mcp__"):
+        parts = name.split("__")
+        return "mcp:" + (parts[1] if len(parts) > 2 else "unknown")
+    return "builtin"
+
+
+def result_text(block):
+    c = block.get("content")
+    if isinstance(c, list):
+        return " ".join(str(b.get("text") or "") for b in c if isinstance(b, dict))
+    return str(c or "")
+
+
+def result_outcome(block):
+    if not block.get("is_error"):
+        return "ok"
+    text = result_text(block)
+    if text.startswith(CLASSIFIER_DENIAL):
+        return "denied-classifier"
+    if text.startswith(USER_DENIAL):
+        return "denied-user"
+    if HOOK_DENIAL_RE.search(text[:400]):
+        return "denied-hook"
+    return "error"
+
+
+def tool_rows(records, agent, events, project, session_id):
+    """One row per tool call, joined to its result. A call with no result
+    yet (session still running, or interrupted) is 'no-result'."""
+    results = {}
+    for rec in records:
+        if rec.get("type") == "user":
+            for b in content_blocks(rec.get("message") or {}):
+                if b.get("type") == "tool_result" and b.get("tool_use_id"):
+                    results[b["tool_use_id"]] = b
+    rows = {}
+    for rec in records:
+        if rec.get("type") != "assistant":
+            continue
+        ts = rec.get("timestamp") or ""
+        for b in content_blocks(rec.get("message") or {}):
+            if b.get("type") != "tool_use" or not b.get("id"):
+                continue
+            name = b.get("name") or "unknown"
+            res = results.get(b["id"])
+            rows[b["id"]] = {
+                "ts": ts, "session_id": rec.get("sessionId") or session_id, "project": project,
+                "agent": agent, "skill": skill_at(events, ts), "tool": name,
+                "family": tool_family(name),
+                "outcome": result_outcome(res) if res else "no-result",
+                "result_chars": len(result_text(res)) if res else 0,
+                "tool_use_id": b["id"],
+            }
+    return list(rows.values())
+
+
+def hook_name(command):
+    """A readable id for a hook command: its executable's basename plus a
+    subcommand when the executable is a dispatcher (`tokensave hook-stop`)."""
+    parts = str(command or "").split()
+    if not parts:
+        return "unknown"
+    base = os.path.basename(parts[0])
+    if len(parts) > 1 and not parts[1].startswith("-") and "/" not in parts[1]:
+        return "%s %s" % (base, parts[1])
+    return base
+
+
+HOOK_ATTACHMENT_OUTCOME = {"success": "ok", "non_blocking_error": "error",
+                           "blocking_error": "blocking", "additional_context": "context",
+                           "cancelled": "error", "error_during_execution": "error"}
+
+
+def hook_rows(records, session_id, project):
+    """Hook executions, from two record shapes: `system` summaries
+    (`<event>_hook_summary`, with commands, durations and errors) and
+    `attachment` records whose type starts with `hook_`. Field names are
+    read defensively: Claude Code has changed them between versions."""
+    rows = []
+    for rec in records:
+        ts = rec.get("timestamp") or ""
+        uid = rec.get("uuid") or ""
+        if rec.get("type") == "system" and str(rec.get("subtype") or "").endswith("_hook_summary"):
+            event = rec["subtype"][:-len("_hook_summary")]
+            errors = rec.get("hookErrors") or []
+            blocked = bool(rec.get("preventedContinuation"))
+            ctx = rec.get("hookAdditionalContext")
+            for i, info in enumerate(rec.get("hookInfos") or []):
+                info = info if isinstance(info, dict) else {"command": info}
+                rows.append({
+                    "ts": ts, "session_id": rec.get("sessionId") or session_id, "project": project,
+                    "event": event, "hook": hook_name(info.get("command")),
+                    "outcome": "blocking" if blocked else ("error" if errors else "ok"),
+                    "duration_ms": int(info.get("durationMs") or 0),
+                    "chars": len(json.dumps(ctx)) if ctx else 0,
+                    "hook_id": "%s:%d" % (uid, i),
+                })
+        elif rec.get("type") == "attachment":
+            a = rec.get("attachment") or {}
+            atype = str(a.get("type") or "")
+            if not atype.startswith("hook_"):
+                continue
+            content = a.get("content") or a.get("stdout") or a.get("blockingError") or ""
+            rows.append({
+                "ts": ts, "session_id": rec.get("sessionId") or session_id, "project": project,
+                "event": str(a.get("hookEvent") or a.get("hookName") or "unknown").split(":")[0],
+                "hook": hook_name(a.get("command") or a.get("hookName")),
+                "outcome": HOOK_ATTACHMENT_OUTCOME.get(atype[len("hook_"):], atype[len("hook_"):]),
+                "duration_ms": int(a.get("durationMs") or 0),
+                "chars": len(content if isinstance(content, str) else json.dumps(content)),
+                "hook_id": uid or "%s:%s" % (ts, atype),
+            })
+    return rows
+
+
 def import_transcripts(pmap):
-    """Yield (usage_rows, verdict_rows) per main transcript plus its subagents."""
+    """Yield (path, {table: rows}) per main transcript plus its subagents."""
     root = projects_dir()
     for main in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         records = list(read_jsonl(main))
@@ -379,6 +578,8 @@ def import_transcripts(pmap):
         project = project_name(cwd, pmap)
         events = skill_events(records)
         usage = usage_rows(records, "main", events, project)
+        tools = tool_rows(records, "main", events, project, session_id)
+        hooks = hook_rows(records, session_id, project)
         verdicts = []
         subdir = os.path.join(os.path.splitext(main)[0], "subagents")
         for sub in sorted(glob.glob(os.path.join(subdir, "agent-*.jsonl"))):
@@ -393,9 +594,11 @@ def import_transcripts(pmap):
             for r in srecs:
                 r.setdefault("sessionId", session_id)
             usage.extend(usage_rows(srecs, agent, events, project))
+            tools.extend(tool_rows(srecs, agent, events, project, session_id))
+            hooks.extend(hook_rows(srecs, session_id, project))
             if agent == "reven":
                 verdicts.extend(verdict_rows(srecs, session_id, project))
-        yield main, usage, verdicts
+        yield main, {"usage": usage, "verdicts": verdicts, "tools": tools, "hooks": hooks}
 
 
 # ------------------------------------------------------------------ store
@@ -408,6 +611,8 @@ def read_tsv(path, cols):
                 parts = line.rstrip("\n").split("\t")
                 if i == 0 and parts == cols:
                     continue
+                if len(parts) < len(cols) and len(parts) >= 12:
+                    parts += [""] * (len(cols) - len(parts))
                 if len(parts) != len(cols):
                     continue
                 rows.append(dict(zip(cols, parts)))
@@ -440,35 +645,33 @@ def cmd_collect(args):
     if args:
         fail(2, "collect takes no arguments")
     d = ensure_store()
-    upath = os.path.join(d, "usage.tsv")
-    vpath = os.path.join(d, "verdicts.tsv")
-    seen_u = {r["message_id"] for r in read_tsv(upath, USAGE_COLS)}
-    seen_v = {r["message_id"] for r in read_tsv(vpath, VERDICT_COLS)}
-    new_u, new_v, files, oldest = [], [], 0, None
-    for path, usage, verdicts in import_transcripts(load_project_map()):
+    seen = {t: {r[key] for r in read_tsv(os.path.join(d, t + ".tsv"), cols)}
+            for t, (cols, key) in TABLES.items()}
+    new = {t: [] for t in TABLES}
+    files, oldest = 0, None
+    for path, tables in import_transcripts(load_project_map()):
         files += 1
         try:
             m = dt.datetime.fromtimestamp(os.path.getmtime(path), dt.timezone.utc)
             oldest = m if oldest is None or m < oldest else oldest
         except OSError:
             pass
-        for r in usage:
-            if r["message_id"] not in seen_u:
-                seen_u.add(r["message_id"])
-                new_u.append(r)
-        for r in verdicts:
-            if r["message_id"] not in seen_v:
-                seen_v.add(r["message_id"])
-                new_v.append(r)
-    new_u.sort(key=lambda r: r["ts"])
-    new_v.sort(key=lambda r: r["ts"])
-    append_tsv(upath, USAGE_COLS, new_u)
-    append_tsv(vpath, VERDICT_COLS, new_v)
-    changed = bool(new_u or new_v)
+        for t, rows in tables.items():
+            key = TABLES[t][1]
+            for r in rows:
+                if r[key] and r[key] not in seen[t]:
+                    seen[t].add(r[key])
+                    new[t].append(r)
+    for t, (cols, _) in TABLES.items():
+        new[t].sort(key=lambda r: r["ts"])
+        append_tsv(os.path.join(d, t + ".tsv"), cols, new[t])
+    changed = any(new.values())
     emit("OUTCOME", "applied" if changed else "unchanged")
     emit("CHANGED", "yes" if changed else "no")
-    emit("ROWS_ADDED", len(new_u))
-    emit("VERDICTS_ADDED", len(new_v))
+    emit("ROWS_ADDED", len(new["usage"]))
+    emit("VERDICTS_ADDED", len(new["verdicts"]))
+    emit("TOOL_CALLS_ADDED", len(new["tools"]))
+    emit("HOOK_RUNS_ADDED", len(new["hooks"]))
     emit("FILES_SCANNED", files)
     emit("OLDEST_TRANSCRIPT", oldest.strftime("%Y-%m-%d") if oldest else "")
     emit("STORE", d)
@@ -709,6 +912,8 @@ def cmd_report(args):
                flag=lambda k: k in SQUAD_AGENTS)
     L += table("Cost by project", group(rows, lambda r: r["project"]), total, "Project")
     L += table("Cost by model", group(rows, lambda r: r["model"]), total, "Model")
+    tool_lines, tstats = tool_sections(rows)
+    L += tool_lines
 
     weeks = {}
     for r in rows:
@@ -819,6 +1024,10 @@ def cmd_report(args):
     emit("PRS_TOTAL", total_prs)
     emit("PRS_MERGED", merged_n)
     emit("UNPRICED_MODELS", ",".join(sorted(unpriced)))
+    emit("TOOL_CALLS", tstats["calls"])
+    emit("TOOL_FAILED", tstats["failed"])
+    emit("HOOK_BLOCKS", tstats["hook"])
+    emit("MCP_SERVERS", ",".join(tstats["servers"]))
 
 
 # ------------------------------------------------------------------- html
@@ -879,7 +1088,8 @@ def esc(x):
 
 def inline_md(text):
     out = esc(text)
-    return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    return re.sub(r"\*([^*]+)\*", r"<em>\1</em>", out)
 
 
 def md_table(rows):
@@ -1044,6 +1254,92 @@ def skills_chart(by_skill, total):
         out.append('<rect x="0" y="%.1f" width="%d" height="%d" fill="transparent" data-tip="%s: %s, %s of total, %d sessions, %d calls"/>' % (
             y, W, rowh, esc(k), money(e["cost"]), pct(e["cost"], total), len(e["sessions"]), e["calls"]))
     return '<svg viewBox="0 0 %d %d" role="img" aria-label="Cost by skill">%s</svg>' % (W, H, "".join(out))
+
+
+MCP_RE = re.compile(r"^mcp__(.+?)__")
+
+
+def split_list(v):
+    return [x for x in (v or "").split(",") if x]
+
+
+def tool_sections(rows):
+    """Tool mix and MCP servers: every tool the model called, failures by
+    who stopped them, and for each MCP server the sessions that used it
+    against those that did not, in the same window."""
+    kinds = [k for k, _ in ERROR_KINDS] + ["error"]
+    tools = {}
+    for r in rows:
+        for name in split_list(r["tools"]):
+            e = tools.setdefault(name, {"calls": 0, "sessions": set(), **{k: 0 for k in kinds}})
+            e["calls"] += 1
+            e["sessions"].add(r["session_id"])
+        for item in split_list(r["tool_errors"]):
+            kind, _, name = item.partition(":")
+            if name in tools and kind in kinds:
+                tools[name][kind] += 1
+    total_calls = sum(e["calls"] for e in tools.values())
+    L = ["## Tools", "",
+         "Every tool call the model made. Failed calls are split by who stopped "
+         "them: a hook, the auto-mode classifier, you, or the tool itself (error).", ""]
+    if tools:
+        L += ["| Tool | Calls | Share | Sessions | Failed | Hook | Classifier | User | Error |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for name, e in sorted(tools.items(), key=lambda kv: -kv[1]["calls"])[:25]:
+            failed = sum(e[k] for k in kinds)
+            L.append("| %s | %s | %s | %d | %d | %d | %d | %d | %d |" % (
+                name, "{:,}".format(e["calls"]), pct(e["calls"], total_calls), len(e["sessions"]),
+                failed, e["hook"], e["classifier"], e["user"], e["error"]))
+    else:
+        L.append("No tool calls in the window.")
+    L.append("")
+
+    servers = {}
+    for r in rows:
+        for name in split_list(r["tools"]):
+            m = MCP_RE.match(name)
+            if m:
+                servers.setdefault(m.group(1), set()).add(r["session_id"])
+    by_session = {}
+    for r in rows:
+        by_session.setdefault(r["session_id"], []).append(r)
+
+    def per_session(sids):
+        rs = [r for sid in sids for r in by_session[sid]]
+        n = len(sids)
+        if not n:
+            return "n/a", "n/a", "n/a", "n/a"
+        cost = sum(x["_cost"] or 0 for x in rs) / n
+        tok = (prompt_tokens(rs) + sum(x["output"] for x in rs)) / n
+        blocked = sum(1 for x in rs for i in split_list(x["tool_errors"])
+                      if not i.startswith("error:")) / n
+        return money(cost), "{:,}".format(int(tok)), pct(cache_read(rs), prompt_tokens(rs)), "%.1f" % blocked
+
+    L += ["## MCP servers", "",
+          "Each cell is *with / without*: sessions that called the server against "
+          "the other sessions in the window. Not an experiment: you choose when a "
+          "server is used, and the work differs. A server installed everywhere has "
+          "no *without* sessions; compare against a window from before it instead.", ""]
+    if servers:
+        L += ["| Server | Calls | Sessions | Cost/session | Tokens/session | Cache hit | Blocked calls/session |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
+        everyone = set(by_session)
+        for srv, sids in sorted(servers.items(), key=lambda kv: -len(kv[1])):
+            calls = sum(e["calls"] for n, e in tools.items() if n.startswith("mcp__%s__" % srv))
+            w, wo = per_session(sids), per_session(everyone - sids)
+            L.append("| %s | %s | %d / %d | %s / %s | %s / %s | %s / %s | %s / %s |" % (
+                srv, "{:,}".format(calls), len(sids), len(everyone - sids),
+                w[0], wo[0], w[1], wo[1], w[2], wo[2], w[3], wo[3]))
+    else:
+        L.append("No MCP server calls in the window.")
+    L.append("")
+    stats = {
+        "calls": total_calls,
+        "failed": sum(e[k] for e in tools.values() for k in kinds),
+        "hook": sum(e["hook"] for e in tools.values()),
+        "servers": sorted(servers),
+    }
+    return L, stats
 
 
 def render_html(md_lines, ctx):
