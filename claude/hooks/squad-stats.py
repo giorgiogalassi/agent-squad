@@ -11,8 +11,9 @@ Every Claude Code session is recorded, squad or not. Each row carries
 the active skill (any skill or slash command; prompt built-ins as
 "builtin:<name>") and the agent type, and the report classifies each
 session as squad, custom (another skill, command or agent) or vanilla
-(built-in Claude Code only). A skill stays active until the next skill
-or a resetting built-in such as /clear: an approximation, since the
+(built-in Claude Code only). A slash command stays active until the
+next one or a resetting built-in such as /clear; a skill the model loads
+lasts until the user's next message. Both are approximations: the
 transcript does not mark where a skill's work ends.
 
 Two layers, kept apart on purpose: importers turn a source into
@@ -262,25 +263,43 @@ def content_blocks(msg):
     return [b for b in c if isinstance(b, dict)] if isinstance(c, list) else []
 
 
+def is_human_turn(rec):
+    """A message the user typed: not injected (isMeta), not a tool result."""
+    if rec.get("type") != "user" or rec.get("isMeta"):
+        return False
+    blocks = content_blocks(rec.get("message") or {})
+    return (any(b.get("type") == "text" for b in blocks)
+            and not any(b.get("type") == "tool_result" for b in blocks))
+
+
 def skill_events(records):
-    """(ts, skill) each time the main thread switches skill: any slash
-    command or Skill tool call. A skill stays active until the next one or
-    a resetting built-in such as /clear."""
-    events = []
+    """(ts, skill) each time the active skill of the main thread changes.
+
+    Two scopes. A slash command the user types stays active until the next
+    command or a resetting built-in such as /clear. A skill the model loads
+    through the Skill tool lasts only until the user's next message, then
+    the slash-command skill (if any) is active again: a reference skill
+    loaded once must not absorb the rest of the session."""
+    events, command, loaded = [], "", ""
     for rec in records:
         ts = rec.get("timestamp") or ""
         msg = rec.get("message") or {}
-        if rec.get("type") == "user":
-            for b in content_blocks(msg):
-                for m in COMMAND_RE.finditer(b.get("text") or ""):
-                    events.append((ts, command_skill(m.group(1))))
+        if is_human_turn(rec):
+            names = [m.group(1) for b in content_blocks(msg)
+                     for m in COMMAND_RE.finditer(b.get("text") or "")]
+            if names:
+                command = command_skill(names[-1])
+            if names or loaded:
+                loaded = ""
+                events.append((ts, command))
         elif rec.get("type") == "assistant":
             for b in content_blocks(msg):
                 if b.get("type") == "tool_use" and b.get("name") == "Skill":
                     inp = b.get("input") or {}
-                    s = norm_name(inp.get("skill") or inp.get("command") or "")
-                    if s:
-                        events.append((ts, s))
+                    name = norm_name(inp.get("skill") or inp.get("command") or "")
+                    if name:
+                        loaded = name
+                        events.append((ts, name))
     events.sort(key=lambda e: e[0])
     return events
 

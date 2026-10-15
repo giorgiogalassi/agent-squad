@@ -151,8 +151,10 @@ connected mode, the outcomes of the PRs recorded in `progress.txt`
   tool): read the weekly trend, which is per session. It is a
   correlation, not an experiment: a week of heavy `/ralph` runs is not a
   week of small fixes.
-- **Attribution is approximate.** A skill stays active until the next
-  skill or a resetting built-in such as `/clear`. Prompt built-ins
+- **Attribution is approximate.** A slash command you type stays active
+  until the next command or a resetting built-in such as `/clear`; a skill
+  the model loads on its own lasts until your next message, so a turn that
+  loads a reference skill and then does unrelated work is charged to it. Prompt built-ins
   (`/init`, `/review`, `/compact`, ...) show as `builtin:<name>`; a new
   built-in missing from the script's list shows up as a custom skill.
 
