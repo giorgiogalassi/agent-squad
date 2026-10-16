@@ -429,18 +429,31 @@ def usage_rows(records, agent, events, project):
 
 
 def verdict_rows(records, session_id, project):
-    rows = {}
+    """Reven verdicts of one transcript. Reven mostly delivers its review
+    through the SubagentHandback tool, so that tool's input is read too. A
+    review posted as text and again via the handback is one review: handback
+    rows count only when the transcript has no text verdict. Other tool
+    inputs (the `gh pr comment` bodies) repeat the review and are ignored."""
+    text_rows, handback_rows = {}, {}
     for rec in records:
         if rec.get("type") != "assistant":
             continue
         msg = rec.get("message") or {}
         for b in content_blocks(msg):
-            m = VERDICT_RE.search(b.get("text") or "") if b.get("type") == "text" else None
+            if b.get("type") == "text":
+                m = VERDICT_RE.search(b.get("text") or "")
+                bucket, key = text_rows, (msg.get("id") or rec.get("uuid") or "")
+            elif b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
+                inp = b.get("input")
+                m = VERDICT_RE.search(inp.get("message") or "") if isinstance(inp, dict) else None
+                bucket, key = handback_rows, (b.get("id") or msg.get("id") or rec.get("uuid") or "")
+            else:
+                continue
             if m:
-                mid = (msg.get("id") or rec.get("uuid") or "") + ":verdict"
-                rows[mid] = {"ts": rec.get("timestamp") or "", "session_id": session_id,
-                             "project": project, "verdict": m.group(1), "message_id": mid}
-    return list(rows.values())
+                mid = key + ":verdict"
+                bucket[mid] = {"ts": rec.get("timestamp") or "", "session_id": session_id,
+                               "project": project, "verdict": m.group(1), "message_id": mid}
+    return list((text_rows or handback_rows).values())
 
 
 def hook_name(command):
