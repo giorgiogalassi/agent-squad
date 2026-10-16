@@ -241,6 +241,34 @@ OUT="$(cat "$TMPROOT/out")"
 check "gh failure is not fatal" 0 "$RC"
 check "QUALITY gh-error" gh-error "$(key QUALITY)"
 
+# ---- Reven verdicts delivered through SubagentHandback ---------------------
+export SQUAD_STATS_DIR="$TMPROOT/vstore"; mkdir -p "$SQUAD_STATS_DIR"
+export CLAUDE_PROJECTS_DIR="$TMPROOT/vprojects"; mkdir -p "$CLAUDE_PROJECTS_DIR/-v/sv/subagents"
+VD="$CLAUDE_PROJECTS_DIR/-v/sv/subagents"
+asst 2026-10-14T09:00:00.000Z msg_vm claude-opus-5-5 1 0 0 0 0 sv /v > "$CLAUDE_PROJECTS_DIR/-v/sv.jsonl"
+# text-only verdict
+printf '{"type":"assistant","timestamp":"2026-10-14T10:00:00.000Z","sessionId":"sv","message":{"id":"msg_vt","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"Verdict: COMMENT\\nx"}]}}\n' > "$VD/agent-t.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-t.meta.json"
+python3 "$SUT" collect >/dev/null 2>&1
+check "text verdict row" 1 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+# handback-only verdict, text+handback of one review, Bash-only (gh pr comment)
+printf '{"type":"assistant","timestamp":"2026-10-14T10:05:00.000Z","sessionId":"sv","message":{"id":"msg_vh","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_h1","name":"SubagentHandback","input":{"message":"Review\\nVerdict: APPROVED\\nok"}}]}}\n' > "$VD/agent-h.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-h.meta.json"
+{
+  printf '{"type":"assistant","timestamp":"2026-10-14T10:10:00.000Z","sessionId":"sv","message":{"id":"msg_vb1","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"Verdict: CHANGES REQUESTED"}]}}\n'
+  printf '{"type":"assistant","timestamp":"2026-10-14T10:11:00.000Z","sessionId":"sv","message":{"id":"msg_vb2","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_b1","name":"SubagentHandback","input":{"message":"Verdict: CHANGES REQUESTED"}}]}}\n'
+} > "$VD/agent-b.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-b.meta.json"
+printf '{"type":"assistant","timestamp":"2026-10-14T10:15:00.000Z","sessionId":"sv","message":{"id":"msg_vx","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_x1","name":"Bash","input":{"command":"gh pr comment 1 --body \\"Verdict: APPROVED\\""}}]}}\n' > "$VD/agent-x.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-x.meta.json"
+python3 "$SUT" collect >/dev/null 2>&1
+check "backfill adds only the missing rows" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+check "handback-only verdict recorded" 1 "$(grep -c 'APPROVED.toolu_h1:verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+check "review with text and handback counted once" 1 "$(grep -c 'CHANGES REQUESTED' "$SQUAD_STATS_DIR/verdicts.tsv")"
+check "Bash input yields no row" 0 "$(grep -c 'toolu_x1' "$SQUAD_STATS_DIR/verdicts.tsv")"
+python3 "$SUT" collect >/dev/null 2>&1
+check "re-collect does not duplicate verdicts" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+
 # ---- trend: 12 sessions per period, last period 20% cheaper per session ----
 export SQUAD_STATS_DIR="$TMPROOT/trendstore"; mkdir -p "$SQUAD_STATS_DIR"
 export CLAUDE_PROJECTS_DIR="$TMPROOT/trendprojects"; mkdir -p "$CLAUDE_PROJECTS_DIR/-t"
