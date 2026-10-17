@@ -2,6 +2,16 @@
 
 A personal multi-agent development workflow for Claude Code.
 
+**In plain words:** Agent Squad is a team of AI agents that takes a piece
+of software work from a rough idea to a reviewed pull request. One agent
+helps plan the work, one designs it when it is complex, one splits it into
+tracked issues, one writes the code, and a separate one reviews it before
+anything is merged. Nothing is merged without a person approving it. It is not a
+demo: I use it every day on real projects, including client work. In
+company environments it can run fully hands-off from company tools, with
+no write access to the tracker or the repository (see
+[Tracker modes](#tracker-modes)).
+
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 Sidecar, on an existing branch: opens a worktree and stops (Cody only on
