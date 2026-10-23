@@ -219,8 +219,27 @@ than Last updated, or Last updated older than 7 days; current time via
 
 ## Vault commit
 
-After any vault write, if `<vault>/.git` exists:
-`git -C <vault> add -A && git -C <vault> commit -m "[lore] <project> <action> YYYY-MM-DD HH:MM"`.
+After any vault write, if `<vault>/.git` exists, commit **only the files
+this command wrote**:
+
+1. Before staging: `git -C <vault> status --porcelain`. Keep the list.
+2. Commit by path:
+   `git -C <vault> add -- <paths> && git -C <vault> commit -m "[lore] <project> <action> YYYY-MM-DD HH:MM" -- <paths>`,
+   where `<paths>` are exactly the files this command created, edited or
+   moved (both sides of a move). The trailing `-- <paths>` keeps anything
+   someone else already staged out of the commit too.
+3. **Never `git add -A`, `git add .` or `git commit -a`.** The vault is
+   shared with the user's own edits and with other sessions; a blanket
+   add commits whatever is on disk under a message about this project.
+   It has committed a mass deletion of draft pieces, and seven weeks
+   later their unexplained return, both as routine-looking `[lore]`
+   commits from unrelated projects.
+4. Anything in the step 1 list that this command did not write: leave it
+   unstaged and print one line,
+   `Lore: vault has N changes I didn't make (e.g. <first path>) — left uncommitted.`
+   If any of them is a deletion (`D`) under `drafts/` or `published/`,
+   say so in the same line: `… including D deletions under drafts/ or published/ — check before committing.`
+
 Commit only — never push, pull, or touch remotes. No repo → skip
 silently. A commit failure gets one line at most; the writes already
 succeeded.
