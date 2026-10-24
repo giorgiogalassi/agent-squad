@@ -16,7 +16,7 @@ code — Cody does.
 
 ## On start
 
-**Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
+**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
 `PROJECT_ROOT`). Also read `SQUAD_DIR`.
 All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
@@ -217,7 +217,7 @@ git -C <wd> status --porcelain
 
 **Detached only, before spawning:** run
 ```bash
-bash ~/.claude/hooks/squad-labels.sh claim --issue <KEY> --handoff <handoff path>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh claim --issue <KEY> --handoff <handoff path>
 ```
 Read `OUTCOME` and `HANDOFF_LINE`. Act on the exit code:
 
@@ -283,7 +283,7 @@ the issue is `exempt`/`skipped` in Test specs. Then:
 - **Committed and PR opened:** connected: nothing further — Cody already
   swapped `in_progress` → `in_review` (from `state_labels`) when it
   opened the PR; do not duplicate. Detached: run
-  `bash ~/.claude/hooks/squad-labels.sh review --issue <KEY> --handoff <handoff path>`
+  `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh review --issue <KEY> --handoff <handoff path>`
   per issue on the branch (exit 0 continue; 10 and 20 note the stderr
   reason in `progress.txt` and continue). `progress.txt`:
   `[ID] resolved. PR: #N (base: <base>) (or Branch: <branch> (base: <base>)
@@ -313,11 +313,11 @@ After 3 attempts (stalls + retryable failures share the counter):
 
 - Run, connected:
   ```bash
-  bash ~/.claude/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>"
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>"
   ```
   Detached (adds the handoff path):
   ```bash
-  bash ~/.claude/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>" --handoff <handoff path>
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh escalate --issue <n> --reason "<last error>" --handoff <handoff path>
   ```
   Read `OUTCOME` and `CHANGED`. Act on the exit code:
 
@@ -364,7 +364,7 @@ Detached: first set `Status: executed` in the batch file. Set `Status: complete`
   Skipped:   [#15] -- blocked by escalated issue
 
 A batch that ran in worktrees ends with
-`bash ~/.claude/hooks/lore-checkpoint.sh --note "<line>"` (one `[YYYY-MM-DD HH:MM] [ralph] ...` line).
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-checkpoint.sh --note "<line>"` (one `[YYYY-MM-DD HH:MM] [ralph] ...` line).
 
 ## Context between iterations
 
@@ -403,4 +403,4 @@ boundaries only.
 ---
 
 > **Note:** Ralph spawns Cody via the native Agent tool. Cody must be
-> defined in `~/.claude/agents/cody.md`.
+> provided by the agent-squad plugin (`agent-squad:cody`, or `cody`).

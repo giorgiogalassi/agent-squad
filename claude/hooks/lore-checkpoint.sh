@@ -36,11 +36,8 @@
 #
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
-# Install (Claude Code): copy to ~/.claude/hooks/lore-checkpoint.sh, chmod +x,
-# and add to ~/.claude/settings.json:
-#   { "hooks": { "SessionEnd": [ { "hooks": [
-#     { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
-# Optional: add "timeout": <seconds> to the hook entry to raise the 1.5 s budget.
+# Registered by the plugin's hooks/hooks.json (SessionEnd); no manual install
+# step. To raise the 1.5 s budget, add "timeout": <seconds> to that entry.
 
 # Recursion guard: the headless `claude -p` below is itself a session and may
 # fire SessionEnd; it runs with SQUAD_LORE_HOOK=1 so that nested run exits here.

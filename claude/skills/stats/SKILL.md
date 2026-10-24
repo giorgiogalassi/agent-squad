@@ -20,7 +20,7 @@ keys or from the report file it writes.
 
 ## On start
 
-**Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
+**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
 `VAULT_PATH`. The stats store is `<VAULT_PATH>/squad-stats/`. Never
 derive the project root from `git rev-parse --show-toplevel` (breaks in
 worktrees; see PATH_RESOLUTION.md). Run every command below from the
@@ -32,7 +32,7 @@ current working directory.
 ## Step 1: collect
 
 ```bash
-python3 ~/.claude/hooks/squad-stats.py collect
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-stats.py collect
 ```
 
 Read `ROWS_ADDED`, `VERDICTS_ADDED`, `OLDEST_TRANSCRIPT`.
@@ -46,7 +46,7 @@ Read `ROWS_ADDED`, `VERDICTS_ADDED`, `OLDEST_TRANSCRIPT`.
 ## Step 2: report
 
 ```bash
-python3 ~/.claude/hooks/squad-stats.py report --days <n>
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-stats.py report --days <n>
 ```
 
 Read `REPORT`, `HTML`, `DAYS`, `SESSIONS`, `SQUAD_SESSIONS`, `CUSTOM_SESSIONS`,

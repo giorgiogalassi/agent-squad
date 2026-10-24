@@ -106,8 +106,9 @@ def find_skill_md(project_root):
     # Fall back to resolving relative to this script's own repo checkout,
     # in case PROJECT_ROOT points somewhere unexpected.
     candidates.append(Path(__file__).resolve().parents[2] / SKILL_MD_RELATIVE)
-    # Documented installed layouts (README): hook under ~/.claude/hooks or
-    # ~/.codex/hooks, skill under ~/.claude/skills or ~/.agents/skills.
+    # Plugin layout: <plugin root>/hooks/<this script>, <plugin root>/skills/...
+    candidates.append(Path(__file__).resolve().parents[1] / "skills" / "chisel" / "SKILL.md")
+    # Legacy copy-install layouts: skill under ~/.claude/skills or ~/.agents/skills.
     candidates.append(Path.home() / ".claude" / "skills" / "chisel" / "SKILL.md")
     candidates.append(Path.home() / ".agents" / "skills" / "chisel" / "SKILL.md")
 

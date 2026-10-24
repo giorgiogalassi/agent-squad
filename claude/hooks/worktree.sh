@@ -52,9 +52,8 @@
 #
 # Depends only on git and POSIX shell utilities. No jq.
 #
-# Install (Claude Code): copy to ~/.claude/hooks/worktree.sh, chmod +x,
-# alongside ~/.claude/hooks/path-resolve.sh (this script invokes it as
-# a sibling file).
+# Ships in the plugin's hooks/ directory next to path-resolve.sh (this script
+# invokes it as a sibling file).
 
 set -u
 

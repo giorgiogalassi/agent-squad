@@ -58,7 +58,8 @@
 # Output: five KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
-# Install: copy to ~/.claude/hooks/path-resolve.sh, chmod +x.
+# Ships in the plugin's hooks/ directory; skills and agents call it as
+# ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh.
 # Every skill and agent's "Path resolution protocol" runs this via Bash
 # as its first step instead of re-deriving the algorithm inline.
 

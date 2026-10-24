@@ -80,7 +80,7 @@ rec "$S2" s1 ralph "bang two"; rec "$S2" s2 ralph "bang two"
 o="$(run_orient "$S2")"
 c="$(printf '%s' "$o" | "$JQ" -e '.hookSpecificOutput.additionalContext' >/dev/null 2>&1 && ctx "$o")"
 [ "$(printf '%s\n' "$c" | grep -c '2 recurring squad incidents')" = 1 ] && ok "incidents: 2 recurring, exactly once" || bad "incidents: 2 recurring: $c"
-printf '%s\n' "$c" | grep -qF '2 recurring squad incidents: run ~/.claude/hooks/squad-incidents.sh summary' && ok "incidents: line text" || bad "incidents: line text"
+printf '%s\n' "$c" | grep -qF "2 recurring squad incidents: run $TMPROOT/hooks/squad-incidents.sh summary" && ok "incidents: line text" || bad "incidents: line text"
 printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "incidents: JSON stays valid" || bad "incidents: JSON shape"
 
 S0="$TMPROOT/inc-none.tsv"
@@ -96,23 +96,6 @@ printf '%s' "$base" | grep -q 'recurring squad incidents' && bad "incidents: mis
 # Missing script: hooks dir without squad-incidents.sh, recurring store present.
 o="$(run_orient "$S2" "$TMPROOT/hooks-nojq")"
 printf '%s' "$o" | grep -q 'recurring squad incidents' && bad "incidents: missing script has line" || ok "incidents: missing script, no line"
-
-# Install-freshness line (#119). squad-doctor.sh sits next to the hook.
-cp "$REPO_ROOT/claude/hooks/squad-doctor.sh" "$TMPROOT/hooks/"
-DSRC="$TMPROOT/dsrc"; DHOME="$TMPROOT/dhome"
-mkdir -p "$DSRC/claude/agents" "$DSRC/claude/skills" "$DSRC/claude/hooks" "$DHOME"
-echo v1 > "$DSRC/claude/agents/a.md"
-cp -R "$DSRC/claude/agents" "$DSRC/claude/skills" "$DSRC/claude/hooks" "$DHOME/"
-echo "$DSRC" > "$DHOME/.agent-squad-source"
-run_doc() { (cd "$F_PROJECT" && SQUAD_DOCTOR_HOME="$1" SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null); }
-o="$(run_doc "$DHOME")"
-ctx "$o" | grep -q 'squad doctor' && bad "doctor: fresh install has a line" || ok "doctor: fresh, no line"
-echo v2 > "$DSRC/claude/agents/a.md"
-o="$(run_doc "$DHOME")"; c="$(ctx "$o")"
-[ "$(printf '%s\n' "$c" | grep -c 'squad doctor: 1 installed files stale — reinstall per README')" = 1 ] && ok "doctor: stale warning once" || bad "doctor: stale warning: $c"
-printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "doctor: JSON stays valid" || bad "doctor: JSON shape"
-o="$(run_doc "$TMPROOT/no-such-home")"
-ctx "$o" | grep -q 'squad doctor' && bad "doctor: missing install has a line" || ok "doctor: missing install, silent"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

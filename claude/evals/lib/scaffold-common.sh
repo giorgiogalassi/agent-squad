@@ -10,7 +10,7 @@
 #   worktree/   symlink to the fixture worktree (only with --worktree)
 #   bin/gh      copy of scripts/gh-shim/gh (belt and braces; the real PATH
 #               prefix comes from the launcher: PATH="$PWD/scripts/gh-shim:$PATH")
-# and under $HOME: .claude/hooks/*.sh and second-brain/ (lore-config.json
+# and under $HOME: second-brain/ (lore-config.json
 # mapping project/worktree/workspace to "fixture", plus the fixture's
 # chisel-config.json). The vault lives under HOME because the eval sandbox
 # allows Bash writes there (verified; see README "Evals (tier 2)").
@@ -22,8 +22,9 @@ squad_scaffold() {
   repo="$(cd "$self/../../.." && pwd)"
   WORKSPACE="$(pwd -P)"
 
-  mkdir -p "$HOME/.claude/hooks" "$WORKSPACE/bin"
-  cp "$repo"/claude/hooks/*.sh "$HOME/.claude/hooks/"
+  # Hooks are not copied: the eval loads claude/ as a plugin, so
+  # ${CLAUDE_PLUGIN_ROOT}/hooks/ resolves to the checkout.
+  mkdir -p "$WORKSPACE/bin"
   cp "$repo/scripts/gh-shim/gh" "$WORKSPACE/bin/gh"
   chmod +x "$WORKSPACE/bin/gh"
 

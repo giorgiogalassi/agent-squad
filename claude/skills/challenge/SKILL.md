@@ -21,7 +21,7 @@ has responded to the result.
 
 <!-- squad-lint: stateless -->
 **Path resolution: not applicable.** This skill never runs
-`~/.claude/hooks/path-resolve.sh` and never reads or writes `.squad/`
+`${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and never reads or writes `.squad/`
 state or touches the vault — see "Statelessness" below. It works
 identically inside a squad project, outside one, or in a non-repo
 directory.

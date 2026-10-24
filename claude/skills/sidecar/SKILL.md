@@ -25,7 +25,7 @@ not route sidecar requests through Ralph.
 
 ## On start
 
-**Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
+**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
 `PROJECT_ROOT`). Also read `SQUAD_DIR`.
 All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
@@ -76,7 +76,7 @@ at the project root (`/` in the branch name → `-`) — Claude Code's own
 native worktree convention, so it usually pre-exists in users'
 `.gitignore`.
 
-1. Run `bash ~/.claude/hooks/worktree.sh create <branch>`.
+1. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/worktree.sh create <branch>`.
 2. Exit 1 (refusal) — the branch is already checked out at another
    worktree path: stop and tell the user to close that checkout; never
    force past it.
@@ -95,7 +95,7 @@ worktree`, `cp -R`, or `stat` call of its own here.
 ## Phase 2b: dependencies and staleness
 
 Runs automatically after Phase 2; no flag. Run `bash
-~/.claude/hooks/worktree.sh deps <worktree-path>`. The hook clones every
+${CLAUDE_PLUGIN_ROOT}/hooks/worktree.sh deps <worktree-path>`. The hook clones every
 `node_modules` from the source checkout (never a symlink, never an
 install, never touches the source) and compares lockfiles. Exit 2 is a
 bug; report it, orientation continues.
@@ -199,7 +199,7 @@ On a real close signal:
 2. Sidecar (not Cody) appends one line to `.squad/progress.txt`:
    `[<branch>] <date> sidecar session: N commits. Notes: <one-line summary>`
    Once per session. N = commits on the branch since the session opened.
-3. **Clean and remove.** Run `bash ~/.claude/hooks/worktree.sh remove
+3. **Clean and remove.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/worktree.sh remove
    <branch>`.
    - Exit 0: parse `REMOVED=true|false` and `CLEANED=<paths>`. The hook
      deletes every `node_modules` and `*.sidecar-tmp` it can find by
@@ -255,5 +255,5 @@ timestamps via `date "+%Y-%m-%d %H:%M"`):
 ---
 
 > **Note:** The optional Cody hand-off uses the native Agent tool. Cody
-> must be defined in `~/.claude/agents/cody.md` and support the
+> must be provided by the agent-squad plugin (`agent-squad:cody`) and support the
 > `working_directory` prompt field.

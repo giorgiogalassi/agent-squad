@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Eight checks, each independent and each able to fail
+# done") into a gate. Nine checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -20,8 +20,13 @@
 #      by" cell names squad-labels.sh has a test in scripts/test-squad-labels.sh
 #      whose name starts with its id (L<n> , or D- for the id "D"), and every
 #      such test id has a script-performed row
-#   8. hook refs exist: every ~/.claude/hooks/<x>.sh referenced in
-#      claude/skills/** or claude/agents/*.md must exist as claude/hooks/<x>.sh
+#   8. hook refs exist: every ${CLAUDE_PLUGIN_ROOT}/hooks/<x>.sh referenced in
+#      claude/skills/** or claude/agents/*.md must exist as claude/hooks/<x>.sh,
+#      and no copy-install ~/.claude/hooks/ reference may remain
+#   9. plugin layout: plugin.json has name/version/description, every script
+#      claude/hooks/hooks.json registers exists, and no agent sets a
+#      frontmatter key plugin subagents ignore (hooks, mcpServers,
+#      permissionMode, initialPrompt)
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -433,18 +438,57 @@ check_label_doc_tests() {
 }
 
 # ---------------------------------------------------------------------
-# Check 8: every ~/.claude/hooks/<x>.sh referenced by a skill or agent ships
-# as claude/hooks/<x>.sh.
+# Check 8: every ${CLAUDE_PLUGIN_ROOT}/hooks/<x>.sh referenced by a skill or
+# agent ships as claude/hooks/<x>.sh; the copy-install path is gone.
 # ---------------------------------------------------------------------
 check_hook_refs_exist() {
   local before="$VIOLATIONS" f ref
   section "8. referenced hooks exist"
   while IFS= read -r f; do
-    for ref in $(grep -oE '~/\.claude/hooks/[A-Za-z0-9_.-]+\.sh' "$f" | sort -u); do
+    for ref in $(grep -oE '\$\{CLAUDE_PLUGIN_ROOT\}/hooks/[A-Za-z0-9_.-]+\.(sh|py)' "$f" | sort -u); do
       [ -f "claude/hooks/${ref##*/}" ] || fail "$f references $ref but claude/hooks/${ref##*/} does not exist"
     done
+    if grep -qE '~/\.claude/hooks/' "$f"; then
+      fail "$f references ~/.claude/hooks/; use \${CLAUDE_PLUGIN_ROOT}/hooks/ (the plugin root)"
+    fi
   done < <(find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null)
   [ "$VIOLATIONS" -eq "$before" ] && ok "every referenced hook script ships in claude/hooks/"
+}
+
+# ---------------------------------------------------------------------
+# Check 9: plugin layout. The manifest names the plugin, hooks.json only
+# registers scripts that ship, and no agent uses frontmatter keys that plugin
+# subagents silently ignore.
+# ---------------------------------------------------------------------
+check_plugin_layout() {
+  local before="$VIOLATIONS" f key cmd script
+  section "9. plugin layout"
+  if [ ! -f claude/.claude-plugin/plugin.json ]; then
+    fail "claude/.claude-plugin/plugin.json is missing"
+  else
+    for key in name version description; do
+      grep -qE "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" claude/.claude-plugin/plugin.json \
+        || fail "claude/.claude-plugin/plugin.json has no \"$key\" string"
+    done
+  fi
+  if [ ! -f claude/hooks/hooks.json ]; then
+    fail "claude/hooks/hooks.json is missing"
+  else
+    for script in $(grep -oE '\$\{CLAUDE_PLUGIN_ROOT\}/hooks/[A-Za-z0-9_.-]+' claude/hooks/hooks.json | sort -u); do
+      [ -f "claude/hooks/${script##*/}" ] || fail "claude/hooks/hooks.json registers $script but claude/hooks/${script##*/} does not exist"
+    done
+    grep -q 'lore-orient.sh' claude/hooks/hooks.json || fail "claude/hooks/hooks.json does not register lore-orient.sh"
+    grep -q 'lore-checkpoint.sh' claude/hooks/hooks.json || fail "claude/hooks/hooks.json does not register lore-checkpoint.sh"
+  fi
+  while IFS= read -r f; do
+    # Frontmatter only: lines between the first two '---'.
+    for key in hooks mcpServers permissionMode initialPrompt; do
+      if awk -v k="$key" 'NR==1&&$0!="---"{exit} /^---$/{n++; if(n==2)exit; next} n==1 && $0 ~ "^"k":"{found=1} END{exit !found}' "$f"; then
+        fail "$f sets frontmatter key '$key', which plugin subagents ignore"
+      fi
+    done
+  done < <(find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null)
+  [ "$VIOLATIONS" -eq "$before" ] && ok "plugin manifest, hooks.json and agent frontmatter are consistent"
 }
 
 check_path_resolution_protocol
@@ -455,6 +499,7 @@ check_delegation_tool
 check_gh_write_ban
 check_label_doc_tests
 check_hook_refs_exist
+check_plugin_layout
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

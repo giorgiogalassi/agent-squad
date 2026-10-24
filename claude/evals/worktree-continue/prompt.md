@@ -13,9 +13,9 @@ not a coding task.
 Run Cody from the `worktree` directory (it is already on the branch, so Cody must use `branch action: continue` and report the `HEAD_SHA` the branch script printed).
 
 Run Cody in the foreground and wait for its report. In this run Bash is
-restricted to `git ...`, `bash ~/.claude/hooks/path-resolve.sh`,
-`bash ~/.claude/hooks/squad-labels.sh ...` and
-`bash ~/.claude/hooks/squad-branch.sh ...`; tell Cody to use only those, one
+restricted to `git ...`, `bash <plugin root>/hooks/path-resolve.sh`,
+`bash <plugin root>/hooks/squad-labels.sh ...` and
+`bash <plugin root>/hooks/squad-branch.sh ...`; tell Cody to use only those, one
 command per call, optionally prefixed with `cd <dir> &&`, and to avoid pipes,
 `pwd`, `head` and other utilities (a denied Bash call stops it).
 

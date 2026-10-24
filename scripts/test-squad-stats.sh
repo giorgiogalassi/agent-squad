@@ -17,7 +17,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 key() { printf '%s\n' "$OUT" | sed -n "s/^$1=//p" | head -n 1; }
 run() { OUT="$(python3 "$SUT" "$@" 2>"$TMPROOT/err")"; RC=$?; }
 
-# The script must sit next to path-resolve.sh, as it does in ~/.claude/hooks.
+# The script must sit next to path-resolve.sh, as it does in the plugin hooks/ dir.
 HOOKS="$TMPROOT/hooks"; mkdir -p "$HOOKS"
 cp "$SUT" "$HOOKS/squad-stats.py"
 cp "$REPO_ROOT/claude/hooks/path-resolve.sh" "$HOOKS/"
