@@ -53,8 +53,8 @@ tracker mode (`connected` / `detached`) stated in the request, exactly
 as received. Return the agent's structured review to the user unchanged, preceded
 by one header line: `Model: <model used> (<N> changed files)`, where
 `<model used>` is the override passed or, on the default path, the
-`model:` in the `reven` agent's frontmatter (`claude/agents/reven.md`,
-currently `sonnet`; `default (agent)` only if you cannot tell). When the
+default model of the `reven` agent, currently `sonnet` (must match the
+`model:` in `claude/agents/reven.md`; `default (agent)` only if you cannot tell). When the
 count could not be determined, write `Model: <model used>` with no count.
 
 Never read the diff, the vault, or `.squad/` state yourself; never
