@@ -2,6 +2,16 @@
 
 A personal multi-agent development workflow for Claude Code.
 
+**In plain words:** Agent Squad is a team of AI agents that takes a piece
+of software work from a rough idea to a reviewed pull request. One agent
+helps plan the work, one designs it when it is complex, one splits it into
+tracked issues, one writes the code, and a separate one reviews it before
+anything is merged. Nothing is merged without a person approving it. It is not a
+demo: I use it every day on real projects, including client work. In
+company environments it can run fully hands-off from company tools, with
+no write access to the tracker or the repository (see
+[Tracker modes](#tracker-modes)).
+
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 Sidecar, on an existing branch: opens a worktree and stops (Cody only on
@@ -23,7 +33,8 @@ runs as a required step inside `/forge` before a draft scope closes.
 /ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
-                Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
+                Reviews every PR with Reven and runs fix rounds (cap `chisel.ralph.review_rounds`, default 2; the issue gets the `needs-review` label when out of rounds or after a second `INCOMPLETE`); `--no-review` skips it, `--review-context "<text>"` adds batch-wide context for Reven.
+                Persists run state (order, branches, attempt and review-round counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
 SessionEnd      lore-checkpoint hook (async) rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
@@ -262,7 +273,8 @@ agent-squad/
 
 Agent Squad is a Claude Code plugin. Nothing is copied into `~/.claude/` and
 no `~/.claude/settings.json` wiring is needed: the plugin ships its skills,
-agents and hooks, and `claude plugin update` picks up a merged change.
+agents and hooks. Installed copies move when the plugin version moves (see
+[Plugin manifest](#plugin-manifest)).
 
 ```bash
 claude plugin marketplace add giorgiogalassi/agent-squad   # or a local path to this checkout
@@ -293,6 +305,25 @@ Plugin subagents ignore the `hooks`, `mcpServers`, `permissionMode` and
 `initialPrompt` frontmatter keys, so `squad-lint.sh` check 9 rejects them in
 `claude/agents/*.md`. `allowed-tools` in a skill pre-approves tools for the
 invoking turn only; it does not restrict other tools.
+
+### Project board workflows (connected mode)
+
+The Agent Squad GitHub Project (<https://github.com/users/giorgiogalassi/projects/2>)
+relies on three built-in project workflows so no issue needs a manual board
+step. They are project settings, not repo files, and only the project owner
+can enable them in the web UI:
+
+1. Open the project, then the `...` menu, then **Workflows**.
+2. **Auto-add to project**: enable, set the repository to
+   `giorgiogalassi/agent-squad`, filter `is:issue`.
+3. **Item closed**: enable, set status to `Done`.
+4. **Item reopened**: enable, set status to `Todo`.
+
+Check: create an issue by hand and confirm it appears on the board, then close
+it and confirm it moves to `Done`, with no manual step. If drift reappears
+later, a scheduled GitHub Action would need a fine-grained PAT with `project`
+scope stored as a secret (the Projects API is GraphQL-only and `GITHUB_TOKEN`
+cannot read user projects).
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
@@ -356,7 +387,8 @@ worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and 
 Depends only on `git` and POSIX shell utilities — no `jq`.
 
 It ships in the plugin's `hooks/` directory next to `path-resolve.sh`; a
-merged change reaches users through `claude plugin update`.
+merged change reaches users once the plugin version is bumped
+(see [Plugin manifest](#plugin-manifest)) and they run `claude plugin update`.
 
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
@@ -371,6 +403,8 @@ A read-only hook can inject "where you left off" at the start of every
 session, so you do not have to ask. It never writes and never blocks. It
 also calls `path-resolve.sh`. The plugin registers it in
 `claude/hooks/hooks.json`; there is nothing to install.
+The hook also skips `resume` on its own, so switching sessions in agent
+view does not re-inject the orientation.
 
 It also prints up to two signal lines, omitted when not applicable:
 `Architecture snapshot older than <file>; run /seed` (architecture.md is
@@ -438,7 +472,7 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore start` (setup), `lore prefer`, and `lore recover` commit after their
+  `lore start` (setup), `lore prefer`, `lore supersede`, and `lore recover` commit after their
   writes (commit only, never push); pulling and pushing stay manual. Pull
   before starting work when using multiple machines.
 
@@ -471,7 +505,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by the `cody-checkpoint.sh` SubagentStop hook when Cody finishes.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
@@ -555,13 +589,53 @@ work context into a personal remote.
 `.claude-plugin/marketplace.json` lists it (`source: ./claude`) so
 `claude plugin marketplace add` works on a clone or on the GitHub repo. CI
 runs `claude plugin validate claude/ --strict` and
-`claude plugin validate . --strict` (`squad-lint.yml`). Bump `version` in
-`plugin.json` when a release should reach installed users: an installed
-plugin updates on version change.
+`claude plugin validate . --strict` (`squad-lint.yml`).
+
+An installed plugin updates only when `version` changes. Nobody bumps it by
+hand: `plugin-version.yml` runs after a PR merges into main and, if the PR
+changed files under `claude/`, computes the semver bump from the labels on
+the PR and on the issues it closes. `main` has a repository ruleset (no
+deletion, no force push, changes only through a pull request, no bypass
+actors), so the workflow cannot push to it: it opens a one-line PR from
+`chore/plugin-vX.Y.Z-prN` (labelled `documentation`, so it never bumps again) and
+merges it itself. That needs the repo setting "Allow GitHub Actions to create
+and approve pull requests". PRs never touch the version, and a
+`plugin-version-guard.yml` check reports any PR that edits `version` in
+`plugin.json` by hand (judged against the merge-base, except `chore/plugin-v*`
+branches), so parallel PRs should not conflict on it. The guard is advisory,
+not a required check (the bump PR runs no workflows, so requiring it would
+block the bump). The ruleset's pull_request rule has
+`require_extra_approval_for_unattributed_changes`: if GitHub asks for an extra
+approval on the bot's commit, the self-merge fails and the owner must approve
+and merge the bump PR (or turn that ruleset option off). The bump is
+idempotent: the branch is keyed on version and source PR, and a re-run
+reuses an existing `chore/plugin-vX.Y.Z-prN` branch or open PR for the same
+source PR; a leftover branch already on main is deleted and recreated.
+`gh pr merge` is retried a few times and a non-zero exit with the PR in state
+`MERGED` counts as success. If the merge still fails, the job fails with an
+error and leaves the PR open. Recovery: merging that bump PR completes it,
+and you must not re-run the workflow; re-run only after closing the bump PR
+and deleting its branch (`git push origin --delete chore/plugin-vX.Y.Z-prN`).
+Limits: bumps are serialized, so an open bump PR for another source PR blocks
+new bumps (the job fails naming it) until it is merged or closed; PRs and
+merges made with `GITHUB_TOKEN` start no workflows, so the bump PR runs no CI
+and cannot loop; and the concurrency group keeps one running and one pending
+run, so when three PRs merge at once the middle run's bump can be dropped
+(run the workflow's rule by hand then).
+
+| Label (PR or closing issue) | Bump |
+|-----------------------------|------|
+| `breaking-change` | major (wins over everything) |
+| `enhancement` | minor |
+| `bug` | patch |
+| only `documentation`, or none of the above | none (a notice is logged) |
+
+Users then run `claude plugin update` to pick the new version up. The rule
+lives in `scripts/plugin-version-bump.sh`.
 
 ## Evals (tier 2)
 
-`claude/evals/` holds three advisory `claude plugin eval` cases that the bash
+`claude/evals/` holds five advisory `claude plugin eval` cases that the bash
 tests cannot cover, because they check what the agent *prose* does:
 
 | Case | Checks (zero-cost graders only) |
@@ -569,6 +643,8 @@ tests cannot cover, because they check what the agent *prose* does:
 | `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
 | `detached-claim` | no Bash call contains `gh`; a handoff line `- [ ] Move ... to In Progress` is written |
 | `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
+| `ralph-no-review` | Ralph's skill text: with `--no-review` Phase 2e is skipped (reading check, no agents spawned) |
+| `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
 
 Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
 that, inside the run's temporary `$HOME`, builds a fixture with `scripts/fixtures/make-fixture.sh`

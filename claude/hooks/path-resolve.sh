@@ -55,6 +55,10 @@
 # Chisel's "no mode = connected" rule is for its config flow, not for
 # write safety.
 #
+# TRACKER_MODE gates where squad tickets are written (Chisel). It is NOT
+# where Reven reads the project's issue and PR: that comes from the
+# `## Issue tracker and PR host` section of architecture.md.
+#
 # Output: five KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #

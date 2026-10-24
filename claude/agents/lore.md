@@ -5,7 +5,8 @@ description: >
   `lore start` for setup and repair only (naming, migrating a legacy
   `.squad/`, re-mapping a moved checkout; Seed handles first contact),
   `lore prefer "<decision>"` when a global or project-only rule should
-  be recorded, and `lore recover` when no recent status exists.
+  be recorded, `lore supersede` / `lore audit` to retire or find stale
+  decisions.md entries, and `lore recover` when no recent status exists.
   Do NOT invoke for planning, implementation, architecture, or code review.
 tools: Read, Write, Bash
 model: sonnet
@@ -32,7 +33,9 @@ switch is written there even if auto-memory captured it too. Lore owns:
 deduce project from git, name and map it, migrate legacy `.squad/`,
 update INDEX;
 `lore recover` = explicit rebuild from git evidence, confirm, write;
-`lore prefer "<x>"` = record a preference, global or project-only.
+`lore prefer "<x>"` = record a preference, global or project-only;
+`lore supersede "<title>"...` = retire decisions.md entries;
+`lore audit [project]` = list entries the checkout no longer bears out.
 
 **Vault location:** `SECOND_BRAIN_PATH` if set and non-empty, else
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
@@ -101,7 +104,8 @@ when explicitly requested or named by a context ref.
    the vault path.
 6. Update INDEX.md's active project (full overwrite, always).
 7. Output one line: project name, vault path, mapping recorded. For
-   status reconstruction use `lore recover`.
+   status reconstruction use `lore recover`. When `decisions.md` has
+   active entries, add: `Run lore audit to check them against the code.`
 
 ## status.md schema
 
@@ -145,7 +149,7 @@ to the vault.
 - <path/to/file>
 ```
 
-## `lore prefer "<decision>" [--global | --project]`
+## `lore prefer "<decision>" [--global | --project | --decision]`
 
 Each rule goes to exactly one file: global → `preferences/development.md`
 only; project-only → `projects/<n>/decisions.md` only. Never both.
@@ -166,7 +170,12 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    project. Never a `[<project>]`-only tag. Write nothing to decisions.md.
 3. **Project-only.** Append exactly one `[rule]` entry to
    `projects/<n>/decisions.md` (see Decision format), with project
-   context. Ask once "Does this replace an existing decisions.md entry?
+   context. `--decision` (or, when the text is a design decision rather
+   than a review rule and Lore asks once "Review rule (checked on every
+   PR) or design decision? [r / d]", the answer `d`) appends an untagged
+   `## [YYYY-MM-DD] <title>` entry instead, with no `[rule]` tag; it never
+   counts against the 15-rule cap. Non-interactive without a flag →
+   `[rule]` as before. Ask once "Does this replace an existing decisions.md entry?
    [n / <entry>]"; on an entry, apply both markers. Apply the 60-active
    and 15-rule caps of that file; over 15 active `[rule]` entries, print
    `Lore: decisions.md over rule cap (N active [rule]) — supersede one manually.` Write nothing to development.md.
@@ -194,6 +203,48 @@ Claude auto-memory already captures locally. A rule recorded
 project-only that appears in decisions across 2+ projects → propose
 promotion to development.md; never promote automatically.
 
+## `lore supersede "<title>" ["<title>"...] [--by "<entry title>" | --by-new "<title>: <body>"]`
+
+Retires active entries of `projects/<n>/decisions.md`; never deletes one.
+Resolve each title to exactly one active entry (no match or several →
+list candidates and stop, writing nothing).
+
+- `--by "<entry title>"`: the named entry gets `Supersedes: [YYYY-MM-DD]
+  <old title>`, each retired entry `Superseded by: [YYYY-MM-DD] <entry title>`.
+- `--by-new "<title>: <body>"`: append an untagged
+  `## [YYYY-MM-DD] <title>` entry (body, with project context) carrying
+  `Supersedes:`, and mark the old entries as above. Never tagged `[rule]`.
+- Neither: ask once for a one-line reason, then write
+  `Superseded by: [YYYY-MM-DD] retired: <reason>` under each entry.
+
+Markers sit on the line directly under the heading (see Decision format).
+Several titles in one call share one write and one vault commit. Stage
+only the decisions file, since the vault may hold unrelated dirty files:
+`git -C <vault> add projects/<n>/decisions.md && git -C <vault> commit -m "[lore] <project> supersede YYYY-MM-DD HH:MM"`
+(skip silently without a vault repo). Output:
+`Lore: superseded N entries (project: <n>).`
+
+## `lore audit [project]`
+
+Read-only staleness check of active `decisions.md` entries against the
+mapped checkout (`cwd_path` of the project in `lore-config.json`; none or
+missing → say so and stop).
+
+1. For each active entry, extract the identifiers it names (types,
+   functions, files, i18n keys, in backticks or path-like).
+2. `grep -rF` each in the checkout, excluding `.git`, `node_modules` and
+   build output.
+3. Flag an entry when all its named identifiers are absent, or when its
+   text states a "deferred until X" / "once X" condition. Entries naming
+   no identifier are not flagged on that basis.
+4. List each flagged entry with its title, the identifiers searched, the
+   grep evidence (hit counts) and the suggested
+   `lore supersede "<title>"` line.
+
+Never supersede automatically and write nothing: the user confirms, then
+runs `lore supersede`. `lore start` ends with one line offering
+`lore audit` when the project has active decisions.
+
 ## `lore recover`
 
 Reconstructs status.md from evidence (it is a cache of durable
@@ -219,8 +270,27 @@ than Last updated, or Last updated older than 7 days; current time via
 
 ## Vault commit
 
-After any vault write, if `<vault>/.git` exists:
-`git -C <vault> add -A && git -C <vault> commit -m "[lore] <project> <action> YYYY-MM-DD HH:MM"`.
+After any vault write, if `<vault>/.git` exists, commit **only the files
+this command wrote**:
+
+1. Before staging: `git -C <vault> status --porcelain`. Keep the list.
+2. Commit by path:
+   `git -C <vault> add -- <paths> && git -C <vault> commit -m "[lore] <project> <action> YYYY-MM-DD HH:MM" -- <paths>`,
+   where `<paths>` are exactly the files this command created, edited or
+   moved (both sides of a move). The trailing `-- <paths>` keeps anything
+   someone else already staged out of the commit too.
+3. **Never `git add -A`, `git add .` or `git commit -a`.** The vault is
+   shared with the user's own edits and with other sessions; a blanket
+   add commits whatever is on disk under a message about this project.
+   It has committed a mass deletion of draft pieces, and seven weeks
+   later their unexplained return, both as routine-looking `[lore]`
+   commits from unrelated projects.
+4. Anything in the step 1 list that this command did not write: leave it
+   unstaged and print one line,
+   `Lore: vault has N changes I didn't make (e.g. <first path>) — left uncommitted.`
+   If any of them is a deletion (`D`) under `drafts/` or `published/`,
+   say so in the same line: `… including D deletions under drafts/ or published/ — check before committing.`
+
 Commit only — never push, pull, or touch remotes. No repo → skip
 silently. A commit failure gets one line at most; the writes already
 succeeded.

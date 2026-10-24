@@ -12,7 +12,8 @@ config shape):
   by Chisel to every issue (and its parent, if any) at creation. Means
   "a human has not yet triaged this issue"; Ralph's batch-discovery gate
   excludes anything still carrying it
-  unless named explicitly.
+  unless named explicitly. Ralph re-applies it (row L9) when an issue's
+  review loop ends without approval, so the next `--parent` run skips it.
 - `state_labels.in_progress` (default `in-progress`) — applied by Cody
   when it claims an issue.
 - `state_labels.in_review` (default `in-review`) — applied by Cody when
@@ -24,7 +25,7 @@ config shape):
 > `PATH_RESOLUTION.md`, it exists so a human changing the lifecycle has
 > the full picture and the rationale in one place. The table below is
 > *performed* by `claude/hooks/squad-labels.sh` (verbs `ensure`, `claim`,
-> `review`, `escalate`; contract in `SCRIPT_CONTRACT.md`), and each
+> `review`, `escalate`, `needs-review`; contract in `SCRIPT_CONTRACT.md`), and each
 > script-performed row is asserted by a named test in
 > `scripts/test-squad-labels.sh`: test names start with the row id
 > (`L2 claim: exact argv`), detached cases with `D-`. `scripts/squad-lint.sh`
@@ -44,6 +45,7 @@ config shape):
 | L6 | Close via merge | `.github/workflows/issue-lifecycle.yml` | not script-performed | connected | **− remove** (idempotent) | **− remove** | **− remove** | **− remove** |
 | L7 | PR closed without merging | `.github/workflows/issue-lifecycle.yml` | not script-performed | connected | untouched | untouched | **− remove** | untouched |
 | L8 | Issue closed manually, no PR | — (human action) | not script-performed | connected | untouched | untouched | untouched | untouched |
+| L9 | Out of review rounds, or second `INCOMPLETE` (PR open) | Ralph | `squad-labels.sh needs-review` | connected | **+ add** (exit 10 if not configured) | — | untouched (must be present unless `review_label` is already present, else exit 10) | — |
 | D | Every step | Ralph / Cody | `squad-labels.sh` with `--handoff` (tests prefixed `D-`) | detached | n/a — `review_label` is a connected-only config field | simulated via handoff checklist line | simulated via handoff checklist line | simulated via handoff checklist line |
 
 L1 ensures the label definitions exist in the repo; L5 is the separate act of
@@ -56,6 +58,12 @@ batch handoff file, and the human replays them into whatever tracker
 they actually use. `review_label` isn't part of the detached config
 shape at all (see the Configuration flow in either Chisel SKILL.md) —
 there is no pre-work review gate to model.
+
+L9 re-applies `review_label` after L3 removed it, with a new meaning on top
+of "not yet triaged": the Reven loop could not approve the PR, so a human must
+look. The PR stays open and `in_review` stays. The label is removed again by
+the human, or by L6 on merge (L6 clears only the default `needs-review` name; a custom `review_label` is left for the human). A later `review` (L3) re-run on such an issue
+would strip it, but Ralph never re-runs `review` for an issue it has reviewed.
 
 ## Where `review_label` is removed, and why not earlier
 
@@ -81,7 +89,9 @@ deliberately avoided:
   forward. Retiring the stale pre-work `review_label` here is safe
   (idempotent no-op if it was already gone) and keeps a single issue
   from visually carrying two different "needs review" labels with two
-  different meanings at once.
+  different meanings at once. (After L9 the two coexist on purpose: the
+  re-applied `review_label` then means "the review loop gave up", not
+  "not yet triaged".)
 - **At merge-close, in the shared GitHub Actions workflow.** Already
   implemented (`STATE_LABELS` in `.github/workflows/issue-lifecycle.yml`
   includes the review label's default name alongside the two Cody/Ralph
@@ -115,7 +125,7 @@ deliberately avoided:
 
 ## Files carrying this state machine
 
-- `claude/hooks/squad-labels.sh` — performs rows L1-L4 and D.
+- `claude/hooks/squad-labels.sh` — performs rows L1-L4, L9 and D.
 - `scripts/test-squad-labels.sh` — one named test group per script-performed row.
 - `claude/skills/chisel/SKILL.md`, `claude/agents/cody.md`,
   `claude/skills/ralph/SKILL.md` — invoke the script for their steps.

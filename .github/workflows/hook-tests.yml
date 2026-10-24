@@ -38,10 +38,17 @@ on:
       - "claude/hooks/lore-checkpoint.sh"
       - "scripts/test-cody-checkpoint.sh"
       - "claude/hooks/cody-checkpoint.sh"
+      - "scripts/test-chisel-config-validate.sh"
+      - "claude/hooks/chisel-config-validate.py"
+      - "claude/skills/chisel/SKILL.md"
       - "scripts/gh-shim/**"
       - "claude/hooks/squad-stats.py"
       - "scripts/test-squad-stats.sh"
       - "scripts/fixtures/**"
+      - "scripts/plugin-version-bump.sh"
+      - "scripts/test-plugin-version-bump.sh"
+      - "scripts/plugin-version-guard.sh"
+      - "scripts/test-plugin-version-guard.sh"
       - ".github/workflows/hook-tests.yml"
 
 permissions:
@@ -103,3 +110,15 @@ jobs:
       - name: Run scripts/test-squad-stats.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-stats.sh; else bash scripts/test-squad-stats.sh; fi
+
+      - name: Run scripts/test-plugin-version-bump.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-plugin-version-bump.sh; else bash scripts/test-plugin-version-bump.sh; fi
+
+      - name: Run scripts/test-plugin-version-guard.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-plugin-version-guard.sh; else bash scripts/test-plugin-version-guard.sh; fi
+
+      - name: Run scripts/test-chisel-config-validate.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-chisel-config-validate.sh; else bash scripts/test-chisel-config-validate.sh; fi

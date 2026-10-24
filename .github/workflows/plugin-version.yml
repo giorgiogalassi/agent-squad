@@ -1,0 +1,177 @@
+name: Plugin version
+
+# Semver bump of the plugin after a merge (#293). Owner rule: a merged PR that
+# changes files under claude/ bumps claude/.claude-plugin/plugin.json from the
+# labels on the PR and on its closing issues:
+#   breaking-change -> major, enhancement -> minor, bug -> patch,
+#   documentation only or no qualifying label -> no bump (a notice is logged).
+# The computation lives in scripts/plugin-version-bump.sh (tested by
+# scripts/test-plugin-version-bump.sh).
+#
+# Post-merge on purpose: PRs never touch plugin.json (plugin-version-guard.yml
+# reports hand edits; it is not a required check, since bump PRs run no
+# workflows), so parallel PRs cannot conflict on it. Each run checks out the
+# latest main, so it re-reads the current version.
+#
+# main is under a repository ruleset (no deletion, no non-fast-forward, changes
+# only through a pull request, 0 required approvals, no bypass actors), so a
+# direct push is rejected (GH013). The job therefore opens a one-line PR from
+# chore/plugin-v<X.Y.Z>-pr<N> against main, labelled `documentation` (which never
+# bumps), and merges it itself. Needs the repo setting "Allow GitHub Actions to
+# create and approve pull requests".
+#
+# Approval caveat: the ruleset's pull_request rule has
+# require_extra_approval_for_unattributed_changes: true. If GitHub demands an
+# extra approval for the bot's commit, the self-merge fails and the owner must
+# approve and merge the bump PR (or turn that ruleset option off). The job then
+# fails with manual recovery steps and leaves the PR open.
+#
+# Idempotent: the branch is chore/plugin-v<X.Y.Z>-pr<N> (N = the source PR).
+# If that branch or an open PR for it already exists (re-run, or a previous run
+# that could not merge), it is reused instead of creating a second commit or
+# PR. A leftover branch whose commit is already on main is deleted and
+# recreated. An open bump PR for a DIFFERENT source PR is never reused: the job
+# fails naming it. Recovery: merging the bump PR completes it (do NOT re-run);
+# re-run only after closing the bump PR and deleting its branch.
+#
+# Loop guard: PRs and merges made with GITHUB_TOKEN start no workflows, so the
+# bump PR runs no CI and its merge does not re-trigger this one. The job also
+# skips any PR whose head ref starts with chore/plugin-v.
+#
+# Limitation: bumps are serialized. A pending (unmerged) bump PR for another
+# source PR blocks new bumps until it is merged or closed.
+# Limitation: the concurrency group keeps one running and one pending run. If
+# three PRs merge in quick succession, the middle pending run is replaced by
+# the third and its bump is dropped; re-run it by hand.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: plugin-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.pull_request.head.ref, 'chore/plugin-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump plugin version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+
+          # Capture first so a gh failure fails the step (set -e) instead of
+          # reading as "no claude/ files" through a pipe.
+          files_changed="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')"
+          if ! printf '%s\n' "$files_changed" | grep -q '^claude/'; then
+            echo "::notice::PR #$PR does not touch claude/: no plugin bump"
+            exit 0
+          fi
+
+          labels="$PR_LABELS"
+          for issue in $(gh pr view "$PR" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'); do
+            issue_labels="$(gh issue view "$issue" --json labels --jq '[.labels[].name] | join(",")')"
+            labels="$labels,$issue_labels"
+          done
+
+          manifest=claude/.claude-plugin/plugin.json
+          current="$(jq -r .version "$manifest")"
+          rc=0
+          out="$(bash scripts/plugin-version-bump.sh --version "$current" --labels "$labels")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::plugin-version-bump.sh exited $rc for version '$current'"
+            exit 1
+          fi
+          new="$(printf '%s\n' "$out" | sed -n 's/^NEW_VERSION=//p')"
+          outcome="$(printf '%s\n' "$out" | sed -n 's/^OUTCOME=//p')"
+
+          if [ "$outcome" != applied ]; then
+            echo "::notice::PR #$PR has no bump-worthy label (labels: ${labels:-none}): plugin stays at $current"
+            exit 0
+          fi
+
+          branch="chore/plugin-v$new-pr$PR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Bumps are serialized: any open bump PR for a different source PR
+          # blocks this one (merging both would collapse two bumps into one
+          # version line). Fail loudly instead of reusing it.
+          open_bumps="$(gh pr list --state open --json number,headRefName)"
+          other="$(printf '%s' "$open_bumps" | jq -r --arg b "$branch" \
+            '[.[] | select((.headRefName | startswith("chore/plugin-v")) and .headRefName != $b)] | .[0] // empty | "#\(.number) (\(.headRefName))"')"
+          if [ -n "$other" ]; then
+            echo "::error::open bump PR $other belongs to another source PR and blocks the bump for #$PR. Merge it, or close it and delete its branch (git push origin --delete <branch>), then re-run this workflow"
+            exit 1
+          fi
+
+          # Leftover branch whose commit is already on main (nothing ahead):
+          # delete it and start over instead of failing in gh pr create.
+          open_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$open_pr" ] && git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            ahead="$(gh api "repos/$REPO/compare/main...$branch" --jq .ahead_by)"
+            if [ "$ahead" = 0 ]; then
+              echo "::notice::branch $branch is already on main: deleting it and recreating"
+              git push origin --delete "$branch"
+            fi
+          fi
+
+          # Reuse an existing bump branch or open PR for this source PR.
+          if [ -z "$open_pr" ]; then
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              echo "::notice::branch $branch already exists: reusing it"
+            else
+              git checkout -b "$branch"
+              # Targeted edit keeps the diff to the one version line.
+              sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" "$manifest"
+              files="$manifest"
+              if jq -e '.. | objects | select(has("version"))' .claude-plugin/marketplace.json >/dev/null 2>&1; then
+                sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" .claude-plugin/marketplace.json
+                files="$files .claude-plugin/marketplace.json"
+              fi
+              git add $files
+              git commit -m "chore: bump plugin to v$new (#$PR)"
+              git push origin "$branch"
+            fi
+            gh pr create --base main --head "$branch" --label documentation \
+              --title "chore: bump plugin to v$new" \
+              --body "Automatic $current -> $new bump after #$PR (plugin-version.yml)."
+            open_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          else
+            echo "::notice::bump PR #$open_pr for $branch already open: reusing it"
+          fi
+
+          # A fresh PR may not be mergeable for a moment: retry briefly.
+          merged=0
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$open_pr" --merge --delete-branch; then merged=1; break; fi
+            # gh can exit non-zero after the merge went through (e.g. branch
+            # deletion failed): the PR state is the truth.
+            if [ "$(gh pr view "$open_pr" --json state --jq .state)" = MERGED ]; then merged=1; break; fi
+            echo "merge attempt $attempt failed; retrying in 10s"
+            sleep 10
+          done
+          if [ "$merged" != 1 ]; then
+            echo "::error::could not merge the bump PR #$open_pr ($branch); it is left open. Recovery: merging that PR by hand completes the recovery (GitHub may require an extra approval for the bot's commit) - do NOT re-run this workflow. Re-run only after closing the bump PR and deleting its branch (git push origin --delete $branch)"
+            exit 1
+          fi

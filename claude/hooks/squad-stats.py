@@ -113,7 +113,7 @@ HAIKU_TIER_LIMIT = 100_000
 USAGE_COLS = ["ts", "session_id", "project", "agent", "skill", "model",
               "input", "cache_write_5m", "cache_write_1h", "cache_read",
               "output", "message_id", "tools", "tool_errors", "cc_version"]
-VERDICT_COLS = ["ts", "session_id", "project", "verdict", "message_id"]
+VERDICT_COLS = ["ts", "session_id", "project", "verdict", "message_id", "model"]
 HOOK_COLS = ["ts", "session_id", "project", "event", "hook", "outcome",
              "duration_ms", "chars", "hook_id"]
 # store file -> (columns, dedupe key)
@@ -122,7 +122,7 @@ TABLES = {
     "verdicts": (VERDICT_COLS, "message_id"),
     "hooks": (HOOK_COLS, "hook_id"),
 }
-VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT)\b", re.M)
+VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT|INCOMPLETE)\b", re.M)
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
 # Failed tool calls, by who stopped them: hook, classifier (auto mode),
 # policy (a permission rule or mode), user, or the tool itself (error).
@@ -452,7 +452,8 @@ def verdict_rows(records, session_id, project):
             if m:
                 mid = key + ":verdict"
                 bucket[mid] = {"ts": rec.get("timestamp") or "", "session_id": session_id,
-                               "project": project, "verdict": m.group(1), "message_id": mid}
+                               "project": project, "verdict": m.group(1), "message_id": mid,
+                               "model": msg.get("model") or ""}
     return list((text_rows or handback_rows).values())
 
 
@@ -559,7 +560,7 @@ def read_tsv(path, cols):
                 parts = line.rstrip("\n").split("\t")
                 if i == 0 and parts == cols:
                     continue
-                if len(parts) < len(cols) and len(parts) >= 12:
+                if len(parts) < len(cols) and len(parts) >= min(12, len(cols) - 1):
                     parts += [""] * (len(cols) - len(parts))
                 if len(parts) != len(cols):
                     continue
@@ -916,6 +917,15 @@ def cmd_report(args):
     if nv:
         L += ["| Verdict | Count | Share |", "|---|---:|---:|"]
         L += ["| %s | %d | %s |" % (k, c, pct(c, nv)) for k, c in sorted(counts.items())]
+        L += ["", "| Model | Reviews | Approved | Changes requested | Comment | Incomplete | Cost |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
+        for mdl in sorted({v["model"] or "unknown" for v in verdicts}):
+            vs = [v for v in verdicts if (v["model"] or "unknown") == mdl]
+            rc = lambda name: sum(1 for v in vs if v["verdict"] == name)
+            mcost = sum(r["_cost"] or 0 for r in rows if r["agent"] == "reven" and r["model"] == mdl)
+            L.append("| %s | %d | %d | %d | %d | %d | %s |" % (
+                mdl, len(vs), rc("APPROVED"), rc("CHANGES REQUESTED"), rc("COMMENT"),
+                rc("INCOMPLETE"), money(mcost)))
     else:
         L.append("No Reven verdicts in the window.")
     L.append("")

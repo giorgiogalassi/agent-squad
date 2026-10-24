@@ -745,215 +745,6 @@ retired deliberately, not quietly.
 
 ---
 
-## 3. Final Architecture
-
-### Squad Overview
-
-| Name | Type | Model | Role |
-|------|------|-------|------|
-| **Scout** | Skill | n/a | Project context snapshot, cached, invalidated on structural changes |
-| **Seed** | Skill | n/a | One-time project initialization. Produces `architecture.md` and `scout-cache.md` in `<vault>/projects/<project>/.squad/`, ensures vault directories exist, and scaffolds second-brain project files. |
-| **Forge** | Skill | n/a | Interactive brainstorming session, produces structured YAML with complexity field |
-| **Chisel** | Skill | n/a | Converts YAML or PRD to Linear issues. Single input format, single output format |
-| **Archy** | Skill | Opus or Sonnet | Architectural analysis, produces PRD from Forge YAML on HIGH complexity only |
-| **Cody** | Agent | Sonnet | Assigns issue, creates branch, implements, opens PR. Invoked directly or by Ralph. |
-| **Qugh** | Agent | Sonnet | QA behavioral testing, runs in parallel with Reven via Agent Teams |
-| **Reven** | Agent | Sonnet | Code review, runs in parallel with Qugh via Agent Teams |
-| **Lore** | Agent | Sonnet / gpt-5.4 | Second-brain memory: session orientation, status handoff, preference recording, git-based recovery. Filesystem only, no MCP. |
-| **Oak** | Agent | Sonnet | Documentation, daily job reading full git log |
-| **Ralph** | Loop | Sonnet | Agentic loop invoking Cody, max 3 retries, escalates on persistent failure. Groups issues into one branch per dependency chain. |
-| **Sentry** | Orchestrator | Sonnet | Reads complexity from YAML, routes to correct flow, reconciles feedback |
-
----
-
-### Full Flow
-
-```
-0. /seed        Initialize .squad/ context files and directories. Run /clear after.
-1. /forge       Interactive session → .squad/forge/output.yaml
-2. Sentry       Reads complexity, routes accordingly
-3. /archy       (HIGH only) Reads YAML → .squad/prd/current.md. You review.
-4. /chisel      Reads YAML or PRD → creates Linear issues. You review.
-5. /ralph       Invokes Cody per issue in dependency order, manages retries.
-6. Cody         Assigns issue, creates branch, implements, opens PR.
-7. Sentry       Spawns Qugh + Reven in parallel (Agent Teams).
-8. Sentry       Reconciles feedback → merge or resume Cody loop.
-9. /oak         End of day. Reads git log, updates documentation.
-```
-
----
-
-### File Structure
-
-| File | Purpose |
-|------|---------|
-| `<vault>/projects/<project>/.squad/forge/output.yaml` | YAML produced by Forge. Read by Sentry, Chisel, and Archy. Archived to `forge/archive/` once Chisel consumes it. |
-| `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow. Written by Seed. Read by Forge, Archy, Cody, Reven; data flow is Lex's future input. |
-| `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Written by Seed. Replaced entirely on each Seed run. |
-| `<vault>/projects/<project>/.squad/decisions.md` | Business assumptions and domain constraints. Read by you, not agents. |
-| `<vault>/projects/<project>/.squad/prd/current.md` | Active PRD. Archived by Chisel after consumption. |
-| `<vault>/projects/<project>/.squad/prd/archive/` | Past PRDs. Never loaded automatically. |
-| `<vault>/projects/<project>/.squad/chisel-config.json` | Linear team, project, label, status. Written on first Chisel run. |
-| `<vault>/projects/<project>/.squad/progress.txt` | Ralph's per-issue batch memory. Appended by Ralph, read by Cody. |
-| `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files (local issue IDs, key mapping, Jira-importable CSV) and handoff checklists. |
-| `claude/hooks/squad-*.sh`, `SCRIPT_CONTRACT.md` | Script layer (Iteration 29): shared guard, label transitions, branch create/continue, with a fixed `KEY=value` output contract. Agent prose only calls them. |
-| `scripts/test-*.sh`, `claude/evals/` | Tier-1 bash gate and tier-2 advisory `claude plugin eval` cases. |
-| `<vault>/lore-config.json` | Maps absolute CWD paths to vault display names. Written by Lore on first project encounter. |
-| `claude/skills/` | Claude-specific skill definitions to copy into `~/.claude/skills/`. |
-| `claude/agents/` | Claude-specific agent definitions to copy into `~/.claude/agents/`. |
-| `codex/skills/` | Codex-specific skill definitions to copy into `~/.agents/skills/`. |
-| `codex/agents/` | Codex-specific custom agent definitions to copy into `~/.codex/agents/`. |
-
----
-
-## 4. MVP Configuration
-
-### What is in the MVP
-
-| Component | Role in MVP |
-|-----------|-------------|
-| **Forge** | Interactive session to structure your idea into YAML before any code is written. |
-| **Archy** | Produces a full PRD on HIGH complexity. You review and iterate via `/archy` before proceeding. |
-| **Chisel** | Converts YAML or PRD to Linear issues. You review issues before proceeding. |
-| **Cody** | Writes code. Assigns the issue, creates a branch, implements, and opens the PR. |
-| **Reven** | Reviews every PR. You invoke Reven manually after Cody opens the PR. |
-| **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
-| **Sidecar** | Companion entry point for fixes on an existing branch. Opens a worktree, invokes Cody once per fix, tears down and writes one summary line on close. Does not touch Forge/Archy/Chisel/Ralph. |
-| **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
-| **Lore** | Manages second-brain vault. `lore start` is setup/repair only (naming, migration, re-mapping); `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
-
-### What is out of the MVP
-
-- **Sentry:** the orchestrator. You handle routing manually. Add when the flow becomes complex enough to justify automation.
-- **Qugh:** QA behavioral testing. You handle manual testing. Add when Reven alone misses behavioral issues.
-- **Oak:** daily documentation job. Add when documentation starts drifting noticeably from the codebase.
-- **Agent Teams:** parallel Qugh and Reven. Add when both are active.
-- **Lex:** legal and compliance audit, GDPR baseline. Add when a project approaches production with real users. Reads the `## Data flow` section of `architecture.md` scaffolded by Seed.
-
-### MVP Flow
-
-```
-/seed           Initialize context. /clear after.
-/forge <idea>   Forge runs session, Scout provides context, you confirm complexity.
-                → HIGH: /archy → review PRD → /chisel
-                → LOW/MED: /chisel directly
-/chisel         Creates Linear issues. You review.
-/ralph          Loops Cody per issue in dependency order.
-                Cody opens PR → you invoke Reven.
-                Reven requests changes → feedback to Cody → repeat.
-Merge.
-
-/sidecar <branch>   Alternate entry point, bypasses everything above.
-                     Worktree on an existing branch, Cody per fix, close.
-```
-
----
-
-## 5. Open Points
-
-### 5.1 Sentry severity guardrail calibration
-
-Sentry is configured to warn when a `/forge` description appears too complex for LOW severity. The threshold has never been tested against real inputs.
-
-> **Action:** after two weeks of MVP usage, review how often the guardrail fires and whether it fires on cases that actually warranted escalation.
-
-### 5.2 Forge slot completeness vs session length
-
-Forge asks questions until all required slots are filled. On complex features this can produce long sessions. There is no mechanism to detect when the user wants to move faster.
-
-> **Action:** monitor session length in practice. If sessions consistently run long, consider making some slots optional or adding a `/quick` modifier.
-
-### 5.3 Chisel issue granularity
-
-The granularity of issues produced by Chisel from a MEDIUM complexity YAML has not been validated.
-
-> **Action:** after ten MED-complexity features, review issue size. Adjust Chisel prompting if Cody consistently asks clarifying questions or if issues feel trivially small.
-
-### 5.4 Ralph retry criteria
-
-The definition of a failed attempt has not been fully specified. Does a test failure count? A linting error?
-
-> **Action:** define explicit failure criteria before relying on Ralph heavily. Proposed: build failure = retry, test failure = retry, type error = retry, infinite loop detected = escalate immediately.
-
-> **Resolved (2026-06-12):** failure classification written into both Ralph skills (section 2b). Retryable: build/compile failure, test failure introduced by the changes, type errors, unresolvable lint errors, transient PR-creation errors. Immediate escalation: identical error across two consecutive attempts, ambiguity requiring a human decision, auth or environment failures, loop symptoms. Not counted as failures: absent test suite, pre-existing failures on main (noted in progress.txt and the PR body). Cody's manual-PR fallback when `gh` is unavailable counts as success.
-
-> **Update (Iteration 29):** label transitions and branch create/continue are now scripts with the exit-code contract in `SCRIPT_CONTRACT.md` (0 success, 2 usage error, 10 precondition failed, 20 gh/git/network error or refused detached write). Ralph's retry decision for these steps reads the exit code instead of parsing prose; run state and PR scripts are batch 1b.
-
-### 5.5 decisions.md maintenance discipline
-
-`decisions.md` value depends entirely on keeping it updated. There is no automated mechanism to prompt updates after significant decisions.
-
-> **Action:** habit of updating `.squad/decisions.md` at the end of every HIGH-complexity feature. Consider an Oak prompt to suggest updates when it detects new patterns in merged PRDs.
-
-### 5.6 Agent Teams experimental stability
-
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is experimental. Its behavior, API, and token costs may change.
-
-> **Action:** monitor Claude Code release notes before activating Qugh.
-
-### 5.7 Oak documentation quality
-
-Oak output quality depends heavily on commit message and PR description quality.
-
-> **Action:** establish a commit message convention and PR description template before activating Oak.
-
-### 5.8 Seed coverage of code-only conventions
-
-Seed reads config files but not source files. Conventions that exist only in code will not appear in `architecture.md` after a Seed run.
-
-> **Action:** after each `/seed` run, review `.squad/architecture.md` and manually add any conventions Seed missed.
-
-### 5.9 PR assignment and branch protection
-
-Cody opens PRs and Reven posts review comments using the same GitHub account (`gh` CLI auth). GitHub has no technical block on approving and merging your own PRs in this configuration.
-
-The assumption breaks if branch protection rules require review from someone other than the PR author.
-
-> **Action:** if branch protection with required external reviewers is added, evaluate whether a bot account for Cody is worth the overhead.
-
-### 5.10 ADK and the framework-substrate question
-
-Open question: does adopting an agent framework (Google ADK, or a comparable runtime) give upside over the current textual-agent model, where an agent is a prompt definition interpreted by Claude Code or Codex and orchestration is itself a prompt?
-
-Findings so far, from evaluation rather than implementation:
-
-- ADK is a code-first framework. Agents are code objects, orchestration is a compiled graph-based workflow runtime (deterministic routing, fan-out/fan-in, retry, loops, human-in-the-loop), state is structured sessions, observability and eval are first-class, and agents deploy to cloud infrastructure. It is model-agnostic through adapters, though it leans toward Gemini and Google Cloud.
-- The squad already implements most of what a framework provides, as prompt-discipline rather than code. Ralph is a workflow runtime (dependency graph, retry, escalate, loop). The vault is sessions plus memory. session.log is tracing. The confirmation tiers are human-in-the-loop. Adopting a framework would mostly reimplement this discipline on a third runtime that is neither Claude Code nor Codex, breaking the tool-agnosticism of Iteration 12 and reintroducing the dependency class rejected for MCP.
-- The decision boundary for choosing a framework over textual agents: deterministic guaranteed orchestration over probabilistic, unattended production scale over interactive solo, first-class observability and eval over hand-rolled, structural concurrency over occasional independence. The current use case sits on the textual side of all four.
-- For a Claude-primary developer the apples-to-apples comparison is not ADK but Anthropic's Claude Agent SDK, which keeps the model family and avoids Gemini and Vertex gravity. ADK is the cross-vendor reference point, not the natural adoption target.
-
-> **Action:** do not adopt a framework before Sentry exists. The framework question is really the Sentry build-vs-adopt decision: when Sentry needs real parallel orchestration, eval, and observability instead of hand-rolled prompt logic, evaluate implementing it on the Claude Agent SDK (primary candidate) or ADK (cross-vendor option) against continuing in prompts. Until then a framework is premature. If a spike is wanted sooner, prototype one read-only role such as Reven on the Claude Agent SDK as an isolated experiment, never on the hot path, to gather evidence without committing the substrate.
-
-### 5.11 Test harness
-
-Open question: how should the squad be validated, given a growing set of patches none of which has been confirmed by a real run? A harness is the scaffolding that lets the squad run against known cases and tells you mechanically whether it behaved, as opposed to noticing in a live session that something feels off (which is how the GG-18 path bug slipped through).
-
-The harness spectrum, cheapest first:
-
-- **Observability (already built).** session.log, progress.txt, and the vault git history are a manual harness: after a batch you can read retries per issue, Reven's first-pass verdict, and whether reconstruction produced an accurate status.md. The only cheap enhancement worth making is a read-only script that summarizes a session from these artifacts so review is fast.
-- **Fixtures.** One or two throwaway repos (connected and detached) with a deliberately designed issue set: a dependency chain, a cycle that must halt, an issue that must fail and escalate. Re-running the squad against the same fixture after each patch surfaces behavior drift. No scorer needed; the result is read by eye. This is the layer most likely to earn its place.
-- **Assertions.** Encoding invariants as automated checks ("escalate after 3 retries", "a cycle halts", "reconstruction preserves ## Blocked"). This is the real harness and where cost and dependency-creep live (golden-file comparison is brittle; LLM-as-judge adds a model on every run). Gate it behind evidence that manual fixture-running is too slow or error-prone.
-
-> **Partially closed (Iteration 29):** the assertions layer now exists in two tiers. Tier 1 is a deterministic bash gate: `scripts/test-squad-labels.sh`, `scripts/test-squad-branch.sh`, `scripts/test-squad-common.sh`, `scripts/test-path-resolve.sh`, `scripts/test-gh-shim.sh` and the lint suites run against a `gh` shim and fixture repos (`hook-tests.yml` on ubuntu and macOS, `squad-lint.yml` on ubuntu only), plus `squad-lint.sh` checks 6-8. Tier 2 is `claude/evals/`, three advisory `claude plugin eval` cases for what prose does. Still open: fixtures for Ralph-level scenarios (cycle halts, escalation after retries), a verification contract per issue, and reconstruction assertions.
-
-> **Action:** build nothing up front. The first real batch after merge is the first harness run, manual. If reading logs by hand suffices, do nothing. If you re-run the same scenarios and squint at output, build the fixtures. If you repeat correctness mistakes a check could catch, add assertions for those specific cases. The harness grows from observed pain, not design. Note: a framework's eval and observability tooling (open point 5.10) overlaps this; if the harness need grows past the observability layer, fold it into the Sentry-time build-vs-adopt decision rather than building both.
-
-### 5.12 Ralph stacking rule with diamond dependencies
-
-Ralph stacks each issue's branch on its latest blocker. That is lossless for a chain but wrong for a diamond: when an issue has two blockers that are not themselves ordered (#214 needed #211 and #212; #220 needed #213, #217 and #219), the branch contains only one of them and silently drops the others. Batch 1a avoided the problem by running a linear stack in topological order.
-
-> **Action:** specify the rule in Ralph for multi-blocker issues: stack on a merge of all blockers, or fall back to a linear stack when the graph has diamonds, and make Ralph report which it chose. Decide before parallel chains (later batch) make linearizing unavailable.
-
----
-
-## 6. When to Add the Next Agent Layer
-
-### Add Sentry when:
-- You are routing tasks to agents manually and making the same routing decision repeatedly.
-- Ralph is active and you need automated reconciliation of Qugh and Reven feedback.
-
-> Sentry makes sense only after Ralph is well-established. Without Sentry, you are still the orchestrator for routing decisions.
-
 ### Iteration 25: Challenge — Stress-Testing Before Committing
 
 Both Forge and ad-hoc conversation had a gap: a plan or a piece of
@@ -1023,34 +814,7 @@ gate, not a follow-up.
 > full statelessness so the same agent serves standalone use and the
 > Forge gate without a vault dependency.
 
-### Add Qugh when:
-- Reven approves PRs that later turn out to have behavioral bugs that tests did not catch.
-- You are spending more than 15 minutes per PR on manual testing of UI or API behavior.
-
-> Qugh is not a substitute for automated tests. Fix missing test coverage first.
-
-### Add Oak when:
-- `.squad/architecture.md` is drifting from the actual codebase and you are not updating it manually.
-- New contributors (or future you) are confused by outdated documentation more than once per month.
-
-> Oak is not worth the token cost if documentation quality is already acceptable.
-
-### Add Lex when:
-- A project is approaching production deployment with real users, especially EU users.
-- The product collects or processes personal data: forms, analytics, authentication, payments.
-
-> Lex reads the `## Data flow` section of `architecture.md` and produces a prioritized, evidence-based compliance checklist (GDPR as baseline, since the controller is EU-based regardless of visitor origin). It falls back to targeted source reading only when the section is missing or sparse. Do not build Lex before the trigger fires: the `## Data flow` section already has standalone value for Archy and Reven, and a speculative agent contradicts the discipline this section exists to enforce.
-
-### Re-run Seed when:
-- You add a new major dependency that changes how code is written.
-- You change framework or restructure the top-level folder layout.
-- Cody or Reven start making assumptions that contradict your actual stack.
-
-### Add Agent Teams (parallel Qugh and Reven) when:
-- Both Qugh and Reven are active and sequential execution is adding more than 20 minutes of latency per PR.
-- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` has reached a stable state.
-
-> Do not activate Agent Teams until both Qugh and Reven are individually calibrated.
+---
 
 ### Iteration 26: Moving the Forge Challenge to the Opening
 
@@ -1267,6 +1031,8 @@ contract could be settled once on two small cases.
   detached-claim `handoff-line` grader is expected to fail until it is
   re-pointed at Ralph's handoff line.
 
+Fixes: #233 made the `squad_emit` key check locale-safe on bash 3.2.
+
 Known gap, documented rather than hidden: Cody's prose still skips the
 claim in detached mode, although `squad-labels.sh claim --handoff`
 exists; Ralph produces the detached In-Progress line at dispatch (Phase
@@ -1395,6 +1161,13 @@ tool-neutral and unchanged (scope boundary of #292); only packaging moves.
 - Skills and agents call scripts as `${CLAUDE_PLUGIN_ROOT}/hooks/<script>`
   instead of `~/.claude/hooks/<script>`. The path-resolution step is still
   a script call; exporting it once is the follow-up (#294).
+- Version bumps are automatic and post-merge: `plugin-version.yml` applies a
+  label-driven semver rule (`breaking-change` major, `enhancement` minor, `bug`
+  patch, else none) via `scripts/plugin-version-bump.sh`, so PRs never edit
+  `plugin.json` and parallel PRs cannot conflict on it. `main` is under a
+  ruleset (PR required, no bypass), so the workflow opens and self-merges a
+  one-line `chore/plugin-v<X.Y.Z>` PR instead of pushing; a guard workflow
+  rejects hand edits of `version`.
 - Removed: the README `cp` block, `.agent-squad-source`, the settings.json
   snippets, `squad-doctor.sh`, `test-squad-doctor.sh`, the doctor signal in
   `lore-orient.sh`. The eval scaffold no longer copies hooks into `$HOME`.
@@ -1430,6 +1203,417 @@ files`, and `lore-orient.sh` lists dirty linked worktrees after a kill.
 **Not done:** the optional Reven verdict recording in `verdicts.tsv` stays
 with report-time parsing.
 
+
+---
+
+### Iteration 32: Incident capture and a stricter Cody
+
+**Problem:** three failures on one day (2026-10-14) were noticed only by
+the user reading a session: an auto-mode denial of an `allowed-tools`
+edit, Cody skipping its claim so `squad-labels.sh review` exited 10, and
+Lore refusing a yes the invoking session relayed on the user's behalf.
+Nothing recorded them, so a failure that recurred looked new each time.
+In the same days Cody kept writing tests after the code (Iteration 1
+already described it as TDD) and could still create branches with raw
+`git checkout -b` outside its first step.
+
+**Incident store (#240, #241-#244).** `squad-incidents.sh` keeps one
+global append-only store at `<vault>/squad-incidents.tsv` with `record`,
+`summary` and `resolve`. Capture is deterministic and allowlist-only,
+from three sources:
+
+- *At the source.* `squad_incident` in `squad-common.sh` records the
+  failures worth knowing about where they happen: gh and git operation
+  failures, setup bugs, the review-without-claim precondition, and Ralph
+  escalations as their own kind. Usage errors, detached refusals and
+  routine preconditions are deliberately not recorded. Recording is
+  silent and always exits 0, so it can never change a script's stdout or
+  exit code (the one exception in `SCRIPT_CONTRACT.md`).
+- *From transcripts.* SessionEnd spawns a detached pass
+  (`lore-checkpoint.sh --incidents`) that scans the main transcript and
+  its subagent transcripts for auto-mode classifier denials, attributes
+  them to a squad component (subagent `agentType`, or squad paths in the
+  tool input), and dedupes on the tool-use id. User rejections are
+  excluded. Foreground cost is about 90 ms against the 1.5 s SessionEnd
+  budget.
+- *At orientation.* `lore-orient.sh` adds one Signals line when
+  `summary` reports recurring incidents. Healing is pull, not push: the
+  user decides whether a recurring incident becomes an issue.
+
+Fixes: #249 made the orient test seed its own incident store despite
+`SQUAD_INCIDENTS=off`.
+
+The relayed-yes failure is out of v1 capture; it was fixed directly
+instead (#236): the `/lore` entrypoint shows Tier 2 proposals to the
+user and resumes Lore with the reply quoted as `User confirmed:`, which
+Lore's Tier 2 rule now accepts.
+
+**Test-first Cody (#238).** Chisel puts given/when/then test specs in
+every issue (copied, derived, asked, or left as an open point), and marks
+docs, config and layout issues `exempt`. Cody writes the tests, sees them
+fail, implements until green, and never edits a failing test to make it
+pass. A missing test runner, open specs or still-red tests are now
+escalations in Ralph, not silent skips. The heavier design (a
+`squad-test.sh` script and a separate failing-test commit as proof of the
+red step) was dropped: the squad has to work in any project, and the red
+step is accepted as unprovable.
+
+**One branch path (#250).** `cody.md` states once that `squad-branch.sh`
+is the only way to create or switch branches, including fix rounds and
+recovery. It was first proposed as a `lore prefer` entry and rejected
+there: a rule that governs one agent's tool use belongs in that agent's
+prompt, not in a global preference every agent reads.
+
+> **Key decision:** failures are data. Record them deterministically where
+> they happen, never let recording change behavior, and surface only the
+> recurring ones. Whether a failure becomes work stays a human call.
+
+---
+
+### Iteration 33: Rules, scope and ownership in memory
+
+**Problem:** the memory layer had grown without scope. Ralph injected
+only the last 20 active `decisions.md` entries, so on a long-lived
+project (27 active entries) the oldest, which were the project-wide
+rules, silently stopped reaching Cody and Reven while recent
+ticket-scoped details stayed in. `lore prefer` wrote every rule to both
+`development.md` and the project's `decisions.md`, so project-only rules
+became global and global rules were duplicated per project. Forge ranked
+`development.md` in its authority order but never read it. And
+duplication showed up in almost every batch because no issue said which
+lib owns a new shared concept, so Cody knowingly wrote twins and Reven
+caught them afterwards.
+
+**Change:**
+
+- *`[rule]` markers (#257).* A `## [date] [rule] <title>` entry in
+  `decisions.md` is always loaded by Forge, Ralph, Cody and Reven, with a
+  cap of 15 active rules and a one-line overflow warning. Untagged
+  entries keep the last-20 window. Forge now reads `development.md`.
+- *One rule, one file (#256).* `lore prefer` classifies a rule as global
+  or project-only, asks one question when unsure (`--global` and
+  `--project` skip it), and writes exactly one place: a line in
+  `development.md`, or a `[rule]` entry in `decisions.md`. When it cannot
+  ask, it defaults to project-only, never global.
+- *Owners (#255).* Chisel adds an `Owner:` line for each new shared
+  concept and appends it to an `## Owners` map in `architecture.md`,
+  which Seed preserves on refresh. Cody gets a stop rule: when a twin is
+  needed and the dependency rules prevent importing the original, it
+  escalates with `ESCALATION: ownership` instead of duplicating. A Cody
+  self-review step was rejected: it would be a mini-Reven grading its own
+  work. Reven stays the only verifier.
+- *Checkpoint on other branches (#254).* A main-checkout session that
+  worked on linked worktrees through absolute paths left `status.md`
+  untouched, because staleness only looked at the current branch. The
+  SessionEnd check now fires when any local branch has a commit after
+  `Last updated`, and the rebuild evidence lists recently touched local
+  branches.
+
+> **Key decision:** memory needs scope as much as it needs storage. A
+> rule's reach (one project or all) and its loading (always, or by
+> recency) are explicit properties of the entry, not side effects of
+> which file it landed in or how old it is. Ownership is decided in the
+> analysis, where it is cheap, not discovered in review, where it costs a
+> fix round.
+
+---
+
+### Iteration 34: Reven applies the rules and reads the neighbourhood
+
+**Problem:** two gaps in the review loop. `/stats` reported 1 Reven
+verdict in 30 days against 48 merged PRs, because the importer read only
+text blocks while Reven delivers its verdict through the
+`SubagentHandback` tool (63 of 65 transcripts on disk). And on a real
+47-file PR, Reven covered 2 of 13 findings a team review bot raised,
+after nine `[rule]` entries describing six of the misses had been added:
+the rules were loaded and nothing applied them.
+
+**Change:**
+
+- *Verdict capture (#264).* `squad-stats.py` also matches the verdict in
+  `SubagentHandback` inputs, keyed by tool-use id so re-running `collect`
+  backfills without duplicates. `Bash` inputs (the `gh pr comment`
+  bodies) are ignored because they repeat the handback.
+- *Rule pass (#265).* After reading the diff, Reven checks every loaded
+  `[rule]` and reports a `## Rules` section (fired, not applicable, not
+  checked). An active `[rule]` can now back a blocking finding, as
+  `architecture.md` can. Files the rules talk about are triaged first and
+  `maxTurns` went from 20 to 40.
+- *Neighbourhood (#265).* Reven reads the parent story, linked and cited
+  issues and their comments, the API spec when one is discoverable, and
+  the repo's own review rulebook when `CLAUDE.md` or the README points to
+  one. A finding whose truth depends on the backend, data or intent goes
+  under Observations as a question, never as a blocking issue: the
+  motivating PR had a blocking finding built on exactly such a premise.
+
+Follow-ups from the same comparison are open as #268-#273 (listener
+tracing, an `INCOMPLETE` verdict, model choice by diff size, tracker
+reads independent of `chisel.mode`).
+
+> **Key decision:** a loaded rule is not an applied rule. Every rule the
+> reviewer is given must be accounted for in its output, and the metric
+> that says whether the reviewer works has to read where the verdict
+> actually is.
+
+---
+
+## 3. Final Architecture
+
+This section describes the repository as it stands after Iteration 34.
+Components that were designed but are not active are listed in section 4
+("What is out of the MVP") and section 6, not here.
+
+### Squad Overview
+
+| Name | Type | Model | Role |
+|------|------|-------|------|
+| **Seed** | Skill | session | First contact: records the vault mapping, writes `architecture.md` (with `## Data flow` and `## Owners`) and `scout-cache.md` (the former Scout snapshot). |
+| **Forge** | Skill | session | Interactive discovery with an opening challenge and a delta check; writes `forge/output.yaml` with a complexity field. |
+| **Archy** | Skill | session | HIGH complexity only: enriches the Forge YAML into a PRD. |
+| **Chisel** | Skill | session | Turns YAML or PRD into tracker issues with test specs and `Owner:` lines. Connected: GitHub issues. Detached: a local batch file, handoff and Jira-importable CSV. |
+| **Ralph** | Skill (loop) | session | Runs issues in dependency order through Cody, one stacked branch and PR per issue; persists run state in `ralph-run.md`; classifies failures as retry or escalation. |
+| **Cody** | Agent | sonnet | Implements one issue test-first on a branch created only through `squad-branch.sh`; escalates on open specs, missing runner or ownership conflicts. |
+| **Reven** | Agent + skill | sonnet | Reviews a PR against its base, applies loaded `[rule]` entries, reads the issue neighbourhood. |
+| **Challenge** | Agent + skill | opus | Stateless stress test of a proposal; standalone and inside Forge. |
+| **Lore** | Agent + skill | sonnet | Vault memory: `lore start` (setup and repair), `lore prefer` (one rule, one file), `lore recover`. |
+| **Sidecar** | Skill | session | Opens and closes a worktree on an existing branch; Cody only on explicit opt-in. |
+| **Stats** | Skill | session | Imports Claude Code transcripts and reports cost, usage and outcomes for every session kind. |
+
+Hooks and scripts (`claude/hooks/`): `path-resolve.sh` (vault, project,
+tracker mode), `squad-common.sh`, `squad-labels.sh`, `squad-branch.sh`,
+`squad-incidents.sh`, `worktree.sh`, `squad-doctor.sh`, `squad-stats.py`,
+`chisel-config-validate.py`, and the session hooks `lore-orient.sh`
+(SessionStart, read-only) and `lore-checkpoint.sh` (SessionEnd: status
+rebuild and the incident transcript pass).
+
+---
+
+### Full Flow
+
+```
+/seed           First contact. Vault mapping, architecture.md, scout-cache.md.
+SessionStart    lore-orient.sh injects status, evidence, Context refs and Signals.
+/forge          Opening challenge, rounds, delta check -> forge/output.yaml.
+/archy          (HIGH only) YAML -> prd/current.md. You review.
+/chisel         YAML or PRD -> tracker issues (connected) or batch file (detached). You review.
+/ralph          Cody per issue in dependency order, retries and escalations.
+Cody            Test-first implementation, commit, PR (connected) or paste-ready description (detached).
+Reven           Review against the PR's base. You decide the merge.
+SessionEnd      lore-checkpoint.sh rebuilds a stale status.md and records denials.
+
+/sidecar <branch>   Worktree on an existing branch, open and close.
+/challenge          Any time, any content.
+/stats              Weekly, at least.
+```
+
+---
+
+### File Structure
+
+With `context: repo` in `lore-config.json`, `architecture.md`,
+`scout-cache.md`, `forge/` and `prd/` live in `<PROJECT_ROOT>/.squad`
+instead; everything else stays in the vault.
+
+| File | Purpose |
+|------|---------|
+| `<vault>/projects/<project>/.squad/forge/output.yaml` | Forge output. Archived to `forge/archive/` once Chisel consumes it. |
+| `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow, owners. Written by Seed, `## Owners` extended by Chisel. |
+| `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Replaced on each Seed run. |
+| `<vault>/projects/<project>/.squad/prd/current.md` | Active PRD, archived by Chisel after consumption. |
+| `<vault>/projects/<project>/.squad/chisel-config.json` | Tracker mode and labels. `connected` only when set explicitly. |
+| `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files, handoff checklists, CSV. |
+| `<vault>/projects/<project>/.squad/progress.txt` | Ralph and Sidecar log, one line per issue or session. |
+| `<vault>/projects/<project>/.squad/session.log` | Per-project session log, tailed by `lore-orient.sh`. |
+| `<vault>/projects/<project>/.squad/ralph-run.md` | Ralph run state for resume. |
+| `<vault>/projects/<project>/status.md` | Resumption handoff, reconstructed from evidence. |
+| `<vault>/projects/<project>/decisions.md` | Project decisions. `[rule]` entries always loaded (cap 15); untagged entries by last-20 window. |
+| `<vault>/preferences/development.md` | Global rules only, one line each. |
+| `<vault>/squad-incidents.tsv` | Global incident store. |
+| `<vault>/squad-stats/` | Normalized usage and verdict rows, reports, `questions.md`. |
+| `<vault>/lore-config.json` | Absolute CWD paths to vault display names; optional `context: repo`. |
+| `claude/agents/`, `claude/skills/`, `claude/hooks/` | Definitions and scripts, installed into `~/.claude/`. |
+| `SCRIPT_CONTRACT.md`, `LABEL_STATE_MACHINE.md`, `PATH_RESOLUTION.md` | Maintainer references; never read at runtime. |
+| `scripts/test-*.sh`, `claude/evals/` | Tier-1 bash gate and tier-2 advisory plugin evals. |
+
+---
+
+
+## 4. MVP Configuration
+
+### What is in the MVP
+
+| Component | Role in MVP |
+|-----------|-------------|
+| **Forge** | Interactive session to structure your idea into YAML before any code is written. |
+| **Archy** | Produces a full PRD on HIGH complexity. You review and iterate via `/archy` before proceeding. |
+| **Chisel** | Converts YAML or PRD to tracker issues (GitHub in connected mode, a local batch file in detached mode). You review issues before proceeding. |
+| **Cody** | Writes code. Assigns the issue, creates a branch, implements, and opens the PR. |
+| **Reven** | Reviews every PR. You invoke Reven manually after Cody opens the PR. |
+| **Ralph** | Agentic loop. Invokes Cody per issue, manages retries (max 3), escalates on persistent failure. |
+| **Sidecar** | Companion entry point for fixes on an existing branch. Opens a worktree, invokes Cody once per fix, tears down and writes one summary line on close. Does not touch Forge/Archy/Chisel/Ralph. |
+| **Seed** | Initializes project context. Run once per project, then again after significant structural changes. |
+| **Lore** | Manages second-brain vault. `lore start` is setup/repair only (naming, migration, re-mapping); `lore prefer` records preferences; `lore recover` rebuilds status explicitly. No session-end command. |
+
+### What is out of the MVP
+
+- **Sentry:** the orchestrator. You handle routing manually. Add when the flow becomes complex enough to justify automation.
+- **Qugh:** QA behavioral testing. You handle manual testing. Add when Reven alone misses behavioral issues.
+- **Oak:** daily documentation job. Add when documentation starts drifting noticeably from the codebase.
+- **Agent Teams:** parallel Qugh and Reven. Add when both are active.
+- **Lex:** legal and compliance audit, GDPR baseline. Add when a project approaches production with real users. Reads the `## Data flow` section of `architecture.md` scaffolded by Seed.
+
+### MVP Flow
+
+```
+/seed           Initialize context. /clear after.
+/forge <idea>   Forge runs session, Scout provides context, you confirm complexity.
+                → HIGH: /archy → review PRD → /chisel
+                → LOW/MED: /chisel directly
+/chisel         Creates tracker issues. You review.
+/ralph          Loops Cody per issue in dependency order.
+                Cody opens PR → you invoke Reven.
+                Reven requests changes → feedback to Cody → repeat.
+Merge.
+
+/sidecar <branch>   Alternate entry point, bypasses everything above.
+                     Worktree on an existing branch, Cody per fix, close.
+```
+
+---
+
+## 5. Open Points
+
+### 5.1 Sentry severity guardrail calibration
+
+Sentry is configured to warn when a `/forge` description appears too complex for LOW severity. The threshold has never been tested against real inputs.
+
+> **Action:** after two weeks of MVP usage, review how often the guardrail fires and whether it fires on cases that actually warranted escalation.
+
+### 5.2 Forge slot completeness vs session length
+
+Forge asks questions until all required slots are filled. On complex features this can produce long sessions. There is no mechanism to detect when the user wants to move faster.
+
+> **Action:** monitor session length in practice. If sessions consistently run long, consider making some slots optional or adding a `/quick` modifier.
+
+### 5.3 Chisel issue granularity
+
+The granularity of issues produced by Chisel from a MEDIUM complexity YAML has not been validated.
+
+> **Action:** after ten MED-complexity features, review issue size. Adjust Chisel prompting if Cody consistently asks clarifying questions or if issues feel trivially small.
+
+### 5.4 Ralph retry criteria
+
+The definition of a failed attempt has not been fully specified. Does a test failure count? A linting error?
+
+> **Action:** define explicit failure criteria before relying on Ralph heavily. Proposed: build failure = retry, test failure = retry, type error = retry, infinite loop detected = escalate immediately.
+
+> **Resolved (2026-06-12):** failure classification written into both Ralph skills (section 2b). Retryable: build/compile failure, test failure introduced by the changes, type errors, unresolvable lint errors, transient PR-creation errors. Immediate escalation: identical error across two consecutive attempts, ambiguity requiring a human decision, auth or environment failures, loop symptoms. Not counted as failures: absent test suite, pre-existing failures on main (noted in progress.txt and the PR body). Cody's manual-PR fallback when `gh` is unavailable counts as success.
+
+> **Update (Iteration 29):** label transitions and branch create/continue are now scripts with the exit-code contract in `SCRIPT_CONTRACT.md` (0 success, 2 usage error, 10 precondition failed, 20 gh/git/network error or refused detached write). Ralph's retry decision for these steps reads the exit code instead of parsing prose; run state and PR scripts are batch 1b.
+
+### 5.5 decisions.md maintenance discipline
+
+`decisions.md` value depends entirely on keeping it updated. There is no automated mechanism to prompt updates after significant decisions.
+
+> **Action:** habit of updating `.squad/decisions.md` at the end of every HIGH-complexity feature. Consider an Oak prompt to suggest updates when it detects new patterns in merged PRDs.
+
+### 5.6 Agent Teams experimental stability
+
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is experimental. Its behavior, API, and token costs may change.
+
+> **Action:** monitor Claude Code release notes before activating Qugh.
+
+### 5.7 Oak documentation quality
+
+Oak output quality depends heavily on commit message and PR description quality.
+
+> **Action:** establish a commit message convention and PR description template before activating Oak.
+
+### 5.8 Seed coverage of code-only conventions
+
+Seed reads config files but not source files. Conventions that exist only in code will not appear in `architecture.md` after a Seed run.
+
+> **Action:** after each `/seed` run, review `.squad/architecture.md` and manually add any conventions Seed missed.
+
+### 5.9 PR assignment and branch protection
+
+Cody opens PRs and Reven posts review comments using the same GitHub account (`gh` CLI auth). GitHub has no technical block on approving and merging your own PRs in this configuration.
+
+The assumption breaks if branch protection rules require review from someone other than the PR author.
+
+> **Action:** if branch protection with required external reviewers is added, evaluate whether a bot account for Cody is worth the overhead.
+
+### 5.10 ADK and the framework-substrate question
+
+Open question: does adopting an agent framework (Google ADK, or a comparable runtime) give upside over the current textual-agent model, where an agent is a prompt definition interpreted by Claude Code or Codex and orchestration is itself a prompt?
+
+Findings so far, from evaluation rather than implementation:
+
+- ADK is a code-first framework. Agents are code objects, orchestration is a compiled graph-based workflow runtime (deterministic routing, fan-out/fan-in, retry, loops, human-in-the-loop), state is structured sessions, observability and eval are first-class, and agents deploy to cloud infrastructure. It is model-agnostic through adapters, though it leans toward Gemini and Google Cloud.
+- The squad already implements most of what a framework provides, as prompt-discipline rather than code. Ralph is a workflow runtime (dependency graph, retry, escalate, loop). The vault is sessions plus memory. session.log is tracing. The confirmation tiers are human-in-the-loop. Adopting a framework would mostly reimplement this discipline on a third runtime that is neither Claude Code nor Codex, breaking the tool-agnosticism of Iteration 12 and reintroducing the dependency class rejected for MCP.
+- The decision boundary for choosing a framework over textual agents: deterministic guaranteed orchestration over probabilistic, unattended production scale over interactive solo, first-class observability and eval over hand-rolled, structural concurrency over occasional independence. The current use case sits on the textual side of all four.
+- For a Claude-primary developer the apples-to-apples comparison is not ADK but Anthropic's Claude Agent SDK, which keeps the model family and avoids Gemini and Vertex gravity. ADK is the cross-vendor reference point, not the natural adoption target.
+
+> **Action:** do not adopt a framework before Sentry exists. The framework question is really the Sentry build-vs-adopt decision: when Sentry needs real parallel orchestration, eval, and observability instead of hand-rolled prompt logic, evaluate implementing it on the Claude Agent SDK (primary candidate) or ADK (cross-vendor option) against continuing in prompts. Until then a framework is premature. If a spike is wanted sooner, prototype one read-only role such as Reven on the Claude Agent SDK as an isolated experiment, never on the hot path, to gather evidence without committing the substrate.
+
+### 5.11 Test harness
+
+Open question: how should the squad be validated, given a growing set of patches none of which has been confirmed by a real run? A harness is the scaffolding that lets the squad run against known cases and tells you mechanically whether it behaved, as opposed to noticing in a live session that something feels off (which is how the GG-18 path bug slipped through).
+
+The harness spectrum, cheapest first:
+
+- **Observability (already built).** session.log, progress.txt, and the vault git history are a manual harness: after a batch you can read retries per issue, Reven's first-pass verdict, and whether reconstruction produced an accurate status.md. The only cheap enhancement worth making is a read-only script that summarizes a session from these artifacts so review is fast.
+- **Fixtures.** One or two throwaway repos (connected and detached) with a deliberately designed issue set: a dependency chain, a cycle that must halt, an issue that must fail and escalate. Re-running the squad against the same fixture after each patch surfaces behavior drift. No scorer needed; the result is read by eye. This is the layer most likely to earn its place.
+- **Assertions.** Encoding invariants as automated checks ("escalate after 3 retries", "a cycle halts", "reconstruction preserves ## Blocked"). This is the real harness and where cost and dependency-creep live (golden-file comparison is brittle; LLM-as-judge adds a model on every run). Gate it behind evidence that manual fixture-running is too slow or error-prone.
+
+> **Partially closed (Iteration 29):** the assertions layer now exists in two tiers. Tier 1 is a deterministic bash gate: `scripts/test-squad-labels.sh`, `scripts/test-squad-branch.sh`, `scripts/test-squad-common.sh`, `scripts/test-path-resolve.sh`, `scripts/test-gh-shim.sh` and the lint suites run against a `gh` shim and fixture repos (`hook-tests.yml` on ubuntu and macOS, `squad-lint.yml` on ubuntu only), plus `squad-lint.sh` checks 6-8. Tier 2 is `claude/evals/`, three advisory `claude plugin eval` cases for what prose does. Still open: fixtures for Ralph-level scenarios (cycle halts, escalation after retries), a verification contract per issue, and reconstruction assertions.
+
+> **Action:** build nothing up front. The first real batch after merge is the first harness run, manual. If reading logs by hand suffices, do nothing. If you re-run the same scenarios and squint at output, build the fixtures. If you repeat correctness mistakes a check could catch, add assertions for those specific cases. The harness grows from observed pain, not design. Note: a framework's eval and observability tooling (open point 5.10) overlaps this; if the harness need grows past the observability layer, fold it into the Sentry-time build-vs-adopt decision rather than building both.
+
+### 5.12 Ralph stacking rule with diamond dependencies
+
+Ralph stacks each issue's branch on its latest blocker. That is lossless for a chain but wrong for a diamond: when an issue has two blockers that are not themselves ordered (#214 needed #211 and #212; #220 needed #213, #217 and #219), the branch contains only one of them and silently drops the others. Batch 1a avoided the problem by running a linear stack in topological order.
+
+> **Action:** specify the rule in Ralph for multi-blocker issues: stack on a merge of all blockers, or fall back to a linear stack when the graph has diamonds, and make Ralph report which it chose. Decide before parallel chains (later batch) make linearizing unavailable.
+
+---
+
+## 6. When to Add the Next Agent Layer
+
+### Add Sentry when:
+- You are routing tasks to agents manually and making the same routing decision repeatedly.
+- Ralph is active and you need automated reconciliation of Qugh and Reven feedback.
+
+> Sentry makes sense only after Ralph is well-established. Without Sentry, you are still the orchestrator for routing decisions.
+
+### Add Qugh when:
+- Reven approves PRs that later turn out to have behavioral bugs that tests did not catch.
+- You are spending more than 15 minutes per PR on manual testing of UI or API behavior.
+
+> Qugh is not a substitute for automated tests. Fix missing test coverage first.
+
+### Add Oak when:
+- `.squad/architecture.md` is drifting from the actual codebase and you are not updating it manually.
+- New contributors (or future you) are confused by outdated documentation more than once per month.
+
+> Oak is not worth the token cost if documentation quality is already acceptable.
+
+### Add Lex when:
+- A project is approaching production deployment with real users, especially EU users.
+- The product collects or processes personal data: forms, analytics, authentication, payments.
+
+> Lex reads the `## Data flow` section of `architecture.md` and produces a prioritized, evidence-based compliance checklist (GDPR as baseline, since the controller is EU-based regardless of visitor origin). It falls back to targeted source reading only when the section is missing or sparse. Do not build Lex before the trigger fires: the `## Data flow` section already has standalone value for Archy and Reven, and a speculative agent contradicts the discipline this section exists to enforce.
+
+### Re-run Seed when:
+- You add a new major dependency that changes how code is written.
+- You change framework or restructure the top-level folder layout.
+- Cody or Reven start making assumptions that contradict your actual stack.
+
+### Add Agent Teams (parallel Qugh and Reven) when:
+- Both Qugh and Reven are active and sequential execution is adding more than 20 minutes of latency per PR.
+- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` has reached a stable state.
+
+> Do not activate Agent Teams until both Qugh and Reven are individually calibrated.
 
 ---
 
