@@ -154,7 +154,13 @@ NOW="$(date "+%Y-%m-%d %H:%M")"
 commit_vault() {
   if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$VAULT" add "projects/$DISPLAY/status.md" >/dev/null 2>&1
-    git -C "$VAULT" commit -q -m "lore: $1 $DISPLAY" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
+    # No git identity (fresh CI runner, bare machine) would make the commit fail
+    # silently; fall back to a fixed one only when none is configured.
+    _id=""
+    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
+    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
+    # shellcheck disable=SC2086
+    git -C "$VAULT" $_id commit -q -m "lore: $1 $DISPLAY" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
   fi
 }
 

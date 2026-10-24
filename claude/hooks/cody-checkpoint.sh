@@ -65,7 +65,10 @@ TREE=clean; [ "${DIRTY:-0}" -gt 0 ] && TREE=dirty
 # No branch-name vs subject-ID check: Ralph's detached chain branches carry several
 # issues' commits under the lead issue's name.
 _others="$(git for-each-ref --format='%(refname)' --contains HEAD refs/heads refs/remotes 2>/dev/null \
-  | grep -v -e "^refs/heads/$BRANCH\$" -e "^refs/remotes/[^/]*/$BRANCH\$" -e '^refs/remotes/[^/]*/pr/' | head -n 1)"
+  | awk -v b="$BRANCH" '
+      $0 == "refs/heads/" b { next }
+      /^refs\/remotes\/[^\/]*\/pr\// { next }
+      { rest = $0; if (sub(/^refs\/remotes\/[^\/]*\//, "", rest) && rest == b) next; print; exit }')"
 [ -z "$_others" ] || skip "HEAD $SHA is already on ${_others#refs/}, nothing to record"
 
 STATE=committed; PR=""; BASE=""
