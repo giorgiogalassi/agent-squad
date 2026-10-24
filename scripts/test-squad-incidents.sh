@@ -89,11 +89,23 @@ check "off leaves store unchanged" 0 "$(rows)"
 run bogus; check "unknown verb exits 2" 2 "$RC"
 
 # 10. dangling flag must not hang (guarded: background + kill, no `timeout` on macOS)
-guarded() {  # guarded <args...> -> sets OUT, RC (RC=124 on hang)
-  local pid i=0
+descendants() {  # descendants <pid> -> every transitive child pid, one per line
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do echo "$c"; descendants "$c"; done
+}
+guarded() {  # guarded <args...> -> sets OUT, RC (RC=124 on hang); kills the whole tree on hang
+  local pid i=0 kids p
   bash "$SUT" "$@" >"$TMPROOT/gout" 2>/dev/null & pid=$!
   while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
-  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; RC=124
+  if kill -0 "$pid" 2>/dev/null; then
+    # cmd_record is a subshell: killing only $pid would orphan its child loop.
+    kids="$(descendants "$pid")"
+    for p in $kids; do kill -9 "$p" 2>/dev/null; done
+    kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; RC=124
+    sleep 0.1
+    for p in $kids; do
+      if kill -0 "$p" 2>/dev/null; then bad "guarded call left survivor pid $p"; kill -9 "$p" 2>/dev/null; fi
+    done
   else wait "$pid"; RC=$?; fi
   OUT="$(cat "$TMPROOT/gout")"
 }
