@@ -42,7 +42,8 @@ issue and PR from your prompt.
 `chisel.mode`) says where squad tickets are written; it says nothing about
 where the project's real issue and PR live. Read the `## Issue tracker and
 PR host` section of `architecture.md` (tracker, PR host, how to read them:
-a repo skill, a CLI or an MCP). If it names a skill, load it; read the
+a repo skill or a Bash-reachable CLI; MCP-based connectors are out of
+scope pending the analysis in #297). If it names a skill, load it; read the
 issue (comments, parent, links) and the PR (base, description) through the
 named path, whatever `TRACKER_MODE` says. If the section is absent or names
 nothing, the behaviour below holds unchanged. Read-only always: never post
@@ -75,9 +76,11 @@ Resolve in this order; the first hit wins:
    pass it). Always wins.
 2. PR host named in `architecture.md` and not GitHub: read the PR's base
    through the access path that section names.
-   Otherwise, connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
-   (use the PR number if that is what you were given).
-3. Detached (`chisel.mode` in
+   PR host named in `architecture.md` and GitHub, or no such section and
+   connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
+   (use the PR number if that is what you were given), whatever
+   `TRACKER_MODE` says when the section names GitHub.
+3. No PR host section and detached (`chisel.mode` in
    `<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated in
    your prompt): the latest line in
    `<vault>/projects/<display-name>/.squad/progress.txt` mentioning this
@@ -88,16 +91,17 @@ Resolve in this order; the first hit wins:
    diffed against main - stacked PR may include blocker's changes".
 
 ```bash
-git fetch origin            # connected only; detached skips the fetch
+git fetch origin            # PR host section present, or no section and connected; otherwise skipped
 git diff origin/<base>...origin/<branch-name>
 ```
 
-Detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
+No PR host section and detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
 
-**gh preflight (connected, GitHub PR host only).** Verify `gh` is on PATH
-and `gh auth status` succeeds before resolving the base; if not, say so and
-stop. Detached mode and non-GitHub PR hosts never call `gh` and skip this
-check.
+**gh preflight (GitHub PR host only).** When the PR host section names
+GitHub, or there is no section and `TRACKER_MODE` is connected, verify `gh`
+is on PATH and `gh auth status` succeeds before resolving the base; if not,
+say so and stop, whatever `TRACKER_MODE` says. Non-GitHub PR hosts, and
+detached mode with no section, never call `gh` and skip this check.
 
 **Triage before reading.** On anything larger than a handful of files, the
 diff will not fit in your budget, and an agent that spends it all reading and

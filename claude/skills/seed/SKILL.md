@@ -114,7 +114,8 @@ audits.
 `## Issue tracker and PR host` is read by Reven, independent of
 `chisel.mode`. Detect the PR host from `git remote get-url origin`
 (github.com, bitbucket.org, gitlab) and propose the section: tracker, PR
-host, and how to read them (a repo skill, a CLI or an MCP). Fill only what
+host, and how to read them (a repo skill or a Bash-reachable CLI; MCP-based connectors are out of
+scope pending the analysis in #297). Fill only what
 the remote and files evidence; the user confirms the tracker and access
 path. Nothing detectable → `—`. Read-only access only.
 
