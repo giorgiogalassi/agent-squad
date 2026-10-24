@@ -104,7 +104,7 @@ connected (backward compatibility).
 
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
 review-and-fix rounds per issue; hand-editable, never prompted for, and
-2 when the key is absent.
+2 when the key is absent. `0` means the same as `--no-review`.
 
 On every connected run:
 

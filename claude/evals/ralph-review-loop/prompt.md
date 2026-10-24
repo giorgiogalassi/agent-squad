@@ -14,4 +14,5 @@ absent) on the connected fixture. Cody opens PR #1. Reven returns
 again returns `Verdict: CHANGES REQUESTED`. Say, step by step: how many
 rounds are counted, whether a third Cody run happens, what line goes into
 `progress.txt`, and which state the issue ends in. Quote the `progress.txt`
-line exactly as the skill defines it.
+line exactly as it would be written for #7 in this scenario (filled in,
+not the template).

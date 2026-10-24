@@ -35,7 +35,7 @@ with the user before starting; never auto-chain past a concluded STOP.
 
 **Config.** Read `.squad/chisel-config.json` (fields nest under a
 top-level `chisel` key): `mode`, `review_label`, `state_labels`, `ralph.review_rounds` (integer,
-the cap of Phase 2e; missing means 2). Missing `mode` means `connected`.
+the cap of Phase 2e; missing means 2; `0` means the same as `--no-review`). Missing `mode` means `connected`.
 
 **Flags.**
 - `--no-review`: skip Phase 2e for the whole batch; the batch then runs
@@ -174,30 +174,32 @@ state is persisted in the vault `.squad/`, next to `progress.txt`:
   Started: 2026-04-08 10:30
   Status: running
 
-  | Issue | Branch | Base | Attempts | Rounds | Reviewed | State |
-  |-------|--------|------|----------|--------|----------|-------|
-  | #12 | 12-reservations | main | 1 | 1 | a1b2c3d | resolved |
-  | #14 | 14-api | 12-reservations | 2 | 2 | e4f5a6b | needs-review |
-  | #15 | 15-ui | 14-api | 0 | 0 | - | pending |
+  | Issue | Branch | Base | Attempts | Rounds | Reviewed | Verdict | State |
+  |-------|--------|------|----------|--------|----------|---------|-------|
+  | #12 | 12-reservations | main | 1 | 1 | a1b2c3d | APPROVED | resolved |
+  | #14 | 14-api | 12-reservations | 2 | 2 | e4f5a6b | CHANGES REQUESTED | needs-review |
+  | #15 | 15-ui | 14-api | 0 | 0 | - | - | pending |
 
 Rows are in execution order. State:
 `pending|running|resolved|escalated|skipped|needs-review`. `Rounds` is
 the number of Reven reviews that counted as a round (Phase 2e);
 `Reviewed` is the HEAD SHA of the last reviewed state (`-` before the
-first review). Both are separate from `Attempts`.
+first review); `Verdict` is the last Reven verdict (`-` before the
+first), kept so a resume at the cap can fill `<X>`. All three are separate
+from `Attempts`.
 Detached mode uses the same file (branch = chain branch).
 
 - **Write** it at the end of Phase 1b, once order and branches are
   known; **update** the affected row after every 2b classification
   (attempt counter, state) and after every Phase 2e review (Rounds,
-  Reviewed, state). Set `Status: complete` at Phase 3.
+  Reviewed, Verdict, state). Set `Status: complete` at Phase 3.
 - **On start,** before computing the order: if `ralph-run.md` exists with
   `Status: running` and at least one issue not `resolved`/`escalated`/
   `skipped`/`needs-review`, compare its `Batch:` with the current batch. Same batch =
   identical sorted issue-ID set. Same: ask the user whether to resume.
   Yes: reuse order, branches, bases, and counters; start at the first
-  unfinished issue (a `running` row resumes with its stored counters, `Rounds` and
-  `Reviewed` included).
+  unfinished issue (a `running` row resumes with its stored counters, `Rounds`,
+  `Reviewed` and `Verdict` included).
   No: recompute and overwrite. Different batch: ignore it with a one-line
   notice (`Ignoring ralph-run.md for batch [#..] — different batch.`) and
   overwrite it at the end of Phase 1b.
@@ -371,10 +373,14 @@ Skip this step in detached mode.
 
 Per issue, right after a successful Phase 2 (PR opened, or the detached
 branch committed; in detached mode only after the branch's last issue,
-when its PR description is ready). An escalated issue is never reviewed.
-Cap = `ralph.review_rounds` (default 2). Read `Rounds` and `Reviewed`
-from the issue's `ralph-run.md` row; `Rounds` at the cap means skip to
-step 5.
+when its PR description is ready). In a detached chain the last
+issue's row and ID carry the review and the fix-round commit check
+(step 4); the other issues of the chain are not reviewed on their own.
+An escalated issue is never reviewed.
+Cap = `ralph.review_rounds` (default 2); cap 0 means skip Phase 2e like
+`--no-review` (no step 5, state `resolved`). Read `Rounds`, `Reviewed`
+and `Verdict` from the issue's `ralph-run.md` row; `Rounds` at the cap
+means skip to step 5 with `<X>` = the stored `Verdict`.
 
 1. **Review.** Spawn the `reven` agent (Agent) with: connected, the PR
    number; detached, the branch and its base; the issue and its
@@ -384,7 +390,7 @@ step 5.
    previous verdict and `git -C <wd> diff <Reviewed>..HEAD` as the scope
    and tell Reven to check that the previous blocking issues are
    resolved and to review only that diff, not the whole PR. Set
-   `Reviewed` to HEAD after the review.
+   `Reviewed` to HEAD and `Verdict` to the verdict after the review.
 2. **Print the verdict** line (`Verdict: ...`) and the blocking issues
    in the conversation, verbatim, one review per issue. `/stats` and any
    `/goal` on top read the conversation.
@@ -394,17 +400,23 @@ step 5.
      `[ID] review: <verdict> r<N>` (for `COMMENT`, add the observations
      in one line so the human gate sees them), mark `resolved`.
    - `INCOMPLETE` (Reven names what it did not read): not a fix request
-     and not yet a round. Re-run Reven once with `model: opus` and the
-     same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
+     and not yet a round. Re-run Reven once per review round with
+     `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
      `progress.txt` `[ID] review: incomplete`, state `needs-review`.
    - `CHANGES REQUESTED`: counts as a round (`Rounds` + 1). Under the
      cap: step 4. At the cap: step 5.
    - Any other or missing `Verdict:` line: treat as `INCOMPLETE`.
 4. **Fix round.** Re-dispatch Cody as `cody resume` with
    `branch action: continue`, `open pr: no`, the same `branch`/`base`/
-   `mode`, and the review's blocking issues as the task. Verify it with
-   2b (a stall counts against `Attempts` and may escalate through 2c; a
-   review round itself never does). Connected: after a green 2b, push
+   `mode`, and the review's blocking issues as the task. Before
+   dispatching, capture a fresh baseline in `<wd>` (HEAD and
+   `status --porcelain`). Verify with the three git checks of 2b only
+   (no success side effects: no `[ID] resolved` progress line, no
+   detached handoff or label re-run), with the commit check requiring
+   HEAD to differ from `Reviewed` and that baseline, not only an
+   ID-bearing subject. A stall, including one that commits nothing,
+   counts against `Attempts` and may escalate through 2c; a review round
+   itself never does). Connected: after a green 2b, push
    the branch with `git -C <wd> push origin <branch>` (Cody does not
    push when `open pr: no`). Detached: no push. Then back to step 1.
 5. **Out of rounds** without approval: `progress.txt`
@@ -421,7 +433,8 @@ Detached: first set `Status: executed` in the batch file. Set `Status: complete`
 
   Ralph complete.
   Handoff:   <path> (detached only — replay into your tracker)
-  Resolved:  N issues
+  Resolved:  N issues   (needs-review issues are not counted here)
+  Needs review: [#14, ...]   (own line; omit when empty)
   Reviewed:  [#12 APPROVED r1, #14 APPROVED r2, #15 needs-review r2]   (omit with --no-review)
   In review: [#12, #14, ...]
   Escalated: [#13] -- <reason>
