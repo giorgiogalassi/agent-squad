@@ -917,14 +917,15 @@ def cmd_report(args):
     if nv:
         L += ["| Verdict | Count | Share |", "|---|---:|---:|"]
         L += ["| %s | %d | %s |" % (k, c, pct(c, nv)) for k, c in sorted(counts.items())]
-        L += ["", "| Model | Reviews | Approved | Changes requested | Comment | Cost |",
-              "|---|---:|---:|---:|---:|---:|"]
+        L += ["", "| Model | Reviews | Approved | Changes requested | Comment | Incomplete | Cost |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
         for mdl in sorted({v["model"] or "unknown" for v in verdicts}):
             vs = [v for v in verdicts if (v["model"] or "unknown") == mdl]
             rc = lambda name: sum(1 for v in vs if v["verdict"] == name)
             mcost = sum(r["_cost"] or 0 for r in rows if r["agent"] == "reven" and r["model"] == mdl)
-            L.append("| %s | %d | %d | %d | %d | %s |" % (
-                mdl, len(vs), rc("APPROVED"), rc("CHANGES REQUESTED"), rc("COMMENT"), money(mcost)))
+            L.append("| %s | %d | %d | %d | %d | %d | %s |" % (
+                mdl, len(vs), rc("APPROVED"), rc("CHANGES REQUESTED"), rc("COMMENT"),
+                rc("INCOMPLETE"), money(mcost)))
     else:
         L.append("No Reven verdicts in the window.")
     L.append("")

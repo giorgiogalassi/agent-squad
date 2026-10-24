@@ -282,8 +282,8 @@ echo '{"agentType":"cody"}' > "$VD/agent-c.meta.json"
 python3 "$SUT" collect >/dev/null 2>&1
 ( cd "$TMPROOT" && python3 "$SUT" report --days 30 ) > "$TMPROOT/out" 2>/dev/null; OUT="$(cat "$TMPROOT/out")"
 REPORT="$(key REPORT)"
-grep -q "^| claude-opus-5-5 | 3 | 1 | 1 | 1 | \$20.00 |" "$REPORT" && ok "per-model row: counts, Reven-only cost" || bad "per-model row: counts, Reven-only cost"
-grep -q "^| unknown | 1 | 1 | 0 | 0 | \$0.00 |" "$REPORT" && ok "old 5-column verdict shows as unknown" || bad "old 5-column verdict shows as unknown"
+grep -q "^| claude-opus-5-5 | 4 | 1 | 1 | 1 | 1 | \$20.00 |" "$REPORT" && ok "per-model row: counts, INCOMPLETE column, Reven-only cost" || bad "per-model row: counts, INCOMPLETE column, Reven-only cost"
+grep -q "^| unknown | 1 | 1 | 0 | 0 | 0 | \$0.00 |" "$REPORT" && ok "old 5-column verdict shows as unknown" || bad "old 5-column verdict shows as unknown"
 
 # ---- trend: 12 sessions per period, last period 20% cheaper per session ----
 export SQUAD_STATS_DIR="$TMPROOT/trendstore"; mkdir -p "$SQUAD_STATS_DIR"
