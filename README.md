@@ -385,9 +385,11 @@ cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore
 ```
 Then add to `~/.claude/settings.json`:
 ```json
-{ "hooks": { "SessionStart": [ { "hooks": [
+{ "hooks": { "SessionStart": [ { "matcher": "startup|clear|compact", "hooks": [
   { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
 ```
+The hook also skips `resume` on its own, so switching sessions in agent
+view does not re-inject the orientation.
 
 It also prints up to two signal lines, omitted when not applicable:
 `Architecture snapshot older than <file>; run /seed` (architecture.md is

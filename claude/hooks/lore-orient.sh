@@ -6,8 +6,31 @@
 #
 # Install (Claude Code): copy to ~/.claude/hooks/lore-orient.sh, chmod +x,
 # and add to ~/.claude/settings.json:
-#   { "hooks": { "SessionStart": [ { "matcher": "*", "hooks": [
+#   { "hooks": { "SessionStart": [ { "matcher": "startup|clear|compact", "hooks": [
 #     { "type": "command", "command": "bash $HOME/.claude/hooks/lore-orient.sh" } ] } ] } }
+
+# Skip on resume: the orientation is already in the transcript, so a second
+# copy is noise (agent view re-runs SessionStart on every session switch).
+# startup, clear and compact orient (context is empty or was compacted).
+# Missing or unparseable stdin keeps orienting, so the hook never goes
+# silent on a host that passes no input. Drop `clear` from the matcher above
+# if re-orienting after /clear turns out to be unwanted.
+HOOK_INPUT=""
+if [ ! -t 0 ]; then
+  IFS= read -r -t 2 -d '' HOOK_INPUT || true
+fi
+HOOK_SOURCE=""
+if [ -n "$HOOK_INPUT" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    HOOK_SOURCE="$(printf '%s' "$HOOK_INPUT" | jq -r '.source // empty' 2>/dev/null)"
+  else
+    HOOK_SOURCE="$(printf '%s' "$HOOK_INPUT" | sed -n 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  fi
+fi
+if [ "$HOOK_SOURCE" = "resume" ]; then
+  echo "{}"
+  exit 0
+fi
 
 # Resolve vault path, project root, and display name via the shared
 # path-resolve.sh utility (installed alongside this hook) rather than
