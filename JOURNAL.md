@@ -1344,7 +1344,9 @@ SessionEnd      lore-checkpoint.sh rebuilds a stale status.md and records denial
 
 ### File Structure
 
-With `context: repo` in `lore-config.json`, `architecture.md`, `scout-cache.md`, `forge/` and `prd/` live in `<PROJECT_ROOT>/.squad` instead; everything else stays in the vault.
+With `context: repo` in `lore-config.json`, `architecture.md`,
+`scout-cache.md`, `forge/` and `prd/` live in `<PROJECT_ROOT>/.squad`
+instead; everything else stays in the vault.
 
 | File | Purpose |
 |------|---------|
@@ -1355,10 +1357,10 @@ With `context: repo` in `lore-config.json`, `architecture.md`, `scout-cache.md`,
 | `<vault>/projects/<project>/.squad/chisel-config.json` | Tracker mode and labels. `connected` only when set explicitly. |
 | `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files, handoff checklists, CSV. |
 | `<vault>/projects/<project>/.squad/progress.txt` | Ralph and Sidecar log, one line per issue or session. |
+| `<vault>/projects/<project>/.squad/session.log` | Per-project session log, tailed by `lore-orient.sh`. |
 | `<vault>/projects/<project>/.squad/ralph-run.md` | Ralph run state for resume. |
 | `<vault>/projects/<project>/status.md` | Resumption handoff, reconstructed from evidence. |
 | `<vault>/projects/<project>/decisions.md` | Project decisions. `[rule]` entries always loaded (cap 15); untagged entries by last-20 window. |
-| `<vault>/projects/<project>/session.log` | Per-project session log, tailed by `lore-orient.sh`. |
 | `<vault>/preferences/development.md` | Global rules only, one line each. |
 | `<vault>/squad-incidents.tsv` | Global incident store. |
 | `<vault>/squad-stats/` | Normalized usage and verdict rows, reports, `questions.md`. |
