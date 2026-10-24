@@ -37,6 +37,9 @@ on:
       - "scripts/test-lore-checkpoint.sh"
       - "claude/hooks/lore-checkpoint.sh"
       - "scripts/test-squad-doctor.sh"
+      - "scripts/test-chisel-config-validate.sh"
+      - "claude/hooks/chisel-config-validate.py"
+      - "claude/skills/chisel/SKILL.md"
       - "claude/hooks/squad-doctor.sh"
       - "scripts/gh-shim/**"
       - "claude/hooks/squad-stats.py"
@@ -103,3 +106,7 @@ jobs:
       - name: Run scripts/test-squad-doctor.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-doctor.sh; else bash scripts/test-squad-doctor.sh; fi
+
+      - name: Run scripts/test-chisel-config-validate.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-chisel-config-validate.sh; else bash scripts/test-chisel-config-validate.sh; fi

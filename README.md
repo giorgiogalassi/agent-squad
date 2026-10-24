@@ -33,7 +33,8 @@ runs as a required step inside `/forge` before a draft scope closes.
 /ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
-                Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
+                Reviews every PR with Reven and runs fix rounds (cap `chisel.ralph.review_rounds`, default 2; the issue gets the `needs-review` label when out of rounds or after a second `INCOMPLETE`); `--no-review` skips it, `--review-context "<text>"` adds batch-wide context for Reven.
+                Persists run state (order, branches, attempt and review-round counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
 SessionEnd      lore-checkpoint hook rebuilds status.md (detached) when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
@@ -615,7 +616,7 @@ loads `claude/` as a plugin next to the copy install.
 
 ## Evals (tier 2)
 
-`claude/evals/` holds three advisory `claude plugin eval` cases that the bash
+`claude/evals/` holds five advisory `claude plugin eval` cases that the bash
 tests cannot cover, because they check what the agent *prose* does:
 
 | Case | Checks (zero-cost graders only) |
@@ -623,6 +624,8 @@ tests cannot cover, because they check what the agent *prose* does:
 | `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
 | `detached-claim` | no Bash call contains `gh`; a handoff line `- [ ] Move ... to In Progress` is written |
 | `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
+| `ralph-no-review` | Ralph's skill text: with `--no-review` Phase 2e is skipped (reading check, no agents spawned) |
+| `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
 
 Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
 that, inside the run's temporary `$HOME`, copies `claude/hooks/*.sh` to
