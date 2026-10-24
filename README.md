@@ -462,7 +462,7 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore start` (setup), `lore prefer`, and `lore recover` commit after their
+  `lore start` (setup), `lore prefer`, `lore supersede`, and `lore recover` commit after their
   writes (commit only, never push); pulling and pushing stay manual. Pull
   before starting work when using multiple machines.
 
@@ -495,7 +495,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its

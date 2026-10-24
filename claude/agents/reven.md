@@ -177,6 +177,9 @@ The `Verdict:` line is machine-readable — keep its format exact.
 - A finding whose truth depends on the backend, data or intent (not provable
   from the code and the sources you read) goes under Observations as a
   question, never as a blocking issue.
+- An active `decisions.md` entry (rule or not) that the diff contradicts or
+  makes stale goes under Observations with the suggested line
+  `lore supersede "<entry title>"`; you never write to the vault.
 - Never approve a PR that misses acceptance criteria.
 - Never request changes for style preferences absent from
   `architecture.md`, the repo's review rulebook or an active `[rule]`.
