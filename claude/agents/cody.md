@@ -294,21 +294,10 @@ Then act on `open pr` (default `yes` when invoked directly):
   Print a paste-ready PR description (title `[CHAIN] title`, base
   branch, body as above); the user pushes and opens the PR themselves.
 
-**Checkpoint** (only when a branch closes with `open pr: yes`, after PR
-creation or the paste-ready print): write one line into
-`<vault>/projects/<display-name>/status.md` under `## Last checkpoint` by
-running `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-checkpoint.sh --note "<line>"` from the
-project root. Never `>>` status.md: its last section is `## Context refs`,
-so the line would land outside the checkpoint section —
-
-```
-[YYYY-MM-DD HH:MM] [claude-code] PR #N opened. Branch: <branch>. <one-line summary>
-[YYYY-MM-DD HH:MM] [claude-code] Branch <branch> ready for manual push. <one-line summary>
-```
-
-(first form connected, second detached). This is Cody's only vault
-write — a checkpoint, not a status update; Lore handles the rest. No
-`status.md` → skip silently.
+**Checkpoint:** do not write it. The plugin's async `SubagentStop` hook
+(`cody-checkpoint.sh`) derives the `status.md` checkpoint line and the
+`progress.txt` line from git evidence (branch, HEAD, open PR) when you
+finish or are stopped at `maxTurns`. Cody makes no vault write.
 
 ## Output
 

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Tests claude/hooks/cody-checkpoint.sh (async SubagentStop hook, matcher cody):
+# checkpoint line + progress.txt line derived from git evidence. Plain bash 3.2;
+# needs jq. The vault is a fixture and `gh` is a fake.
+set -u
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 1; }
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-cody-checkpoint.XXXXXX")"
+TMPROOT="$(cd "$TMPROOT" && pwd -P)"
+FIXROOTS=""
+trap 'rm -rf "$TMPROOT" $FIXROOTS' EXIT
+PASS=0; FAIL=0
+ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
+bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
+check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
+
+mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
+cp "$REPO_ROOT"/claude/hooks/{cody-checkpoint.sh,lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+SUT="$TMPROOT/hooks/cody-checkpoint.sh"
+# Fake gh: `pr list` prints "<number> <base>" when FAKE_PR is set, nothing otherwise.
+printf '#!/bin/sh\n[ -n "$FAKE_PR" ] && echo "$FAKE_PR"\nexit 0\n' > "$TMPROOT/fakebin/gh"
+chmod +x "$TMPROOT/fakebin/gh"
+export PATH="$TMPROOT/fakebin:$PATH"
+export SQUAD_INCIDENTS=off
+GIT="git -c user.name=T -c user.email=t@example.com"
+
+setup() {  # setup <mode>: sets F_ROOT F_PROJECT F_VAULT STATUS PROGRESS ENVF
+  out="$("$MK" "$1")"
+  F_ROOT="$(printf '%s\n' "$out" | sed -n 's/^FIXTURE_ROOT=//p')"
+  F_PROJECT="$(printf '%s\n' "$out" | sed -n 's/^PROJECT=//p')"
+  F_VAULT="$(printf '%s\n' "$out" | sed -n 's/^VAULT=//p')"
+  FIXROOTS="$FIXROOTS $F_ROOT"
+  export SECOND_BRAIN_PATH="$F_VAULT"
+  STATUS="$F_VAULT/projects/fixture/status.md"
+  PROGRESS="$F_VAULT/projects/fixture/.squad/progress.txt"
+  ENVF="$F_VAULT/projects/fixture/.squad/cody-checkpoint.env"
+  printf -- '---\ntitle: s\n---\n# Status\nLast updated: 2099-01-01 00:00 by x\n\n## Goal\n\n## Last checkpoint\n\n## Context refs\n' > "$STATUS"
+  git -C "$F_VAULT" init -q; git -C "$F_VAULT" add -A; $GIT -C "$F_VAULT" commit -q -m seed
+}
+commit_on() {  # commit_on <branch> <subject>
+  git -C "$F_PROJECT" checkout -q -b "$1"
+  echo x >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "$2"
+}
+run_hook() {  # run_hook [agent_type]
+  printf '{"cwd":"%s","agent_type":"%s","agent_transcript_path":"%s/none.jsonl"}' "$F_PROJECT" "${1:-cody}" "$TMPROOT" | bash "$SUT" >/dev/null 2>&1
+}
+envval() { sed -n "s/^$1=//p" "$ENVF" 2>/dev/null; }
+
+# 1. connected, PR open
+setup connected
+commit_on 296-x "[#296] add thing"
+FAKE_PR="7 main" run_hook
+grep -q 'PR #7 opened. Branch: 296-x @' "$STATUS" && ok "pr: checkpoint line in status.md" || bad "pr: checkpoint line"
+check "pr: progress line" "[#296] resolved. PR: #7 (base: main). Notes: [#296] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+check "pr: summary STATE" pr "$(envval STATE)"
+check "pr: summary TREE" clean "$(envval TREE)"
+check "pr: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
+FAKE_PR="7 main" run_hook
+check "pr: idempotent status" 1 "$(grep -c 'PR #7 opened' "$STATUS")"
+check "pr: idempotent progress" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+# status.md and progress.txt are committed by path; the summary .env stays untracked.
+git -C "$F_VAULT" status --porcelain -- projects/fixture/status.md projects/fixture/.squad/progress.txt | grep -q . \
+  && bad "pr: status.md and progress.txt committed" || ok "pr: status.md and progress.txt committed"
+
+# 2. connected, stopped with a commit, no PR (maxTurns): checkpoint line, no progress line
+setup connected
+commit_on 296-y "[#296] half done"
+echo wip > "$F_PROJECT/wip.txt"
+run_hook
+grep -q 'committed @ .*no PR yet' "$STATUS" && ok "no PR: checkpoint line" || bad "no PR: checkpoint line"
+[ -f "$PROGRESS" ] && bad "no PR: no progress line" || ok "no PR: no progress line"
+check "no PR: summary STATE" committed "$(envval STATE)"
+check "no PR: summary TREE" dirty "$(envval TREE)"
+
+# 3. detached: ready for manual push
+setup detached
+commit_on 296-z "[#296] done"
+run_hook
+grep -q 'Branch 296-z ready for manual push @' "$STATUS" && ok "detached: checkpoint line" || bad "detached: checkpoint line"
+check "detached: summary STATE" detached "$(envval STATE)"
+
+# 4. no write: shared branch, no issue ID, other agent
+setup connected
+BEFORE="$(cat "$STATUS")"
+run_hook; check "main branch: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+commit_on 296-q "no id here"
+run_hook; check "no issue ID: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+echo y >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#296] with id"
+run_hook reven; check "other agent: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+run_hook "agent-squad:cody"; grep -q 'no PR yet' "$STATUS" && ok "plugin-namespaced agent type matches" || bad "plugin-namespaced agent type matches"
+
+# 5. exits 0 on garbage input
+RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?
+check "garbage input exits 0" 0 "$RC"
+
+echo "pass=$PASS fail=$FAIL"
+[ "$FAIL" -eq 0 ]

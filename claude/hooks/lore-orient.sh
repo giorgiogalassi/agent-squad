@@ -148,6 +148,24 @@ OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may b
 OUTPUT="${OUTPUT}Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
 OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
 
+# Open worktrees with uncommitted work: a killed session never ran SessionEnd,
+# so derive it from git (one line per dirty linked worktree, at most 5).
+DIRTY_WT=""; _n=0; _wt=""
+while IFS= read -r _l; do
+  case "$_l" in
+    "worktree "*) _wt="${_l#worktree }" ;;
+    "branch "*)
+      if [ -n "$_wt" ] && [ "$_wt" != "$ROOT" ] && [ -d "$_wt" ]; then
+        _c="$(git -C "$_wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+        if [ "${_c:-0}" -gt 0 ] && [ "$_n" -lt 5 ]; then
+          DIRTY_WT="${DIRTY_WT}uncommitted work on ${_l#branch refs/heads/}: $_c files ($_wt)${NL}"
+          _n=$((_n + 1))
+        fi
+      fi ;;
+  esac
+done < <(git worktree list --porcelain 2>/dev/null)
+[ -n "$DIRTY_WT" ] && OUTPUT="${OUTPUT}Open worktrees:${NL}${DIRTY_WT}"
+
 if [ -f "$PROJ/.squad/progress.txt" ]; then
   OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$PROJ/.squad/progress.txt")${NL}"
 fi

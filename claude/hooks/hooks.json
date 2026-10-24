@@ -11,7 +11,15 @@
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/lore-checkpoint.sh\"" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/lore-checkpoint.sh\"", "async": true }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "cody",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/cody-checkpoint.sh\"", "async": true }
         ]
       }
     ]

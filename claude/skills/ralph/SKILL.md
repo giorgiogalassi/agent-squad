@@ -242,6 +242,16 @@ git -C <wd> status --porcelain
 git -C <wd> branch --show-current
 ```
 
+Hook summary first: the plugin's `SubagentStop` hook leaves
+`<vault>/projects/<display-name>/.squad/cody-checkpoint.env`
+(`STATE`, `ISSUE`, `BRANCH`, `SHA`, `TREE`, `PR`, `BASE`; `STATE` is `pr`,
+`committed` or `detached`). Read it before the git commands; use it only when
+`BRANCH` equals the assigned branch and `SHA` equals HEAD's short sha,
+otherwise ignore it. It is a hint that saves a lookup, not evidence: the
+three checks below and their classification are unchanged. When
+`STATE=pr`, the hook already appended the `[ID] resolved. PR: #N (base: …)`
+line to `progress.txt`; do not append a second one.
+
 1. **Commit check:** HEAD's subject carries this issue's ID. Match the
    ID token tolerantly across conventions (`[SQ-26]`, bare `IISP-14501`,
    `[#44]`). If the project's history shows no ID convention at all,

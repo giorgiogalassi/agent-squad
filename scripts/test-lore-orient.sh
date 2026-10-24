@@ -97,5 +97,13 @@ printf '%s' "$base" | grep -q 'recurring squad incidents' && bad "incidents: mis
 o="$(run_orient "$S2" "$TMPROOT/hooks-nojq")"
 printf '%s' "$o" | grep -q 'recurring squad incidents' && bad "incidents: missing script has line" || ok "incidents: missing script, no line"
 
+# Dirty open worktrees (#296): listed with branch and file count; clean ones are not.
+git -C "$F_PROJECT" worktree add -q -b dirty-wt "$TMPROOT/dirty-wt" 2>/dev/null
+git -C "$F_PROJECT" worktree add -q -b clean-wt "$TMPROOT/clean-wt" 2>/dev/null
+echo a > "$TMPROOT/dirty-wt/a.txt"; echo b > "$TMPROOT/dirty-wt/b.txt"
+c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
+printf '%s\n' "$c" | grep -q 'uncommitted work on dirty-wt: 2 files' && ok "worktrees: dirty one listed with count" || bad "worktrees: dirty one listed: $c"
+printf '%s\n' "$c" | grep -q 'clean-wt' && bad "worktrees: clean one listed" || ok "worktrees: clean one omitted"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

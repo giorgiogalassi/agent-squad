@@ -15,11 +15,11 @@
 #   rebase/cherry-pick that keeps old committer dates is missed; a worktree on
 #   a detached HEAD has no branch ref and is invisible.
 #
-# Claude Code gives SessionEnd hooks a shared 1.5 s budget, so the foreground
-# part only does file edits and git reads; the model rebuild is spawned
-# detached (re-running this script with --rebuild) and logs to
-# <vault>/projects/<name>/.lore-checkpoint.log. A mkdir lock allows one rebuild
-# per project.
+# Registered as an ASYNC SessionEnd hook ("async": true in hooks/hooks.json):
+# Claude Code runs it in the background with no timeout, so the model rebuild
+# runs inline and this script has no detach, lock or alarm layer. Async output
+# is never shown, so a skipped or failed run leaves one line in
+# <vault>/projects/<name>/.lore-checkpoint.log (overwritten each run).
 #
 # Entry point for other writers (Cody, Ralph): `lore-checkpoint.sh --note "<line>"`
 # inserts a line inside `## Last checkpoint` (3-line cap). Never `>>` status.md:
@@ -28,27 +28,34 @@
 # other lines are dropped by the `^\[` filter, and a multi-line note counts
 # against the 3-line cap.
 #
-# Denial pass: every SessionEnd also spawns a SEPARATE detached
-# `lore-checkpoint.sh --incidents <transcript> <session_id> <project>` that
-# scans the transcripts for permission/classifier denials and records them via
-# squad-incidents.sh (source=transcript, kind=denial, dedupe_id=tool_use_id).
-# It needs jq (skipped without), takes no lock and never commits the vault.
+# Denial pass: every SessionEnd also runs
+# `lore-checkpoint.sh --incidents <transcript> <session_id> <project>` (before
+# the status work) to scan the transcripts for permission/classifier denials
+# and record them via squad-incidents.sh (source=transcript, kind=denial,
+# dedupe_id=tool_use_id). It needs jq (skipped without) and never commits the vault.
+#
+# Worktree session with a dirty tree: the checkpoint line is
+# "uncommitted work on <branch>: N files" (no progress.txt line, never a commit).
 #
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
-# Registered by the plugin's hooks/hooks.json (SessionEnd); no manual install
-# step. To raise the 1.5 s budget, add "timeout": <seconds> to that entry.
+# Registered by the plugin's hooks/hooks.json (SessionEnd, async); no manual
+# install step.
 
 # Recursion guard: the headless `claude -p` below is itself a session and may
 # fire SessionEnd; it runs with SQUAD_LORE_HOOK=1 so that nested run exits here.
 [ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
 
-bail() { echo "lore-checkpoint: $1"; exit 0; }
+LOG=""
+bail() {
+  echo "lore-checkpoint: $1"
+  [ -n "$LOG" ] && printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null
+  exit 0
+}
 
 MODE=hook; NOTE=""
 case "${1:-}" in
   --note) MODE=note; NOTE="${2:-}"; [ -n "$NOTE" ] || bail "--note needs a line, skipped" ;;
-  --rebuild) MODE=rebuild ;;
   --incidents) MODE=incidents ;;
 esac
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -127,16 +134,12 @@ done < <("$HOOK_DIR/path-resolve.sh")
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
-# Detach fully: own session when possible, all stdio redirected, so Claude
-# Code is not kept waiting on an open pipe.
-DETACH=""
-command -v setsid >/dev/null 2>&1 && DETACH="setsid"
-[ -z "$DETACH" ] && command -v perl >/dev/null 2>&1 && DETACH="perl -MPOSIX -e POSIX::setsid();exec(@ARGV) --"
+[ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
 
-# Denial pass: separate detached process on every session end (main checkout
-# and worktrees), independent of the status rebuild below.
+# Denial pass: every session end (main checkout and worktrees), independent of
+# the status rebuild below.
 if [ "$MODE" = hook ] && [ -n "$TRANSCRIPT" ] && command -v jq >/dev/null 2>&1; then
-  ( $DETACH nohup bash "$SELF" --incidents "$TRANSCRIPT" "$SESSION_ID" "$DISPLAY" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+  bash "$SELF" --incidents "$TRANSCRIPT" "$SESSION_ID" "$DISPLAY" >/dev/null 2>&1 </dev/null
 fi
 
 [ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
@@ -171,8 +174,7 @@ replace_section() {
     !skip { print }' "$1"
 }
 TMPC="$(mktemp)"; TMPB="$(mktemp)"
-LOCK="$VAULT/projects/$DISPLAY/.lore-rebuild.lock"
-trap 'rm -f "$TMPC" "$TMPB"; [ "${HOLD_LOCK:-}" = 1 ] && rmdir "$LOCK" 2>/dev/null' EXIT
+trap 'rm -f "$TMPC" "$TMPB"' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended
@@ -214,9 +216,16 @@ fi
 
 # --- Worktree session: checkpoint line only -------------------------------
 if [ "$TOP" != "$ROOT" ]; then
-  LINE="[$NOW] [claude-code] Session ended on worktree branch $BRANCH @ $SHA."
-  # Idempotent: same branch at same commit already recorded -> nothing new.
-  if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
+  DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${DIRTY:-0}" -gt 0 ]; then
+    # Work stopped before a commit: record it, never commit it.
+    LINE="[$NOW] [claude-code] uncommitted work on $BRANCH: $DIRTY files"
+    if grep -qF "uncommitted work on $BRANCH: $DIRTY files" "$STATUS" 2>/dev/null; then exit 0; fi
+  else
+    LINE="[$NOW] [claude-code] Session ended on worktree branch $BRANCH @ $SHA."
+    # Idempotent: same branch at same commit already recorded -> nothing new.
+    if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
+  fi
   add_checkpoint "$LINE" || bail "append failed"
   commit_vault "checkpoint"
   exit 0
@@ -234,27 +243,15 @@ elif [ -n "$LATEST_CP" ] && [[ "$LATEST_CP" > "$UPDATED" ]]; then STALE=1
 elif [ -n "$WEEK_AGO" ] && [[ "$UPDATED" < "$WEEK_AGO" ]]; then STALE=1
 elif [ -n "$(git log --branches --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then STALE=1
 fi
-if [ "$MODE" = hook ]; then
-  # Repair strays on every main-checkout exit (cheap awk, no model).
-  if section "$STATUS" "Context refs" | grep -qE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}'; then
-    add_checkpoint "" && commit_vault "repair checkpoint"
-  fi
-  [ "$STALE" = "1" ] || exit 0
-  command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
-  # No commits since Last updated -> a model call would add nothing.
-  if [ -n "$UPDATED" ] && [ -z "$(git log --branches --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
-  # Fresh lock held -> a rebuild is already running (stale after 10 min).
-  if [ -d "$LOCK" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then exit 0; fi
-  LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
-  ( cd "$CWD" && $DETACH nohup bash "$SELF" --rebuild >"$LOG" 2>&1 </dev/null & ) >/dev/null 2>&1
-  exit 0
+# Repair strays on every main-checkout exit (cheap awk, no model).
+if section "$STATUS" "Context refs" | grep -qE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}'; then
+  add_checkpoint "" && commit_vault "repair checkpoint"
 fi
-
-# --- Rebuild mode (detached) ----------------------------------------------
-if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; fi
-mkdir "$LOCK" 2>/dev/null || bail "rebuild already running, skipped"
-HOLD_LOCK=1
 [ "$STALE" = "1" ] || exit 0
+# No commits since Last updated -> a model call would add nothing.
+if [ -n "$UPDATED" ] && [ -z "$(git log --branches --oneline --since="$UPDATED" -1 2>/dev/null)" ]; then exit 0; fi
+
+# --- Rebuild (inline: the hook is async) -----------------------------------
 command -v claude >/dev/null 2>&1 || bail "claude CLI not found, skipped"
 
 SINCE="${UPDATED:-7 days ago}"
@@ -280,11 +277,7 @@ $(cat "$STATUS")"
 
 PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file, no code fences, no commentary. Keep the exact schema: YAML front matter (title, tags [status, active], project), '# Status — <project>', 'Last updated: $NOW by claude-code', then sections Goal, Done (under 5 lines, distilled), Next (ACTION: / CONTEXT:), Blocked, Last checkpoint, Context refs. Goal, Done and Next together under 400 tokens. Mark inferences as inferred. Copy Blocked and Context refs from the existing file."
 
-# Hard 90 s cap; macOS has no `timeout`, so fall back to a perl alarm.
-TMO=""
-if command -v timeout >/dev/null 2>&1; then TMO="timeout 90"
-elif command -v perl >/dev/null 2>&1; then TMO="perl -e alarm(90);exec(@ARGV) --"; fi
-NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 $TMO claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
+NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
   || bail "headless rebuild failed, status unchanged"
 
 # Strip stray code fences, then validate shape. Size is measured on the
