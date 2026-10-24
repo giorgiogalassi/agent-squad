@@ -9,7 +9,8 @@ name: Plugin version
 # scripts/test-plugin-version-bump.sh).
 #
 # Post-merge on purpose: PRs never touch plugin.json (plugin-version-guard.yml
-# enforces it), so parallel PRs cannot conflict on it. Each run checks out the
+# reports hand edits; it is not a required check, since bump PRs run no
+# workflows), so parallel PRs cannot conflict on it. Each run checks out the
 # latest main, so it re-reads the current version.
 #
 # main is under a repository ruleset (no deletion, no non-fast-forward, changes
@@ -18,6 +19,16 @@ name: Plugin version
 # chore/plugin-v<X.Y.Z> against main, labelled `documentation` (which never
 # bumps), and merges it itself. Needs the repo setting "Allow GitHub Actions to
 # create and approve pull requests".
+#
+# Approval caveat: the ruleset's pull_request rule has
+# require_extra_approval_for_unattributed_changes: true. If GitHub demands an
+# extra approval for the bot's commit, the self-merge fails and the owner must
+# approve and merge the bump PR (or turn that ruleset option off). The job then
+# fails with manual recovery steps and leaves the PR open.
+#
+# Idempotent: if chore/plugin-v<X.Y.Z> or an open PR for it already exists
+# (re-run, or a previous run that could not merge), it is reused instead of
+# creating a second commit or PR.
 #
 # Loop guard: PRs and merges made with GITHUB_TOKEN start no workflows, so the
 # bump PR runs no CI and its merge does not re-trigger this one. The job also
@@ -96,20 +107,40 @@ jobs:
           branch="chore/plugin-v$new"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
 
-          # Targeted edit keeps the diff to the one version line.
-          sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" "$manifest"
-          files="$manifest"
-          if jq -e '.. | objects | select(has("version"))' .claude-plugin/marketplace.json >/dev/null 2>&1; then
-            sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" .claude-plugin/marketplace.json
-            files="$files .claude-plugin/marketplace.json"
+          # Reuse an existing bump branch or open PR (idempotent re-run).
+          open_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$open_pr" ]; then
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              echo "::notice::branch $branch already exists: reusing it"
+            else
+              git checkout -b "$branch"
+              # Targeted edit keeps the diff to the one version line.
+              sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" "$manifest"
+              files="$manifest"
+              if jq -e '.. | objects | select(has("version"))' .claude-plugin/marketplace.json >/dev/null 2>&1; then
+                sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" .claude-plugin/marketplace.json
+                files="$files .claude-plugin/marketplace.json"
+              fi
+              git add $files
+              git commit -m "chore: bump plugin to v$new (#$PR)"
+              git push origin "$branch"
+            fi
+            gh pr create --base main --head "$branch" --label documentation \
+              --title "chore: bump plugin to v$new" \
+              --body "Automatic $current -> $new bump after #$PR (plugin-version.yml)."
+          else
+            echo "::notice::bump PR #$open_pr for $branch already open: reusing it"
           fi
 
-          git add $files
-          git commit -m "chore: bump plugin to v$new (#$PR)"
-          git push origin "$branch"
-          gh pr create --base main --head "$branch" --label documentation \
-            --title "chore: bump plugin to v$new" \
-            --body "Automatic $current -> $new bump after #$PR (plugin-version.yml)."
-          gh pr merge "$branch" --merge --delete-branch
+          # A fresh PR may not be mergeable for a moment: retry briefly.
+          merged=0
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$branch" --merge --delete-branch; then merged=1; break; fi
+            echo "merge attempt $attempt failed; retrying in 10s"
+            sleep 10
+          done
+          if [ "$merged" != 1 ]; then
+            echo "::error::could not merge the bump PR for $branch; it is left open. Recover by hand: approve and merge the PR (GitHub may require an extra approval for the bot's commit), or close it and delete the branch (git push origin --delete $branch), then re-run this workflow"
+            exit 1
+          fi

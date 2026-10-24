@@ -596,9 +596,19 @@ actors), so the workflow cannot push to it: it opens a one-line PR from
 `chore/plugin-vX.Y.Z` (labelled `documentation`, so it never bumps again) and
 merges it itself. That needs the repo setting "Allow GitHub Actions to create
 and approve pull requests". PRs never touch the version, and a
-`plugin-version-guard.yml` check fails any PR that edits `version` in
-`plugin.json` by hand (except `chore/plugin-v*` branches), so parallel PRs
-cannot conflict on it. Limits: PRs and merges made with `GITHUB_TOKEN` start no
+`plugin-version-guard.yml` check reports any PR that edits `version` in
+`plugin.json` by hand (judged against the merge-base, except `chore/plugin-v*`
+branches), so parallel PRs should not conflict on it. The guard is advisory,
+not a required check (the bump PR runs no workflows, so requiring it would
+block the bump). The ruleset's pull_request rule has
+`require_extra_approval_for_unattributed_changes`: if GitHub asks for an extra
+approval on the bot's commit, the self-merge fails and the owner must approve
+and merge the bump PR (or turn that ruleset option off). The bump is
+idempotent: a re-run reuses an existing `chore/plugin-vX.Y.Z` branch or open
+PR, and `gh pr merge` is retried a few times. If the merge still fails, the
+job fails with an error and leaves the PR open; recover by merging it (or
+closing it and running `git push origin --delete chore/plugin-vX.Y.Z`) and
+re-running the workflow. Limits: PRs and merges made with `GITHUB_TOKEN` start no
 workflows, so the bump PR runs no CI and cannot loop; and the concurrency
 group keeps one running and one pending run, so when three PRs merge at
 once the middle run's bump can be dropped (run the workflow's rule by hand
