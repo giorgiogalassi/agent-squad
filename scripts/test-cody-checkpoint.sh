@@ -90,22 +90,44 @@ echo y >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT
 run_hook reven; check "other agent: status unchanged" "$BEFORE" "$(cat "$STATUS")"
 run_hook "agent-squad:cody"; grep -q 'no PR yet' "$STATUS" && ok "plugin-namespaced agent type matches" || bad "plugin-namespaced agent type matches"
 
-# 4b. fresh branch cut from a stacked base whose tip carries an issue ID, no Cody commit -> nothing recorded
+# 4b. fresh branch cut from a stacked base whose tip carries another issue ID, no Cody commit,
+#     no PR possible -> nothing recorded (connected and detached), stale summary removed
+for _m in connected detached; do
+  setup "$_m"
+  git -C "$F_PROJECT" checkout -q -b stack
+  echo s >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#293] stack tip"
+  git -C "$F_PROJECT" checkout -q -b 296-fresh
+  mkdir -p "$(dirname "$ENVF")"; echo STATE=old > "$ENVF"
+  BEFORE="$(cat "$STATUS")"
+  run_hook
+  check "$_m stacked base, no Cody commit: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+  [ -f "$PROGRESS" ] && bad "$_m stacked base: no progress line" || ok "$_m stacked base: no progress line"
+  [ -f "$ENVF" ] && bad "$_m stacked base: stale summary removed" || ok "$_m stacked base: stale summary removed"
+done
+
+# 4b2. guard (a) alone: same issue ID as the branch, but HEAD already sits on another branch
+setup connected
+git -C "$F_PROJECT" checkout -q -b other
+echo s >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#296] earlier work"
+git -C "$F_PROJECT" checkout -q -b 296-again
+BEFORE="$(cat "$STATUS")"
+run_hook
+check "HEAD on another branch: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+
+# 4b3. positive: a real Cody commit on a fresh stacked branch IS recorded
 setup connected
 git -C "$F_PROJECT" checkout -q -b stack
 echo s >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#293] stack tip"
-git -C "$F_PROJECT" checkout -q -b 296-fresh
-mkdir -p "$(dirname "$ENVF")"; echo STATE=old > "$ENVF"
-BEFORE="$(cat "$STATUS")"
-FAKE_PR="9 stack" run_hook
-check "stacked base, no Cody commit: status unchanged" "$BEFORE" "$(cat "$STATUS")"
-[ -f "$PROGRESS" ] && bad "stacked base: no progress line" || ok "stacked base: no progress line"
-[ -f "$ENVF" ] && bad "stacked base: stale summary removed" || ok "stacked base: stale summary removed"
+git -C "$F_PROJECT" checkout -q -b 296-real
+echo c >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#296] real work"
+run_hook
+grep -q 'Branch 296-real committed @ .*\[#296\] real work' "$STATUS" && ok "stacked branch, real commit: recorded" || bad "stacked branch, real commit: recorded"
+check "stacked branch, real commit: summary ISSUE" "#296" "$(envval ISSUE)"
 
-# 4c. progress dedupe matches on PR number, whatever precedes the ID
+# 4c. progress dedupe matches on PR number, whatever follows the ID (dated form)
 setup connected
 commit_on 296-d "[#296] add thing"
-mkdir -p "$(dirname "$PROGRESS")"; echo "[#296] resolved. PR: #7 (base: main). Notes: older" > "$PROGRESS"
+mkdir -p "$(dirname "$PROGRESS")"; echo "[#296] 2026-10-24 resolved. PR: #7 (base: main). Notes: older" > "$PROGRESS"
 FAKE_PR="7 main" run_hook
 check "progress dedupe by PR number" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
 

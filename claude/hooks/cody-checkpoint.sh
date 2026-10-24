@@ -69,15 +69,20 @@ else
   STATE=detached
 fi
 
-# HEAD-moved check: Cody committed nothing when HEAD is reachable from the PR
-# base (or, without a PR, from the default branch). Covers a fresh branch cut
-# from a stacked base whose tip carries an issue ID.
-for _ref in ${BASE:+"origin/$BASE" "$BASE"} origin/HEAD origin/main origin/master main master; do
-  if git rev-parse -q --verify "$_ref^{commit}" >/dev/null 2>&1 \
-     && git merge-base --is-ancestor HEAD "$_ref" 2>/dev/null; then
-    skip "HEAD $SHA is not ahead of $_ref, nothing to record"
-  fi
-done
+# HEAD-moved check: Cody committed nothing when HEAD already belongs to
+# another branch or does not match the branch's own issue. Neither guard needs a
+# PR (a branch with no commit cannot have one).
+# (a) HEAD is reachable from any other local or remote branch (the stacked base,
+#     main, ...), excluding this branch and its own origin/<branch>.
+_others="$(git for-each-ref --format='%(refname)' --contains HEAD refs/heads refs/remotes 2>/dev/null \
+  | grep -vxF -e "refs/heads/$BRANCH" -e "refs/remotes/origin/$BRANCH" | head -n 1)"
+[ -z "$_others" ] || skip "HEAD $SHA is already on ${_others#refs/}, nothing to record"
+# (b) the branch name starts with an issue ID (296-... or KEY-123-...) that differs
+#     from the one in HEAD's subject (a stack tip commit such as [#293]).
+_bid="$(printf '%s' "$BRANCH" | sed -n -e 's/^\([A-Z][A-Z0-9]*-[0-9][0-9]*\)\(-.*\)\{0,1\}$/\1/p' -e 's/^\([0-9][0-9]*\)\(-.*\)\{0,1\}$/\1/p' | head -n 1)"
+if [ -n "$_bid" ] && [ "${ISSUE#\#}" != "$_bid" ]; then
+  skip "HEAD $SHA is for [$ISSUE], branch $BRANCH is for $_bid, nothing to record"
+fi
 
 NOW="$(date "+%Y-%m-%d %H:%M")"
 case "$STATE" in
@@ -92,7 +97,7 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
 fi
 
 PROGRESS="$PROJ/.squad/progress.txt"
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! grep -qE "\[$ISSUE\] resolved\. PR: #$PR( |$)" "$PROGRESS" 2>/dev/null; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -F "[$ISSUE] " "$PROGRESS" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
   printf '[%s] resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$VAULT" add "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1
