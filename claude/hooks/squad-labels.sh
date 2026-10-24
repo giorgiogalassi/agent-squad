@@ -7,6 +7,7 @@
 #   squad-labels.sh claim    --issue <n> [--handoff <p>]
 #   squad-labels.sh review   --issue <n> [--handoff <p>]
 #   squad-labels.sh escalate --issue <n> --reason <text> [--handoff <p>]
+#   squad-labels.sh needs-review --issue <n> [--handoff <p>]
 #
 # Connected: mutates via squad_gh_write only; label names come ONLY from
 # chisel-config.json (state_labels.{in_progress,in_review,blocked} required,
@@ -20,15 +21,17 @@
 #   escalate  comment first, then label swap. A retry after a label-swap
 #             failure may DUPLICATE the comment (recoverable); the reverse
 #             order would lose the comment (not recoverable).
+#   needs-review  re-applies review_label to an issue whose PR is open (in_review
+#             present), keeping in_review. review_label not configured = 10.
 # Detached: zero gh calls; appends a checklist line to --handoff (required).
 # Exit: 0 ok, 2 usage, 10 illegal transition, 20 gh/io failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 
 VERB="${1:-}"
-[ -n "$VERB" ] || squad_fail 2 "usage: squad-labels.sh ensure|claim|review|escalate [options]"
+[ -n "$VERB" ] || squad_fail 2 "usage: squad-labels.sh ensure|claim|review|escalate|needs-review [options]"
 shift
-case "$VERB" in ensure|claim|review|escalate) ;; *) squad_fail 2 "unknown verb '$VERB'" ;; esac
+case "$VERB" in ensure|claim|review|escalate|needs-review) ;; *) squad_fail 2 "unknown verb '$VERB'" ;; esac
 
 ISSUE=""; REASON=""; HANDOFF=""; HAVE_REASON=0
 while [ $# -gt 0 ]; do
@@ -63,6 +66,7 @@ if [ "$TRACKER_MODE" != connected ]; then
   case "$VERB" in
     claim) LINE="- [ ] Move $ISSUE to In Progress" ;;
     review) LINE="- [ ] Move $ISSUE to In Review" ;;
+    needs-review) LINE="- [ ] Mark $ISSUE as Needs Review (review rounds exhausted)" ;;
     escalate) LINE="- [ ] Move $ISSUE to Blocked, comment: $(printf '%s' "$REASON" | tr '\r\n' '  ')" ;;
   esac
   squad_record_local "$HANDOFF" "$LINE"; rc=$?
@@ -168,6 +172,13 @@ case "$VERB" in
       TO="$(drop "$TO" "$L_RV")"
     fi
     finish applied yes "$FROM" "$TO" ;;
+  needs-review)
+    [ "$L_RV" = none ] && squad_fail 10 "cannot mark $ISSUE needs-review: review_label not configured"
+    [ "$has_rv" = 1 ] && finish unchanged no "$FROM" "$FROM"
+    [ "$has_ir" = 1 ] || squad_fail 10 "cannot mark $ISSUE needs-review: $L_IR not present"
+    squad_gh_write issue edit "$ISSUE" -R "$REPO" --add-label "$L_RV" \
+      || squad_fail_incident squad-labels 20 "gh issue edit failed"
+    finish applied yes "$FROM" "$(add "$FROM" "$L_RV")" ;;
   escalate)
     [ "$has_ip" = 0 ] && [ "$has_bl" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot escalate $ISSUE: $L_IP not present"

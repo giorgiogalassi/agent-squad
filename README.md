@@ -23,7 +23,7 @@ runs as a required step inside `/forge` before a draft scope closes.
 /ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
-                Reviews every PR with Reven and runs fix rounds (cap `chisel.ralph.review_rounds`, default 2; `needs-review` when out of rounds); `--no-review` skips it, `--review-context "<text>"` adds batch-wide context for Reven.
+                Reviews every PR with Reven and runs fix rounds (cap `chisel.ralph.review_rounds`, default 2; the issue gets the `needs-review` label when out of rounds or after a second `INCOMPLETE`); `--no-review` skips it, `--review-context "<text>"` adds batch-wide context for Reven.
                 Persists run state (order, branches, attempt and review-round counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).

@@ -402,7 +402,8 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    - `INCOMPLETE` (Reven names what it did not read): not a fix request
      and not yet a round. Re-run Reven once per review round with
      `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
-     `progress.txt` `[ID] review: incomplete`, state `needs-review`.
+     `progress.txt` `[ID] review: incomplete`, state `needs-review`, then the
+     label call of step 5.
    - `CHANGES REQUESTED`: counts as a round (`Rounds` + 1). Under the
      cap: step 4. At the cap: step 5.
    - Any other or missing `Verdict:` line: treat as `INCOMPLETE`.
@@ -416,13 +417,29 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    HEAD to differ from `Reviewed` and that baseline, not only an
    ID-bearing subject. A stall, including one that commits nothing,
    counts against `Attempts` and may escalate through 2c; a review round
-   itself never does). Connected: after a green 2b, push
+   itself never does. Connected: after a green 2b, push
    the branch with `git -C <wd> push origin <branch>` (Cody does not
    push when `open pr: no`). Detached: no push. Then back to step 1.
 5. **Out of rounds** without approval: `progress.txt`
-   `[ID] review: N rounds, last verdict <X>`, state `needs-review`, no
-   label change (the open PR already carries `in_review`, the human
-   gate), continue with the next issue.
+   `[ID] review: N rounds, last verdict <X>`, state `needs-review`, then
+   apply the label (also after a second `INCOMPLETE`), connected:
+   ```bash
+   bash ~/.claude/hooks/squad-labels.sh needs-review --issue <n>
+   ```
+   Detached (adds the handoff path):
+   ```bash
+   bash ~/.claude/hooks/squad-labels.sh needs-review --issue <n> --handoff <handoff path>
+   ```
+   Read `OUTCOME` and `CHANGED`. Act on the exit code:
+
+   | Exit | Action |
+   |------|--------|
+   | 0 | Continue. |
+   | 10 | Note the stderr reason in the end-of-batch report and continue. |
+   | 20 | Note the stderr reason in the end-of-batch report and continue. |
+
+   The PR keeps `in_review`; `review_label` now keeps the issue out of the
+   next `--parent` batch (Phase 1 review gate). Continue with the next issue.
 
 Update the `ralph-run.md` row after every review and fix round.
 Ralph never merges.
