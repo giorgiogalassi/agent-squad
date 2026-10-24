@@ -149,7 +149,7 @@ statically, and never pad the list: a dozen precise findings beat forty
 speculative ones.
 
 ```
-Verdict: APPROVED | CHANGES REQUESTED | COMMENT
+Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 
 ## Summary
 [2-3 sentences: what the PR does, whether it achieves its goal]
@@ -157,6 +157,10 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
 ## Blocking issues
 [only if CHANGES REQUESTED]
 - [file:line] description and required fix
+
+## Not read
+[required for INCOMPLETE; list gaps under CHANGES REQUESTED too]
+- <file or rule> -> why it was not read / checked
 
 ## Rules
 [omit only when no `[rule]` entries were loaded]
@@ -168,6 +172,13 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
 
 APPROVED = all criteria met, nothing blocking. CHANGES REQUESTED = ≥1
 blocking issue. COMMENT = nothing blocking, observations worth noting.
+INCOMPLETE = at least one file of the triage's top tier (state, effects,
+services, serializers, or a rule's surface) was not read in full, or a rule
+touching the diff is `not checked`, and no blocker is confirmed. APPROVED and
+COMMENT require that tier fully read and every touching rule checked. A
+confirmed blocker stands on its own: CHANGES REQUESTED stays available with
+gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
+not read, so a re-run (larger budget or model) can target it.
 The `Verdict:` line is machine-readable — keep its format exact.
 
 ## Ground rules

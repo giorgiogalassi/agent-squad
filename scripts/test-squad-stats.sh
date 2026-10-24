@@ -265,9 +265,13 @@ python3 "$SUT" collect >/dev/null 2>&1
 check "backfill adds only the missing rows" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "handback-only verdict recorded" 1 "$(grep -c 'APPROVED.toolu_h1:verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "review with text and handback counted once" 1 "$(grep -c 'CHANGES REQUESTED' "$SQUAD_STATS_DIR/verdicts.tsv")"
+printf '{"type":"assistant","timestamp":"2026-10-14T10:20:00.000Z","sessionId":"sv","message":{"id":"msg_vi","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_i1","name":"SubagentHandback","input":{"message":"Review\\nVerdict: INCOMPLETE\\nx"}}]}}\n' > "$VD/agent-i.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-i.meta.json"
+python3 "$SUT" collect >/dev/null 2>&1
+check "INCOMPLETE verdict recorded" 1 "$(grep -c 'INCOMPLETE.toolu_i1:verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "Bash input yields no row" 0 "$(grep -c 'toolu_x1' "$SQUAD_STATS_DIR/verdicts.tsv")"
 python3 "$SUT" collect >/dev/null 2>&1
-check "re-collect does not duplicate verdicts" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+check "re-collect does not duplicate verdicts" 4 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 
 # ---- trend: 12 sessions per period, last period 20% cheaper per session ----
 export SQUAD_STATS_DIR="$TMPROOT/trendstore"; mkdir -p "$SQUAD_STATS_DIR"

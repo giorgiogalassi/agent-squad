@@ -122,7 +122,7 @@ TABLES = {
     "verdicts": (VERDICT_COLS, "message_id"),
     "hooks": (HOOK_COLS, "hook_id"),
 }
-VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT)\b", re.M)
+VERDICT_RE = re.compile(r"^Verdict:\s*(APPROVED|CHANGES REQUESTED|COMMENT|INCOMPLETE)\b", re.M)
 COMMAND_RE = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
 # Failed tool calls, by who stopped them: hook, classifier (auto mode),
 # policy (a permission rule or mode), user, or the tool itself (error).
