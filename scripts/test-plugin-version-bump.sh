@@ -10,17 +10,17 @@ check() { # name expected-stdout expected-exit version labels
   if [ "$rc" = "$3" ] && [ "$out" = "$2" ]; then echo "ok $n - $1"
   else echo "not ok $n - $1 (rc=$rc out='$out')"; fail=1; fi
 }
-check "breaking-change -> major"   "BUMP=major NEW_VERSION=2.0.0 CHANGED=yes " 0 1.4.7 breaking-change
-check "enhancement -> minor"       "BUMP=minor NEW_VERSION=1.5.0 CHANGED=yes " 0 1.4.7 enhancement
-check "bug -> patch"               "BUMP=patch NEW_VERSION=1.4.8 CHANGED=yes " 0 1.4.7 bug
-check "breaking wins over all"     "BUMP=major NEW_VERSION=2.0.0 CHANGED=yes " 0 1.4.7 "bug,enhancement,breaking-change"
-check "enhancement wins over bug"  "BUMP=minor NEW_VERSION=1.5.0 CHANGED=yes " 0 1.4.7 "bug,enhancement"
-check "documentation only: none"   "BUMP=none NEW_VERSION=1.4.7 CHANGED=no " 0 1.4.7 documentation
-check "no labels: none"            "BUMP=none NEW_VERSION=1.4.7 CHANGED=no " 0 1.4.7 ""
-check "docs plus bug -> patch"     "BUMP=patch NEW_VERSION=1.4.8 CHANGED=yes " 0 1.4.7 "documentation,bug"
-check "no substring match"         "BUMP=none NEW_VERSION=1.0.0 CHANGED=no " 0 1.0.0 "bugfix,enhancements"
-check "patch reaches double digits" "BUMP=patch NEW_VERSION=1.0.10 CHANGED=yes " 0 1.0.9 bug
-check "minor resets patch"         "BUMP=minor NEW_VERSION=0.3.0 CHANGED=yes " 0 0.2.9 enhancement
+check "breaking-change -> major"   "BUMP=major NEW_VERSION=2.0.0 CHANGED=yes OUTCOME=applied " 0 1.4.7 breaking-change
+check "enhancement -> minor"       "BUMP=minor NEW_VERSION=1.5.0 CHANGED=yes OUTCOME=applied " 0 1.4.7 enhancement
+check "bug -> patch"               "BUMP=patch NEW_VERSION=1.4.8 CHANGED=yes OUTCOME=applied " 0 1.4.7 bug
+check "breaking wins over all"     "BUMP=major NEW_VERSION=2.0.0 CHANGED=yes OUTCOME=applied " 0 1.4.7 "bug,enhancement,breaking-change"
+check "enhancement wins over bug"  "BUMP=minor NEW_VERSION=1.5.0 CHANGED=yes OUTCOME=applied " 0 1.4.7 "bug,enhancement"
+check "documentation only: none"   "BUMP=none NEW_VERSION=1.4.7 CHANGED=no OUTCOME=unchanged " 0 1.4.7 documentation
+check "no labels: none"            "BUMP=none NEW_VERSION=1.4.7 CHANGED=no OUTCOME=unchanged " 0 1.4.7 ""
+check "docs plus bug -> patch"     "BUMP=patch NEW_VERSION=1.4.8 CHANGED=yes OUTCOME=applied " 0 1.4.7 "documentation,bug"
+check "no substring match"         "BUMP=none NEW_VERSION=1.0.0 CHANGED=no OUTCOME=unchanged " 0 1.0.0 "bugfix,enhancements"
+check "patch reaches double digits" "BUMP=patch NEW_VERSION=1.0.10 CHANGED=yes OUTCOME=applied " 0 1.0.9 bug
+check "minor resets patch"         "BUMP=minor NEW_VERSION=0.3.0 CHANGED=yes OUTCOME=applied " 0 0.2.9 enhancement
 check "malformed: two parts" " " 10 1.0 bug
 check "malformed: four parts" " " 10 1.0.0.1 bug
 check "malformed: prerelease" " " 10 1.0.0-rc1 bug

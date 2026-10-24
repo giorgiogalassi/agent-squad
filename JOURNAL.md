@@ -1164,7 +1164,10 @@ tool-neutral and unchanged (scope boundary of #292); only packaging moves.
 - Version bumps are automatic and post-merge: `plugin-version.yml` applies a
   label-driven semver rule (`breaking-change` major, `enhancement` minor, `bug`
   patch, else none) via `scripts/plugin-version-bump.sh`, so PRs never edit
-  `plugin.json` and parallel PRs cannot conflict on it.
+  `plugin.json` and parallel PRs cannot conflict on it. `main` is under a
+  ruleset (PR required, no bypass), so the workflow opens and self-merges a
+  one-line `chore/plugin-v<X.Y.Z>` PR instead of pushing; a guard workflow
+  rejects hand edits of `version`.
 - Removed: the README `cp` block, `.agent-squad-source`, the settings.json
   snippets, `squad-doctor.sh`, `test-squad-doctor.sh`, the doctor signal in
   `lore-orient.sh`. The eval scaffold no longer copies hooks into `$HOME`.

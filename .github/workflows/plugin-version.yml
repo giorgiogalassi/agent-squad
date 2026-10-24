@@ -8,12 +8,24 @@ name: Plugin version
 # The computation lives in scripts/plugin-version-bump.sh (tested by
 # scripts/test-plugin-version-bump.sh).
 #
-# Post-merge on purpose: PRs never touch plugin.json, so parallel PRs cannot
-# conflict on it. The concurrency group serialises simultaneous merges, and
-# each run checks out the latest main, so it re-reads the current version.
-# Loop guard: the bump commit is pushed with GITHUB_TOKEN (which does not
-# trigger workflows) and runs started by github-actions[bot] are skipped.
-# main is not branch-protected, so the direct push is allowed.
+# Post-merge on purpose: PRs never touch plugin.json (plugin-version-guard.yml
+# enforces it), so parallel PRs cannot conflict on it. Each run checks out the
+# latest main, so it re-reads the current version.
+#
+# main is under a repository ruleset (no deletion, no non-fast-forward, changes
+# only through a pull request, 0 required approvals, no bypass actors), so a
+# direct push is rejected (GH013). The job therefore opens a one-line PR from
+# chore/plugin-v<X.Y.Z> against main, labelled `documentation` (which never
+# bumps), and merges it itself. Needs the repo setting "Allow GitHub Actions to
+# create and approve pull requests".
+#
+# Loop guard: PRs and merges made with GITHUB_TOKEN start no workflows, so the
+# bump PR runs no CI and its merge does not re-trigger this one. The job also
+# skips any PR whose head ref starts with chore/plugin-v.
+#
+# Limitation: the concurrency group keeps one running and one pending run. If
+# three PRs merge in quick succession, the middle pending run is replaced by
+# the third and its bump is dropped; re-run it by hand.
 
 on:
   pull_request:
@@ -22,7 +34,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
   issues: read
 
 concurrency:
@@ -31,7 +43,10 @@ concurrency:
 
 jobs:
   bump:
-    if: github.event.pull_request.merged == true && github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.pull_request.head.ref, 'chore/plugin-v')
     runs-on: ubuntu-latest
     steps:
       - name: Check out main
@@ -43,11 +58,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
           set -euo pipefail
 
-          if ! gh pr diff "$PR" --name-only | grep -q '^claude/'; then
+          # Capture first so a gh failure fails the step (set -e) instead of
+          # reading as "no claude/ files" through a pipe.
+          files_changed="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')"
+          if ! printf '%s\n' "$files_changed" | grep -q '^claude/'; then
             echo "::notice::PR #$PR does not touch claude/: no plugin bump"
             exit 0
           fi
@@ -67,12 +86,17 @@ jobs:
             exit 1
           fi
           new="$(printf '%s\n' "$out" | sed -n 's/^NEW_VERSION=//p')"
-          changed="$(printf '%s\n' "$out" | sed -n 's/^CHANGED=//p')"
+          outcome="$(printf '%s\n' "$out" | sed -n 's/^OUTCOME=//p')"
 
-          if [ "$changed" != yes ]; then
+          if [ "$outcome" != applied ]; then
             echo "::notice::PR #$PR has no bump-worthy label (labels: ${labels:-none}): plugin stays at $current"
             exit 0
           fi
+
+          branch="chore/plugin-v$new"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
 
           # Targeted edit keeps the diff to the one version line.
           sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" "$manifest"
@@ -82,9 +106,10 @@ jobs:
             files="$files .claude-plugin/marketplace.json"
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add $files
           git commit -m "chore: bump plugin to v$new (#$PR)"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --label documentation \
+            --title "chore: bump plugin to v$new" \
+            --body "Automatic $current -> $new bump after #$PR (plugin-version.yml)."
+          gh pr merge "$branch" --merge --delete-branch

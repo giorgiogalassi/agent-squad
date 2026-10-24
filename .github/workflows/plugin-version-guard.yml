@@ -1,0 +1,38 @@
+name: Plugin version guard
+
+# PRs must not edit the plugin version by hand (#293): plugin-version.yml bumps
+# it after merge, from a chore/plugin-v<X.Y.Z> branch, which is exempt here.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    if: ${{ !startsWith(github.head_ref, 'chore/plugin-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject hand edits of plugin.json version
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          manifest=claude/.claude-plugin/plugin.json
+          # A base without the manifest is the PR that introduces it.
+          if ! git cat-file -e "$BASE:$manifest" 2>/dev/null; then
+            echo "::notice::$manifest absent on base: nothing to guard"
+            exit 0
+          fi
+          before="$(git show "$BASE:$manifest" | jq -r .version)"
+          after="$(git show "$HEAD:$manifest" | jq -r .version)"
+          if [ "$before" != "$after" ]; then
+            echo "::error file=$manifest::version changed $before -> $after by hand; plugin-version.yml bumps it after merge"
+            exit 1
+          fi

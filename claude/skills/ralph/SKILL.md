@@ -427,11 +427,11 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    `[ID] review: N rounds, last verdict <X>`, then apply the label (also
    after a second `INCOMPLETE`), connected:
    ```bash
-   bash ~/.claude/hooks/squad-labels.sh needs-review --issue <n>
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh needs-review --issue <n>
    ```
    Detached (adds the handoff path):
    ```bash
-   bash ~/.claude/hooks/squad-labels.sh needs-review --issue <n> --handoff <handoff path>
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh needs-review --issue <n> --handoff <handoff path>
    ```
    Read `OUTCOME` and `CHANGED`. Act on the exit code:
 

@@ -14,6 +14,7 @@
 #   BUMP=major|minor|patch|none
 #   NEW_VERSION=<version>      (equals the input when BUMP=none)
 #   CHANGED=yes|no
+#   OUTCOME=applied|unchanged   (applied when the version moves)
 # Exit: 0 ok (including no bump), 2 usage error, 10 malformed version.
 set -u
 
@@ -55,4 +56,4 @@ esac
 
 echo "BUMP=$bump"
 echo "NEW_VERSION=$new"
-if [ "$bump" = none ]; then echo "CHANGED=no"; else echo "CHANGED=yes"; fi
+if [ "$bump" = none ]; then echo "CHANGED=no"; echo "OUTCOME=unchanged"; else echo "CHANGED=yes"; echo "OUTCOME=applied"; fi

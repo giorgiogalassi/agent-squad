@@ -385,7 +385,7 @@ worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and 
 Depends only on `git` and POSIX shell utilities — no `jq`.
 
 It ships in the plugin's `hooks/` directory next to `path-resolve.sh`; a
-a merged change reaches users once the plugin version is bumped
+merged change reaches users once the plugin version is bumped
 (see [Plugin manifest](#plugin-manifest)) and they run `claude plugin update`.
 
 
@@ -589,10 +589,20 @@ runs `claude plugin validate claude/ --strict` and
 
 An installed plugin updates only when `version` changes. Nobody bumps it by
 hand: `plugin-version.yml` runs after a PR merges into main and, if the PR
-changed files under `claude/`, bumps `plugin.json` (semver) from the labels on
-the PR and on the issues it closes, then commits
-`chore: bump plugin to vX.Y.Z (#<pr>)` to main. PRs never touch the version, so
-parallel PRs cannot conflict on it.
+changed files under `claude/`, computes the semver bump from the labels on
+the PR and on the issues it closes. `main` has a repository ruleset (no
+deletion, no force push, changes only through a pull request, no bypass
+actors), so the workflow cannot push to it: it opens a one-line PR from
+`chore/plugin-vX.Y.Z` (labelled `documentation`, so it never bumps again) and
+merges it itself. That needs the repo setting "Allow GitHub Actions to create
+and approve pull requests". PRs never touch the version, and a
+`plugin-version-guard.yml` check fails any PR that edits `version` in
+`plugin.json` by hand (except `chore/plugin-v*` branches), so parallel PRs
+cannot conflict on it. Limits: PRs and merges made with `GITHUB_TOKEN` start no
+workflows, so the bump PR runs no CI and cannot loop; and the concurrency
+group keeps one running and one pending run, so when three PRs merge at
+once the middle run's bump can be dropped (run the workflow's rule by hand
+then).
 
 | Label (PR or closing issue) | Bump |
 |-----------------------------|------|
