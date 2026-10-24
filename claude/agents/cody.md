@@ -23,7 +23,7 @@ where Ralph left off.
 ## On start
 
 **Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
-`~/second-brain/`. Run `bash ~/.claude/hooks/path-resolve.sh` and read
+`~/second-brain/`. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read
 `PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
 basename of `PROJECT_ROOT`). Never derive the project root from
 `git rev-parse --show-toplevel` — it breaks inside worktrees (see
@@ -60,7 +60,7 @@ Issue number missing from the prompt → extract from the description
 (`#30`-style). Then:
 
 ```bash
-bash ~/.claude/hooks/squad-labels.sh claim --issue <issue-number>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh claim --issue <issue-number>
 ```
 
 Read `OUTCOME` and `CHANGED`. Act on the exit code:
@@ -94,7 +94,7 @@ cannot; detached fetches only when an `origin` remote exists, tolerates
 fetch failures, and may stack on a local-only base):
 
 ```bash
-bash ~/.claude/hooks/squad-branch.sh <create|continue> <branch> --base <base>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-branch.sh <create|continue> <branch> --base <base>
 ```
 
 `<create|continue>` is the `branch action`. Read `OUTCOME`, `CHANGED`,
@@ -280,7 +280,7 @@ Then act on `open pr` (default `yes` when invoked directly):
   and print manual instructions. Immediately after the PR is created,
   for every covered issue `<n>`:
   ```bash
-  bash ~/.claude/hooks/squad-labels.sh review --issue <n>
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh review --issue <n>
   ```
   Read `OUTCOME` and `CHANGED`. Act on the exit code:
 
@@ -297,7 +297,7 @@ Then act on `open pr` (default `yes` when invoked directly):
 **Checkpoint** (only when a branch closes with `open pr: yes`, after PR
 creation or the paste-ready print): write one line into
 `<vault>/projects/<display-name>/status.md` under `## Last checkpoint` by
-running `bash ~/.claude/hooks/lore-checkpoint.sh --note "<line>"` from the
+running `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-checkpoint.sh --note "<line>"` from the
 project root. Never `>>` status.md: its last section is `## Context refs`,
 so the line would land outside the checkpoint section —
 

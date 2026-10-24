@@ -1,0 +1,45 @@
+name: Plugin version guard
+
+# Reports PRs that edit the plugin version by hand (#293); plugin-version.yml
+# bumps it after merge, from a chore/plugin-v<X.Y.Z> branch, which is exempt.
+# This is a reporting check, not a required one: the bump PR itself runs no
+# workflows (GITHUB_TOKEN), so making this check required would block it.
+# The "before" version is read at the merge-base with the base branch, so only
+# the PR's own change to `version` is judged (logic and tests in
+# scripts/plugin-version-guard.sh, scripts/test-plugin-version-guard.sh).
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    if: ${{ !startsWith(github.head_ref, 'chore/plugin-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # The PR head, not the default merge ref: the merge-base must be
+          # taken from the PR's own commits.
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Report hand edits of plugin.json version
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          rc=0
+          out="$(bash scripts/plugin-version-guard.sh \
+            --base "origin/$BASE_REF" --head HEAD --head-branch "$HEAD_REF")" || rc=$?
+          printf '%s\n' "$out"
+          reason="$(printf '%s\n' "$out" | sed -n 's/^REASON=//p')"
+          case "$rc" in
+            0) echo "::notice::plugin version guard: $reason" ;;
+            10) echo "::error file=claude/.claude-plugin/plugin.json::version edited by hand ($(printf '%s' "$out" | tr '\n' ' ')); plugin-version.yml bumps it after merge"
+                exit 1 ;;
+            *) echo "::error::plugin-version-guard.sh exited $rc"; exit 1 ;;
+          esac

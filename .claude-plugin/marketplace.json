@@ -1,0 +1,12 @@
+{
+  "name": "agent-squad",
+  "description": "Agent Squad: a planning, implementation and review workflow for Claude Code.",
+  "owner": { "name": "giorgiogalassi" },
+  "plugins": [
+    {
+      "name": "agent-squad",
+      "source": "./claude",
+      "description": "Agent Squad skills, agents and session hooks for Claude Code."
+    }
+  ]
+}

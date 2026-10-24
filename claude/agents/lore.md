@@ -60,7 +60,7 @@ when explicitly requested or named by a context ref.
 
 ## `lore start`
 
-> The optional SessionStart hook (`~/.claude/hooks/lore-orient.sh`)
+> The SessionStart hook (`lore-orient.sh`, registered by the plugin's `hooks/hooks.json`)
 > injects read-only orientation automatically; it never writes.
 > `lore start` is setup and repair only, not a per-session step. Seed
 > does first contact (naming and mapping); use `lore start` to migrate a
@@ -69,7 +69,7 @@ when explicitly requested or named by a context ref.
 > SessionEnd hook.
 
 1. Resolve the vault path (above); missing → ask to create and wait.
-2. Deduce the candidate project: run `bash ~/.claude/hooks/path-resolve.sh`,
+2. Deduce the candidate project: run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`,
    take `PROJECT_ROOT` (correct inside worktrees — never
    `git rev-parse --show-toplevel` directly; see PATH_RESOLUTION.md);
    candidate name = final path component; record `PROJECT_ROOT` as

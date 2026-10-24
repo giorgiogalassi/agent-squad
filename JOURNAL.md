@@ -1138,6 +1138,52 @@ files the repo never shipped are never flagged. Missing record, repo or
 install directory is silent. `lore-orient.sh` adds one Signals line when
 N>0. Hooks absent from the install are not counted (some are optional).
 
+**Superseded by Iteration 35:** the native plugin install removed doctor.
+
+### Iteration 35: Native plugin, copy install and doctor removed
+
+**Problem:** the squad was installed by copying `claude/{agents,skills,hooks}`
+into `~/.claude/` and wiring hooks by hand in `settings.json`. A merged
+change did nothing until reinstalled, and Iteration 31 added squad doctor
+only to detect that drift. Claude Code now ships plugins with a hooks
+manifest (parent #292, this change #293).
+
+**Decision (2026-10, #293):** `claude/` is the plugin. Doctor is removed, as
+Iteration 31 said it would be once a native install shipped. The vault stays
+tool-neutral and unchanged (scope boundary of #292); only packaging moves.
+
+**Change:**
+- `claude/.claude-plugin/plugin.json` carries name, version, description;
+  `claude/hooks/hooks.json` registers `lore-orient.sh` (SessionStart,
+  matcher `startup|clear|compact`) and `lore-checkpoint.sh` (SessionEnd)
+  via `${CLAUDE_PLUGIN_ROOT}/hooks/`; a repo-root
+  `.claude-plugin/marketplace.json` makes the checkout a local marketplace.
+- Skills and agents call scripts as `${CLAUDE_PLUGIN_ROOT}/hooks/<script>`
+  instead of `~/.claude/hooks/<script>`. The path-resolution step is still
+  a script call; exporting it once is the follow-up (#294).
+- Version bumps are automatic and post-merge: `plugin-version.yml` applies a
+  label-driven semver rule (`breaking-change` major, `enhancement` minor, `bug`
+  patch, else none) via `scripts/plugin-version-bump.sh`, so PRs never edit
+  `plugin.json` and parallel PRs cannot conflict on it. `main` is under a
+  ruleset (PR required, no bypass), so the workflow opens and self-merges a
+  one-line `chore/plugin-v<X.Y.Z>` PR instead of pushing; a guard workflow
+  rejects hand edits of `version`.
+- Removed: the README `cp` block, `.agent-squad-source`, the settings.json
+  snippets, `squad-doctor.sh`, `test-squad-doctor.sh`, the doctor signal in
+  `lore-orient.sh`. The eval scaffold no longer copies hooks into `$HOME`.
+- `squad-lint.sh` check 8 now resolves `${CLAUDE_PLUGIN_ROOT}/hooks/<x>`
+  and rejects `~/.claude/hooks/`; new check 9 validates the manifest,
+  the scripts `hooks.json` registers, and bans the frontmatter keys plugin
+  subagents ignore (`hooks`, `mcpServers`, `permissionMode`,
+  `initialPrompt`). CI runs `claude plugin validate ... --strict`.
+
+**Caveats recorded:** `allowed-tools` pre-approves tools for the invoking
+turn and does not restrict the rest; `/stats` already accepts the bare and
+the `agent-squad:` prefixed names. Not changed here: the root `CLAUDE.md`
+still names `~/.claude/hooks/path-resolve.sh` (owner edit, see the PR), and
+Sidecar and `worktree.sh` stay until #295.
+
+
 ---
 
 ### Iteration 32: Incident capture and a stricter Cody
@@ -1585,7 +1631,8 @@ claude/
     squad-stats.py
   evals/
     connected-claim, detached-claim, worktree-continue
-  .claude-plugin/plugin.json   (eval-only manifest)
+  .claude-plugin/plugin.json   (plugin manifest)
+  hooks/hooks.json             (SessionStart, SessionEnd registration)
 ```
 
 `PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no

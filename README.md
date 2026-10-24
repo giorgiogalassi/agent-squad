@@ -258,54 +258,51 @@ agent-squad/
                        mechanism (used today by Sidecar; Ralph's epic
                        mode will consume it too — see the "Worktree
                        hook" section below).
-      lore-orient.sh   SessionStart read-only orientation script (optional)
+      lore-orient.sh   SessionStart read-only orientation script
       lore-checkpoint.sh
-                       SessionEnd status.md refresh (optional)
+                       SessionEnd status.md refresh
       chisel-config-validate.py
                        Validates chisel-config.json shape
       squad-stats.py   Transcript importer and report behind /stats
-      squad-doctor.sh  Report-only install-freshness check
+      hooks.json       Plugin hook manifest (SessionStart, SessionEnd)
 ```
 
 ## Installation
 
-Squad is installed globally. No files need to be added to any host project.
-After install, Squad is available in every project immediately.
-
-> Warning: if you already have files named `lore`, `cody`, `reven`, `forge`,
-> `archy`, `chisel`, `seed`, `ralph`, `challenge`, or `stats` in `~/.claude/agents/`
-> or `~/.claude/skills/`, they will be overwritten by the commands below.
+Agent Squad is a Claude Code plugin. Nothing is copied into `~/.claude/` and
+no `~/.claude/settings.json` wiring is needed: the plugin ships its skills,
+agents and hooks. Installed copies move when the plugin version moves (see
+[Plugin manifest](#plugin-manifest)).
 
 ```bash
-cp -r claude/agents/* ~/.claude/agents/
-cp -r claude/skills/* ~/.claude/skills/
-mkdir -p ~/.claude/hooks
-cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
-cp claude/hooks/chisel-config-validate.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/chisel-config-validate.py
-cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
-cp claude/hooks/squad-common.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-common.sh
-cp claude/hooks/squad-labels.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-labels.sh
-cp claude/hooks/squad-branch.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-branch.sh
-cp claude/hooks/squad-incidents.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-incidents.sh
-cp claude/hooks/squad-stats.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-stats.py
-cp claude/hooks/squad-doctor.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/squad-doctor.sh
-pwd > ~/.claude/.agent-squad-source   # run from the repo root: records the source for squad doctor
+claude plugin marketplace add giorgiogalassi/agent-squad   # or a local path to this checkout
+claude plugin install agent-squad
 ```
 
-### Squad doctor
+Developing the squad itself, load the checkout directly instead:
 
-`squad-doctor.sh` is a report-only freshness check for the manual copy
-install. It reads the repo path from `~/.claude/.agent-squad-source`,
-compares `~/.claude/{agents,skills,hooks}` with the repo's `claude/` copies
-by content hash and prints `STALE=<n>` plus `STALE_FILE=` / `ORPHAN_FILE=`
-lines (orphans are files the repo once shipped and later removed; your own
-files are never flagged). It never modifies anything and is silent when the
-record, the repo or an install directory is missing. With
-`lore-orient.sh` installed, a session start shows one
-`squad doctor: N installed files stale — reinstall per README` signal
-when N is above 0. Run it by hand with `~/.claude/hooks/squad-doctor.sh`;
-`SQUAD_DOCTOR_HOME` overrides the install dir. If agent-squad later ships
-as a native plugin, doctor becomes redundant and should be removed.
+```bash
+claude --plugin-dir claude/
+```
+
+Skills and agents are available as `/agent-squad:forge`, `agent-squad:cody`
+and so on; the bare names (`/forge`, `cody`) work as long as no other plugin
+defines the same name, and `/stats` attributes both spellings to the same row.
+
+Hooks are registered by `claude/hooks/hooks.json`, so there is nothing to
+wire by hand: `lore-orient.sh` on SessionStart (matcher
+`startup|clear|compact`) and `lore-checkpoint.sh` on SessionEnd. Skills and
+agents call the other scripts as `${CLAUDE_PLUGIN_ROOT}/hooks/<script>`.
+
+Migrating from the old copy install: delete the squad's files from
+`~/.claude/{agents,skills,hooks}`, the two squad hook entries in
+`~/.claude/settings.json`, and `~/.claude/.agent-squad-source`, then install
+the plugin. Leaving both in place fires every hook twice.
+
+Plugin subagents ignore the `hooks`, `mcpServers`, `permissionMode` and
+`initialPrompt` frontmatter keys, so `squad-lint.sh` check 9 rejects them in
+`claude/agents/*.md`. `allowed-tools` in a skill pre-approves tools for the
+invoking turn only; it does not restrict other tools.
 
 ### Project board workflows (connected mode)
 
@@ -328,7 +325,7 @@ cannot read user projects).
 
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
-`PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
+`PATH_RESOLUTION.md`). Without it, nothing in the squad can
 resolve which vault project it's talking to. It prints five `KEY=value`
 lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`,
 `TRACKER_MODE`); `TRACKER_MODE` is `detached` unless `chisel.mode` in the
@@ -387,15 +384,9 @@ worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and 
 
 Depends only on `git` and POSIX shell utilities — no `jq`.
 
-Install alongside `path-resolve.sh`:
-
-```bash
-cp claude/hooks/worktree.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/worktree.sh
-```
-
-Hooks are consumed from `~/.claude/hooks/`, not from the checkout — a
-reinstall (re-running the copy command above) is required before this
-change takes effect for any skill that starts calling it.
+It ships in the plugin's `hooks/` directory next to `path-resolve.sh`; a
+merged change reaches users once the plugin version is bumped
+(see [Plugin manifest](#plugin-manifest)) and they run `claude plugin update`.
 
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
@@ -404,20 +395,12 @@ every `chisel-config.json` in the vault against the schema documented in
 by any skill or agent — run it manually (`--prune` to remove flagged
 keys; read-only otherwise).
 
-### Optional: SessionStart auto-orientation
+### SessionStart auto-orientation
 
 A read-only hook can inject "where you left off" at the start of every
 session, so you do not have to ask. It never writes and never blocks. It
-also calls `path-resolve.sh`, so install that first if you haven't.
-
-```bash
-cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-orient.sh
-```
-Then add to `~/.claude/settings.json`:
-```json
-{ "hooks": { "SessionStart": [ { "matcher": "startup|clear|compact", "hooks": [
-  { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
-```
+also calls `path-resolve.sh`. The plugin registers it in
+`claude/hooks/hooks.json`; there is nothing to install.
 The hook also skips `resume` on its own, so switching sessions in agent
 view does not re-inject the orientation.
 
@@ -430,11 +413,11 @@ The hook orients (read-only). `/lore start` is setup and repair only
 (migrating a legacy `.squad/`, re-mapping a moved checkout, INDEX active
 project); it is not a per-session step.
 
-### Optional: SessionEnd status refresh
+### SessionEnd status refresh
 
 `status.md` otherwise rebuilds only through `lore recover`. This hook keeps
 it current when a session ends. It never blocks exit; any failure prints
-one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
+one line and exits 0. Registered by `claude/hooks/hooks.json`; needs `path-resolve.sh`; `jq` is optional (without it the hook falls back to `$PWD` instead of the session `cwd`).
 
 - Session in a linked worktree: appends one checkpoint line for the
   branch (capped to the last 3), never rebuilds.
@@ -449,20 +432,11 @@ one line and exits 0. Needs `path-resolve.sh`; `jq` is optional (without it the 
   project, hard 90 s cap via `timeout` or a perl alarm) and exit is never
   delayed. Its log is `<vault>/projects/<name>/.lore-checkpoint.log`.
   To give the synchronous part more time, add `"timeout": <seconds>` to the
-  hook entry (the budget rises to the highest per-hook timeout, up to 60 s).
+  hook entry in `claude/hooks/hooks.json` (the budget rises to the highest per-hook timeout, up to 60 s).
 - Checkpoint lines: `lore-checkpoint.sh --note "<line>"` inserts one inside
   `## Last checkpoint` (cap 3); stray dated lines under `## Context refs`
   are moved there on the next run.
 - Model: `SQUAD_LORE_MODEL` (default `haiku`).
-
-```bash
-cp claude/hooks/lore-checkpoint.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore-checkpoint.sh
-```
-Then add to `~/.claude/settings.json`:
-```json
-{ "hooks": { "SessionEnd": [ { "hooks": [
-  { "type": "command", "command": "~/.claude/hooks/lore-checkpoint.sh" } ] } ] } }
-```
 
 ## Quick start
 
@@ -604,15 +578,56 @@ shell profile on the work machine. Do not share a vault between domains:
 INDEX.md and preferences are written on every session and would carry
 work context into a personal remote.
 
-## Plugin manifest (eval-only)
+## Plugin manifest
 
-`claude/.claude-plugin/plugin.json` contains only `{"name":"agent-squad"}`.
-It exists so `claude plugin validate claude/` (run in CI) and the
-tier-2 eval suite can load `claude/` as a plugin. It is not an install path:
-the runtime install is still the copy into `~/.claude/` described above, with
-hooks wired in `~/.claude/settings.json`. There is deliberately no
-hooks manifest under `claude/hooks/`; it would double-fire every hook for anyone who
-loads `claude/` as a plugin next to the copy install.
+`claude/.claude-plugin/plugin.json` (name, version, description, author) and
+`claude/hooks/hooks.json` make `claude/` the plugin; the repo-root
+`.claude-plugin/marketplace.json` lists it (`source: ./claude`) so
+`claude plugin marketplace add` works on a clone or on the GitHub repo. CI
+runs `claude plugin validate claude/ --strict` and
+`claude plugin validate . --strict` (`squad-lint.yml`).
+
+An installed plugin updates only when `version` changes. Nobody bumps it by
+hand: `plugin-version.yml` runs after a PR merges into main and, if the PR
+changed files under `claude/`, computes the semver bump from the labels on
+the PR and on the issues it closes. `main` has a repository ruleset (no
+deletion, no force push, changes only through a pull request, no bypass
+actors), so the workflow cannot push to it: it opens a one-line PR from
+`chore/plugin-vX.Y.Z-prN` (labelled `documentation`, so it never bumps again) and
+merges it itself. That needs the repo setting "Allow GitHub Actions to create
+and approve pull requests". PRs never touch the version, and a
+`plugin-version-guard.yml` check reports any PR that edits `version` in
+`plugin.json` by hand (judged against the merge-base, except `chore/plugin-v*`
+branches), so parallel PRs should not conflict on it. The guard is advisory,
+not a required check (the bump PR runs no workflows, so requiring it would
+block the bump). The ruleset's pull_request rule has
+`require_extra_approval_for_unattributed_changes`: if GitHub asks for an extra
+approval on the bot's commit, the self-merge fails and the owner must approve
+and merge the bump PR (or turn that ruleset option off). The bump is
+idempotent: the branch is keyed on version and source PR, and a re-run
+reuses an existing `chore/plugin-vX.Y.Z-prN` branch or open PR for the same
+source PR; a leftover branch already on main is deleted and recreated.
+`gh pr merge` is retried a few times and a non-zero exit with the PR in state
+`MERGED` counts as success. If the merge still fails, the job fails with an
+error and leaves the PR open. Recovery: merging that bump PR completes it,
+and you must not re-run the workflow; re-run only after closing the bump PR
+and deleting its branch (`git push origin --delete chore/plugin-vX.Y.Z-prN`).
+Limits: bumps are serialized, so an open bump PR for another source PR blocks
+new bumps (the job fails naming it) until it is merged or closed; PRs and
+merges made with `GITHUB_TOKEN` start no workflows, so the bump PR runs no CI
+and cannot loop; and the concurrency group keeps one running and one pending
+run, so when three PRs merge at once the middle run's bump can be dropped
+(run the workflow's rule by hand then).
+
+| Label (PR or closing issue) | Bump |
+|-----------------------------|------|
+| `breaking-change` | major (wins over everything) |
+| `enhancement` | minor |
+| `bug` | patch |
+| only `documentation`, or none of the above | none (a notice is logged) |
+
+Users then run `claude plugin update` to pick the new version up. The rule
+lives in `scripts/plugin-version-bump.sh`.
 
 ## Evals (tier 2)
 
@@ -628,8 +643,7 @@ tests cannot cover, because they check what the agent *prose* does:
 | `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
 
 Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
-that, inside the run's temporary `$HOME`, copies `claude/hooks/*.sh` to
-`$HOME/.claude/hooks/`, builds a fixture with `scripts/fixtures/make-fixture.sh`
+that, inside the run's temporary `$HOME`, builds a fixture with `scripts/fixtures/make-fixture.sh`
 inside the workspace, and writes `$HOME/second-brain/lore-config.json` plus the
 fixture's `chisel-config.json`. The agent finds the repo at `project/` (and
 `worktree/`) in its workspace. The `gh` shim must be first on `PATH` for the
@@ -672,7 +686,7 @@ Findings from building it (Claude Code 2.1.296):
   commands matching a pattern run, so a compound command with a pipe, `pwd` or
   `head` is denied; the prompts tell Cody to keep to single simple commands.
 - The `agent-squad:` plugin prefix has no runtime impact: the agent is invoked
-  as `agent-squad:cody` and the same prose and `~/.claude/hooks/` scripts run.
+  as `agent-squad:cody` and the same prose and `${CLAUDE_PLUGIN_ROOT}/hooks/` scripts run.
 - On macOS the stock `/usr/bin/git` shim fails inside the sandbox (it cannot
   write its xcrun cache in the system temp dir), which breaks `path-resolve.sh`
   and `squad-branch.sh` locally; the Linux CI runner is expected to be unaffected (not yet exercised via

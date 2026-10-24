@@ -1,7 +1,7 @@
 # Script contract
 
-Every scripted squad verb (the label and branch scripts installed next to
-`path-resolve.sh` in `~/.claude/hooks/`) follows this contract. Shared
+Every scripted squad verb (the label and branch scripts shipped next to
+`path-resolve.sh` in the plugin's `hooks/` directory) follows this contract. Shared
 code lives in `claude/hooks/squad-common.sh`, which scripts source.
 
 ## Stdout
@@ -47,15 +47,6 @@ A `gh` failure while reading PR outcomes does not exit 20: the report is
 written without its GitHub section, `QUALITY=gh-error` is emitted and the
 exit code is 0. The report is still useful without that section. `collect`
 and every other failure follow the contract above.
-
-## Exception: `squad-doctor.sh`
-
-Doctor is a read-only report, not a verb that changes state, so it emits
-no `OUTCOME=` or `CHANGED=`. It reports `STALE=`, `CHECKED=` and one
-`STALE_FILE=` or `ORPHAN_FILE=` line per file. A missing source record,
-repo path or install directory is not a precondition failure: it emits
-`STALE=0` and `CHECKED=no` and exits 0, so the SessionStart hook stays
-silent. Usage errors and a missing hash tool follow the contract above.
 
 ## Idempotency
 

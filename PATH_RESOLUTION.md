@@ -149,7 +149,7 @@ as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent's protocol now reads:
 
-> Run `~/.claude/hooks/path-resolve.sh` and read its output lines
+> Run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its output lines
 > (`KEY=value`, five in total; parse by key, not position):
 > `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`, `TRACKER_MODE`.
 > (Each skill reads only the keys it needs.)
@@ -176,16 +176,11 @@ this fix but deliberately aren't touched by it:
 
 ## Installing the script
 
-`path-resolve.sh` is a required dependency now, not an optional hook —
-every skill's first step calls it. It installs alongside `lore-orient.sh`
-(which itself now calls it too, with a defensive inline fallback if it's
-somehow missing — see the hook's own comments):
-
-```bash
-cp claude/hooks/path-resolve.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/path-resolve.sh
-```
-
-See `README.md`'s Installation section for the full install sequence.
+`path-resolve.sh` is a required dependency, not an optional hook: every
+skill's first step calls it. It ships in the plugin's `hooks/` directory
+next to `lore-orient.sh` (which also calls it, with a defensive inline
+fallback if it is somehow missing), so installing the plugin installs it.
+See `README.md`'s Installation section.
 
 ## Files carrying this fix
 

@@ -4,10 +4,8 @@
 # blocks: it always exits 0 and prints best-effort orientation to stdout,
 # which the host injects as context.
 #
-# Install (Claude Code): copy to ~/.claude/hooks/lore-orient.sh, chmod +x,
-# and add to ~/.claude/settings.json:
-#   { "hooks": { "SessionStart": [ { "matcher": "startup|clear|compact", "hooks": [
-#     { "type": "command", "command": "bash $HOME/.claude/hooks/lore-orient.sh" } ] } ] } }
+# Registered by the plugin's hooks/hooks.json (SessionStart, matcher
+# startup|clear|compact); no manual install step.
 
 # Skip on resume: the orientation is already in the transcript, so a second
 # copy is noise (agent view re-runs SessionStart on every session switch).
@@ -206,15 +204,7 @@ fi
 if [ -x "$HOOK_DIR/squad-incidents.sh" ]; then
   _rec="$("$HOOK_DIR/squad-incidents.sh" summary 2>/dev/null | sed -n 's/^RECURRING=//p')"
   case "$_rec" in ''|*[!0-9]*|0) ;; *)
-    SIGNALS="${SIGNALS}${_rec} recurring squad incidents: run ~/.claude/hooks/squad-incidents.sh summary${NL}" ;;
-  esac
-fi
-# Install freshness (squad-doctor.sh hashes only agents/skills/hooks). Silent
-# when the script, the source record or an install dir is missing, or N=0.
-if [ -x "$HOOK_DIR/squad-doctor.sh" ]; then
-  _stale="$("$HOOK_DIR/squad-doctor.sh" 2>/dev/null | sed -n 's/^STALE=//p')"
-  case "$_stale" in ''|*[!0-9]*|0) ;; *)
-    SIGNALS="${SIGNALS}squad doctor: ${_stale} installed files stale — reinstall per README${NL}" ;;
+    SIGNALS="${SIGNALS}${_rec} recurring squad incidents: run $HOOK_DIR/squad-incidents.sh summary${NL}" ;;
   esac
 fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"

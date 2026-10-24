@@ -16,9 +16,7 @@
 # Paths are resolved via path-resolve.sh, never re-derived. Because
 # this script lives outside claude/hooks (it is not a
 # hook), it looks for path-resolve.sh in, in order: this repo's own
-# claude/hooks/ copy (so it works from a checkout with
-# nothing installed), then the installed ~/.claude/hooks/ and
-# installed copy. First one found wins.
+# claude/hooks/ copy (a checkout needs nothing installed).
 #
 # Single copy: this script never touches
 # skill/agent prose, only vault state plus path-resolve.sh's
@@ -59,16 +57,14 @@ while [ $# -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------------
-# Resolve path-resolve.sh: prefer a copy checked into this repo, then
-# fall back to an installed one. Never re-derive the algorithm inline.
+# Resolve path-resolve.sh from the copy checked into this repo. Never re-derive the algorithm inline.
 # ---------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PATH_RESOLVE=""
 for candidate in \
-  "$REPO_ROOT/claude/hooks/path-resolve.sh" \
-  "$HOME/.claude/hooks/path-resolve.sh"
+  "$REPO_ROOT/claude/hooks/path-resolve.sh"
 do
   if [ -x "$candidate" ] || [ -f "$candidate" ]; then
     PATH_RESOLVE="$candidate"
@@ -77,7 +73,7 @@ do
 done
 
 if [ -z "$PATH_RESOLVE" ]; then
-  echo "session-summary: cannot find path-resolve.sh (checked $REPO_ROOT/claude/hooks and ~/.claude/hooks); cannot resolve paths without it." >&2
+  echo "session-summary: cannot find path-resolve.sh (checked $REPO_ROOT/claude/hooks); cannot resolve paths without it." >&2
   exit 2
 fi
 

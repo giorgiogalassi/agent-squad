@@ -16,7 +16,7 @@ YAML at the end.
 
 ## On start
 
-**Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
+**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
 `PROJECT_ROOT`). Also read `SQUAD_DIR`.
 All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,

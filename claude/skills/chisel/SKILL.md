@@ -16,7 +16,7 @@ about the feature: read, decompose, create.
 
 ## On start
 
-**Path resolution.** Run `bash ~/.claude/hooks/path-resolve.sh`; read
+**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
 `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
 `PROJECT_ROOT`). Also read `SQUAD_DIR`.
 All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
@@ -109,7 +109,7 @@ review-and-fix rounds per issue; hand-editable, never prompted for, and
 On every connected run:
 
 ```bash
-bash ~/.claude/hooks/squad-labels.sh ensure
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh ensure
 ```
 
 Read `OUTCOME`, `CHANGED` and `LABELS_CREATED` (say which labels were

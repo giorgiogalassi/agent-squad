@@ -18,7 +18,7 @@ You never write code, plan features, or make architectural decisions.
 
 ## Path resolution protocol
 
-1. Run `bash ~/.claude/hooks/path-resolve.sh`; read `VAULT_PATH`,
+1. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read `VAULT_PATH`,
    `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`. Never derive the root from
    `git rev-parse --show-toplevel` (breaks in worktrees; see
    PATH_RESOLUTION.md).

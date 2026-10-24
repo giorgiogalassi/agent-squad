@@ -13,9 +13,9 @@ not a coding task.
 First run `which gh` once with Bash and report the path (the tracker CLI on this PATH is a recorded shim, not the real GitHub CLI). Then run Cody from the `project` directory.
 
 Run Cody in the foreground and wait for its report. In this run Bash is
-restricted to `git ...`, `bash ~/.claude/hooks/path-resolve.sh`,
-`bash ~/.claude/hooks/squad-labels.sh ...` and
-`bash ~/.claude/hooks/squad-branch.sh ...`; tell Cody to use only those, one
+restricted to `git ...`, `bash <plugin root>/hooks/path-resolve.sh`,
+`bash <plugin root>/hooks/squad-labels.sh ...` and
+`bash <plugin root>/hooks/squad-branch.sh ...`; tell Cody to use only those, one
 command per call, optionally prefixed with `cd <dir> &&`, and to avoid pipes,
 `pwd`, `head` and other utilities (a denied Bash call stops it).
 

@@ -23,7 +23,7 @@ the branch against its base (see below).
 ## On start
 
 **Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
-`~/second-brain/`. Run `bash ~/.claude/hooks/path-resolve.sh` and read
+`~/second-brain/`. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read
 `PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
 basename of `PROJECT_ROOT`). Never derive the project root from
 `git rev-parse --show-toplevel` (breaks in worktrees; see

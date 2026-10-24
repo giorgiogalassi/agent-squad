@@ -12,7 +12,7 @@
 #   under `set -e` must guard it (`squad_record_local ... || rc=$?`).
 #
 # path-resolve.sh is located in the same directory as the file that
-# sources this one, so it works from the repo and from ~/.claude/hooks/.
+# sources this one, so it works from the repo and from the plugin root.
 
 # Directory of the sourcing script (BASH_SOURCE[1] when sourced).
 SQUAD_HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd)"
