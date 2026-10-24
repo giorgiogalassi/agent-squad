@@ -30,8 +30,13 @@ jobs:
             echo "::notice::$manifest absent on base: nothing to guard"
             exit 0
           fi
-          before="$(git show "$BASE:$manifest" | jq -r .version)"
-          after="$(git show "$HEAD:$manifest" | jq -r .version)"
+          before="$(git show "$BASE:$manifest" | jq -r '.version // empty')"
+          after="$(git show "$HEAD:$manifest" | jq -r '.version // empty')"
+          # A base manifest without a version: this PR introduces it.
+          if [ -z "$before" ]; then
+            echo "::notice::$manifest has no version on base: nothing to guard"
+            exit 0
+          fi
           if [ "$before" != "$after" ]; then
             echo "::error file=$manifest::version changed $before -> $after by hand; plugin-version.yml bumps it after merge"
             exit 1
