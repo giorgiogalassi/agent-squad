@@ -297,15 +297,18 @@ succeeded.
 
 ## Cody's checkpoint (context, not Lore's write)
 
-When Cody opens a PR (or commits a chain branch detached), it appends
-one line under `## Last checkpoint` — the only non-Lore vault write.
-The staleness rule reads it as evidence. No status.md → Cody skips.
+When Cody finishes (PR opened, or a chain branch committed detached), the
+`SubagentStop` hook `hooks/cody-checkpoint.sh` appends one line under
+`## Last checkpoint` from git evidence, via `lore-checkpoint.sh --note`. Cody
+itself writes nothing. The staleness rule reads the line as evidence. No
+status.md → the hook skips.
 
 ## SessionEnd hook (primary update path)
 
 `hooks/lore-checkpoint.sh` applies the staleness rule above at session end
-and rebuilds status.md headlessly in a detached process (main checkout
-only; worktree sessions append a checkpoint line). Other writers add
+and rebuilds status.md headlessly (registered async, so it runs inline; main
+checkout only; worktree sessions append a checkpoint line, `uncommitted work
+on <branch>: N files` when the tree is dirty). Other writers add
 checkpoint lines with `lore-checkpoint.sh --note "<line>"`, never `>>`. `lore recover` is the fallback when the hook is
 not installed.
 

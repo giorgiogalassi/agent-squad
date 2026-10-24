@@ -1183,6 +1183,26 @@ the `agent-squad:` prefixed names. Not changed here: the root `CLAUDE.md`
 still names `~/.claude/hooks/path-resolve.sh` (owner edit, see the PR), and
 Sidecar and `worktree.sh` stay until #295.
 
+### Iteration 36: Async checkpoints (#296)
+
+**Problem:** `lore-checkpoint.sh` carried ~150 lines (detach, lock, 90 s
+alarm) to fit the 1.5 s SessionEnd budget, and Cody's checkpoint and
+`progress.txt` lines depended on prose that a stalled run skips.
+
+**Change:** SessionEnd is registered `"async": true`, so the rebuild runs
+inline and the detach, lock and alarm code is gone (staleness rule, headless
+rebuild, `## Blocked` preservation, by-path vault commit and `--note` stay).
+New `cody-checkpoint.sh` is an async `SubagentStop` hook (matcher `cody`, in
+the plugin manifest because plugin subagents ignore frontmatter hooks): from
+branch, HEAD and open PR it writes the checkpoint line and, for a PR, the
+`progress.txt` line, and leaves `cody-checkpoint.env` for Ralph 2b, whose
+classification is unchanged. Cody's prose checkpoint step is removed. Addendum:
+a worktree session ending dirty records `uncommitted work on <branch>: N
+files`, and `lore-orient.sh` lists dirty linked worktrees after a kill.
+
+**Not done:** the optional Reven verdict recording in `verdicts.tsv` stays
+with report-time parsing.
+
 
 ---
 

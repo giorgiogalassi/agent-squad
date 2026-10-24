@@ -37,7 +37,7 @@ runs as a required step inside `/forge` before a draft scope closes.
                 Persists run state (order, branches, attempt and review-round counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
-SessionEnd      lore-checkpoint hook rebuilds status.md (detached) when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+SessionEnd      lore-checkpoint hook (async) rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
 
 Checks (this repo)
 Tier 1 (gate)   bash scripts/squad-lint.sh
@@ -264,7 +264,9 @@ agent-squad/
       chisel-config-validate.py
                        Validates chisel-config.json shape
       squad-stats.py   Transcript importer and report behind /stats
-      hooks.json       Plugin hook manifest (SessionStart, SessionEnd)
+      cody-checkpoint.sh
+                       SubagentStop (cody) checkpoint + progress.txt line
+      hooks.json       Plugin hook manifest (SessionStart, SessionEnd, SubagentStop)
 ```
 
 ## Installation
@@ -427,12 +429,14 @@ one line and exits 0. Registered by `claude/hooks/hooks.json`; needs `path-resol
   commits since `Last updated`). `## Blocked` is preserved verbatim,
   checkpoints capped to 3, Goal/Done/Next rejected if over ~400 tokens.
   Fresh status: no write. Commits the vault if it is a git repo.
-- Budget: Claude Code gives SessionEnd hooks 1.5 s by default, so the
-  rebuild runs detached (own session, stdio redirected, one lock per
-  project, hard 90 s cap via `timeout` or a perl alarm) and exit is never
-  delayed. Its log is `<vault>/projects/<name>/.lore-checkpoint.log`.
-  To give the synchronous part more time, add `"timeout": <seconds>` to the
-  hook entry in `claude/hooks/hooks.json` (the budget rises to the highest per-hook timeout, up to 60 s).
+- Async: the hook is registered with `"async": true`, so Claude Code runs it
+  in the background with no timeout and the rebuild runs inline (no detach,
+  lock or alarm code). Async output is never shown; a skipped or failed run
+  leaves one line in `<vault>/projects/<name>/.lore-checkpoint.log`.
+- Worktree session with uncommitted changes: the checkpoint line reads
+  `uncommitted work on <branch>: N files` (no `progress.txt` line, never a
+  commit). If the session was killed, `lore-orient.sh` lists dirty linked
+  worktrees at the next SessionStart.
 - Checkpoint lines: `lore-checkpoint.sh --note "<line>"` inserts one inside
   `## Last checkpoint` (cap 3); stray dated lines under `## Context refs`
   are moved there on the next run.
@@ -500,7 +504,7 @@ vault files directly when needed.
       issues/                      detached-mode batch files and handoffs
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
-    status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
+    status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by the `cody-checkpoint.sh` SubagentStop hook when Cody finishes.
     decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
@@ -700,3 +704,14 @@ Findings from building it (Claude Code 2.1.296):
 
 `JOURNAL.md` contains the full design history: why each component exists,
 what was tried and rejected, and when to add the next layer.
+
+### SubagentStop checkpoint (Cody)
+
+`cody-checkpoint.sh` runs as an async `SubagentStop` hook with matcher `cody`
+(the matcher lives in `hooks/hooks.json`: plugin subagents ignore per-agent
+`hooks` frontmatter). When Cody finishes or is stopped at `maxTurns` with a
+commit, it reads branch, HEAD and open PR from git, writes the `status.md`
+checkpoint line through `lore-checkpoint.sh --note`, and for an open PR
+appends the `progress.txt` line. It only records and never blocks the stop.
+Ralph 2b reads the `KEY=value` summary it leaves in
+`<vault>/projects/<name>/.squad/cody-checkpoint.env` before its own git checks.

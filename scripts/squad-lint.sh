@@ -479,6 +479,7 @@ check_plugin_layout() {
     done
     grep -q 'lore-orient.sh' claude/hooks/hooks.json || fail "claude/hooks/hooks.json does not register lore-orient.sh"
     grep -q 'lore-checkpoint.sh' claude/hooks/hooks.json || fail "claude/hooks/hooks.json does not register lore-checkpoint.sh"
+    grep -q 'cody-checkpoint.sh' claude/hooks/hooks.json || fail "claude/hooks/hooks.json does not register cody-checkpoint.sh"
   fi
   while IFS= read -r f; do
     # Frontmatter only: lines between the first two '---'.

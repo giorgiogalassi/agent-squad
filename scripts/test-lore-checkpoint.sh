@@ -77,5 +77,39 @@ grep -q "fixture-wt @ $TIP worktree-only work" "$EVIDENCE" 2>/dev/null \
   && ok "evidence lists the worktree branch with its tip" || bad "evidence lists the worktree branch with its tip"
 grep -q "remote-only" "$EVIDENCE" 2>/dev/null && bad "evidence omits remote-only branches" || ok "evidence omits remote-only branches"
 
+# 5. async hook rebuilds inline and commits the vault (no detach, lock or alarm layer)
+grep -qE 'setsid|nohup|\.lore-rebuild\.lock|alarm\(|timeout 90' "$REPO_ROOT/claude/hooks/lore-checkpoint.sh" \
+  && bad "no detach/lock/alarm code left" || ok "no detach/lock/alarm code left"
+git -C "$F_VAULT" init -q 2>/dev/null; git -C "$F_VAULT" add -A; $GIT -C "$F_VAULT" commit -q -m seed
+OLD="$(date -v-9d "+%Y-%m-%d %H:%M" 2>/dev/null || date -d "9 days ago" "+%Y-%m-%d %H:%M")"
+printf -- '---\ntitle: s\n---\n# Status\nLast updated: %s by x\n\n## Goal\n\n## Blocked\nkeep-me\n\n## Last checkpoint\n\n## Context refs\n' "$OLD" > "$STATUS"
+cat > "$TMPROOT/fakebin/claude" <<'EOS'
+#!/bin/sh
+cat > /dev/null
+printf -- '---\ntitle: s\n---\n# Status\nLast updated: x\n\n## Goal\nrebuilt\n\n## Done\n\n## Next\n\n## Blocked\nDROPPED\n\n## Last checkpoint\n\n## Context refs\n'
+EOS
+printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
+grep -q 'rebuilt' "$STATUS" && ok "stale status rebuilt synchronously" || bad "stale status rebuilt synchronously"
+grep -q 'keep-me' "$STATUS" && ok "Blocked preserved verbatim" || bad "Blocked preserved verbatim"
+git -C "$F_VAULT" log --format=%s -1 | grep -q 'lore: rebuild status fixture' && ok "vault commit made" || bad "vault commit made"
+git -C "$F_VAULT" show --stat --format= HEAD | grep -q 'status.md' && ok "commit staged by path (status.md)" || bad "commit staged by path"
+
+# 6. worktree session ending with uncommitted changes: checkpoint line, no progress line, no commit
+echo dirty > "$F_WT/d1.txt"; echo dirty > "$F_WT/d2.txt"
+HEAD_BEFORE="$(git -C "$F_WT" rev-parse HEAD)"
+printf '{"cwd":"%s"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
+grep -q 'uncommitted work on fixture-wt: 2 files' "$STATUS" && ok "dirty worktree leaves a checkpoint line" || bad "dirty worktree leaves a checkpoint line"
+check "worktree HEAD unchanged" "$HEAD_BEFORE" "$(git -C "$F_WT" rev-parse HEAD)"
+[ -f "$F_VAULT/projects/fixture/.squad/progress.txt" ] && bad "no progress line" || ok "no progress line"
+printf '{"cwd":"%s"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
+check "dirty line is idempotent" 1 "$(grep -c 'uncommitted work on fixture-wt' "$STATUS")"
+
+# 7. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
+echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt
+( cd "$F_PROJECT" && bash "$SUT" --note "[2099-01-01 00:00] [claude-code] by-path probe" </dev/null >/dev/null 2>&1 )
+grep -q 'by-path probe' "$STATUS" && ok "note written" || bad "note written"
+git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "unrelated file still staged" || bad "unrelated file still staged"
+git -C "$F_VAULT" show --name-only --format= HEAD | grep -q unrelated.txt && bad "unrelated file not in commit" || ok "unrelated file not in commit"
+
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]
