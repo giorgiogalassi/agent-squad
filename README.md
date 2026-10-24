@@ -306,6 +306,25 @@ when N is above 0. Run it by hand with `~/.claude/hooks/squad-doctor.sh`;
 `SQUAD_DOCTOR_HOME` overrides the install dir. If agent-squad later ships
 as a native plugin, doctor becomes redundant and should be removed.
 
+### Project board workflows (connected mode)
+
+The Agent Squad GitHub Project (<https://github.com/users/giorgiogalassi/projects/2>)
+relies on three built-in project workflows so no issue needs a manual board
+step. They are project settings, not repo files, and only the project owner
+can enable them in the web UI:
+
+1. Open the project, then the `...` menu, then **Workflows**.
+2. **Auto-add to project**: enable, set the repository to
+   `giorgiogalassi/agent-squad`, filter `is:issue`.
+3. **Item closed**: enable, set status to `Done`.
+4. **Item reopened**: enable, set status to `Todo`.
+
+Check: create an issue by hand and confirm it appears on the board, then close
+it and confirm it moves to `Done`, with no manual step. If drift reappears
+later, a scheduled GitHub Action would need a fine-grained PAT with `project`
+scope stored as a secret (the Projects API is GraphQL-only and `GITHUB_TOKEN`
+cannot read user projects).
+
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
