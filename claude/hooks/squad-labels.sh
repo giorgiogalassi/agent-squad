@@ -66,7 +66,7 @@ if [ "$TRACKER_MODE" != connected ]; then
   case "$VERB" in
     claim) LINE="- [ ] Move $ISSUE to In Progress" ;;
     review) LINE="- [ ] Move $ISSUE to In Review" ;;
-    needs-review) LINE="- [ ] Mark $ISSUE as Needs Review (review rounds exhausted)" ;;
+    needs-review) LINE="- [ ] Mark $ISSUE as Needs Review (review loop ended without approval)" ;;
     escalate) LINE="- [ ] Move $ISSUE to Blocked, comment: $(printf '%s' "$REASON" | tr '\r\n' '  ')" ;;
   esac
   squad_record_local "$HANDOFF" "$LINE"; rc=$?

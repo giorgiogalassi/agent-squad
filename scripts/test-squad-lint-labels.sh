@@ -24,21 +24,21 @@ c7 "$TMP/a" | grep -q '\[FAIL\]' && bad "pristine copy passes check 7" || ok "pr
 
 # row without a test
 fixture "$TMP/b"
-printf '| L9 | Extra | x | `squad-labels.sh extra` | connected | - | - | - | - |\n' >> "$TMP/b/LABEL_STATE_MACHINE.md"
-c7 "$TMP/b" | grep -q 'row L9 has no test' && ok "row without test is reported" || bad "row without test is reported"
+printf '| L99 | Extra | x | `squad-labels.sh extra` | connected | - | - | - | - |\n' >> "$TMP/b/LABEL_STATE_MACHINE.md"
+c7 "$TMP/b" | grep -q 'row L99 has no test' && ok "row without test is reported" || bad "row without test is reported"
 bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$TMP/b" >/dev/null 2>&1 && bad "row without test exits non-zero" || ok "row without test exits non-zero"
 
 # test without a row
 fixture "$TMP/c"
-printf 'check "L9 extra: nothing" 0 0\n' >> "$TMP/c/scripts/test-squad-labels.sh"
-c7 "$TMP/c" | grep -q 'test id L9 has no' && ok "test without row is reported" || bad "test without row is reported"
+printf 'check "L99 extra: nothing" 0 0\n' >> "$TMP/c/scripts/test-squad-labels.sh"
+c7 "$TMP/c" | grep -q 'test id L99 has no' && ok "test without row is reported" || bad "test without row is reported"
 bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$TMP/c" >/dev/null 2>&1 && bad "test without row exits non-zero" || ok "test without row exits non-zero"
 
 # not-script-performed row needs no test
 fixture "$TMP/d"
 # Portable insert (no sed \n in replacement): put the row before the "| D |" row.
-awk '/^\| D \| / && !done { print "| L9 | Extra | x | not script-performed | connected | - | - | - | - |"; done=1 } { print }' "$TMP/d/LABEL_STATE_MACHINE.md" > "$TMP/d/doc.new" && mv "$TMP/d/doc.new" "$TMP/d/LABEL_STATE_MACHINE.md"
-grep -q '^| L9 | Extra | x | not script-performed' "$TMP/d/LABEL_STATE_MACHINE.md" && ok "fixture D contains the extra row" || bad "fixture D contains the extra row"
+awk '/^\| D \| / && !done { print "| L99 | Extra | x | not script-performed | connected | - | - | - | - |"; done=1 } { print }' "$TMP/d/LABEL_STATE_MACHINE.md" > "$TMP/d/doc.new" && mv "$TMP/d/doc.new" "$TMP/d/LABEL_STATE_MACHINE.md"
+grep -q '^| L99 | Extra | x | not script-performed' "$TMP/d/LABEL_STATE_MACHINE.md" && ok "fixture D contains the extra row" || bad "fixture D contains the extra row"
 c7 "$TMP/d" | grep -q '\[FAIL\]' && bad "human row needs no test" || ok "human row needs no test"
 
 echo "passed=$PASS failed=$FAIL"

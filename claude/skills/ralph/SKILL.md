@@ -93,11 +93,14 @@ error and stop:
   explicitly. Report: `Skipped N issue(s) labeled <blocked>.`
   **Review gate:** if `review_label` is configured (not `none`), also
   exclude issues still carrying it — the label means "awaiting human
-  review", and Ralph executes only reviewed work. Nothing in this phase
+  triage", or, when the issue also has `in_review` and an open PR, "the
+  review loop gave up" (row L9), and Ralph executes only reviewed work. Nothing in this phase
   removes `review_label` — see `LABEL_STATE_MACHINE.md` for the full
   label lifecycle and why removal happens later, not here. Report the
   exclusion:
-  `Skipped N issue(s) still labeled <review_label> — review them or remove the label to include.`
+  `Skipped N issue(s) still labeled <review_label> — awaiting triage (review them or remove the label to include).`
+  For an issue that also carries `in_review` with an open PR, say instead:
+  `Skipped #<n>: review loop gave up (has <in_review> and an open PR) — a human must look at the PR.`
   The remaining issues are the batch. Report the count:
   `Found N open sub-issue(s) of #<parent>; batch: M.`
 - **Specific issue ID(s) given** (`/ralph #171 #172`, space-separated):
@@ -402,8 +405,8 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    - `INCOMPLETE` (Reven names what it did not read): not a fix request
      and not yet a round. Re-run Reven once per review round with
      `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
-     `progress.txt` `[ID] review: incomplete`, state `needs-review`, then the
-     label call of step 5.
+     `progress.txt` `[ID] review: incomplete`, then the label call of step 5
+     (state `needs-review` is recorded after it returns).
    - `CHANGES REQUESTED`: counts as a round (`Rounds` + 1). Under the
      cap: step 4. At the cap: step 5.
    - Any other or missing `Verdict:` line: treat as `INCOMPLETE`.
@@ -421,8 +424,8 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    the branch with `git -C <wd> push origin <branch>` (Cody does not
    push when `open pr: no`). Detached: no push. Then back to step 1.
 5. **Out of rounds** without approval: `progress.txt`
-   `[ID] review: N rounds, last verdict <X>`, state `needs-review`, then
-   apply the label (also after a second `INCOMPLETE`), connected:
+   `[ID] review: N rounds, last verdict <X>`, then apply the label (also
+   after a second `INCOMPLETE`), connected:
    ```bash
    bash ~/.claude/hooks/squad-labels.sh needs-review --issue <n>
    ```
@@ -438,7 +441,9 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    | 10 | Note the stderr reason in the end-of-batch report and continue. |
    | 20 | Note the stderr reason in the end-of-batch report and continue. |
 
-   The PR keeps `in_review`; `review_label` now keeps the issue out of the
+   Only after the call returns, record the `ralph-run.md` state
+   `needs-review` (label first, so a crash cannot leave the state without
+   the label). The PR keeps `in_review`; `review_label` now keeps the issue out of the
    next `--parent` batch (Phase 1 review gate). Continue with the next issue.
 
 Update the `ralph-run.md` row after every review and fix round.

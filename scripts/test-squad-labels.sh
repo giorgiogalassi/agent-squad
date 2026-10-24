@@ -257,7 +257,7 @@ dcase() {  # dcase <expected-line> <verb args...>
 dcase "- [ ] Move PROJ-7 to In Progress" claim --issue PROJ-7
 dcase "- [ ] Move 7 to In Review" review --issue 7
 dcase "- [ ] Move 7 to Blocked, comment: stuck after 3" escalate --issue 7 --reason "stuck after 3"
-dcase "- [ ] Mark 7 as Needs Review (review rounds exhausted)" needs-review --issue 7
+dcase "- [ ] Mark 7 as Needs Review (review loop ended without approval)" needs-review --issue 7
 check "D- handoff has exactly four lines" 4 "$(wc -l < "$H" | tr -d ' ')"
 lab "$TMPROOT/shimbin" ensure
 check "D-ensure no-op" "0/unchanged/no" "$RC/$(key OUTCOME)/$(key CHANGED)"
