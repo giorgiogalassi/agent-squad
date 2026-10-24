@@ -28,7 +28,6 @@ branch: 7-add-greeting
 base: main
 branch action: create
 open pr: no
-handoff: ./handoff.md
 ```
 
 Issue #7 (repo fixture-owner/fixture-repo), "Add a greeting to the README":

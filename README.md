@@ -641,7 +641,7 @@ tests cannot cover, because they check what the agent *prose* does:
 | Case | Checks (zero-cost graders only) |
 |------|---------------------------------|
 | `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
-| `detached-claim` | no Bash call contains `gh`; a handoff line `- [ ] Move ... to In Progress` is written |
+| `detached-claim` | no Bash call contains `gh`; Cody does not call `squad-labels.sh claim` (Ralph records the detached claim in its handoff) |
 | `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
 | `ralph-no-review` | Ralph's skill text: with `--no-review` Phase 2e is skipped (reading check, no agents spawned) |
 | `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
@@ -673,10 +673,12 @@ same-repository pull request labeled `eval` (never on forks); it uploads
 to load). Do not commit the results directory the CLI creates under the eval dir
 (`claude/evals/.gitignore` ignores it).
 
-The `detached-claim` `handoff-line` grader is expected to fail today:
-`claude/agents/cody.md` skips the detached claim (Ralph records it in the
-handoff via `squad-labels.sh claim --handoff`, added in #217), so that case
-scores 0.5 by design until the grader is re-pointed at Ralph's handoff line.
+On macOS with only the stock `/usr/bin/git` shim, `detached-claim` and
+`worktree-continue` score 0.5 and the others are unaffected: the sandbox puts
+system directories ahead of the inherited `PATH`, so a Homebrew or Command Line
+Tools `git` cannot be put first, and `squad-branch.sh` then rejects every branch
+name (its `git check-ref-format` fails). Run those two cases on the Linux CI
+runner or a machine whose `/usr/bin/git` is a real binary.
 
 Findings from building it (Claude Code 2.1.296):
 
@@ -696,9 +698,9 @@ Findings from building it (Claude Code 2.1.296):
   and `squad-branch.sh` locally; the Linux CI runner is expected to be unaffected (not yet exercised via
   workflow_dispatch). Expect
   lower scores on macOS unless a Homebrew `git` comes first on `PATH`.
-- Cody's prose skips the claim in detached mode, so the `detached-claim`
-  handoff-line grader mostly reports whether Ralph's handoff contract is
-  followed; treat it as a signal, not a failure.
+- Cody's prose skips the claim in detached mode, so `detached-claim` asserts
+  that no `squad-labels.sh claim` call happens.
+- Regex graders use the `flags` field (`flags: "is"`), not inline `(?is)`.
 
 ## Further reading
 
