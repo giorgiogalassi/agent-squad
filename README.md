@@ -260,7 +260,8 @@ agent-squad/
 
 Agent Squad is a Claude Code plugin. Nothing is copied into `~/.claude/` and
 no `~/.claude/settings.json` wiring is needed: the plugin ships its skills,
-agents and hooks, and `claude plugin update` picks up a merged change.
+agents and hooks. Installed copies move when the plugin version moves (see
+[Plugin manifest](#plugin-manifest)).
 
 ```bash
 claude plugin marketplace add giorgiogalassi/agent-squad   # or a local path to this checkout
@@ -354,7 +355,8 @@ worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and 
 Depends only on `git` and POSIX shell utilities — no `jq`.
 
 It ships in the plugin's `hooks/` directory next to `path-resolve.sh`; a
-merged change reaches users through `claude plugin update`.
+a merged change reaches users once the plugin version is bumped
+(see [Plugin manifest](#plugin-manifest)) and they run `claude plugin update`.
 
 
 `chisel-config-validate.py` is an optional CI-style gate that checks
@@ -551,9 +553,24 @@ work context into a personal remote.
 `.claude-plugin/marketplace.json` lists it (`source: ./claude`) so
 `claude plugin marketplace add` works on a clone or on the GitHub repo. CI
 runs `claude plugin validate claude/ --strict` and
-`claude plugin validate . --strict` (`squad-lint.yml`). Bump `version` in
-`plugin.json` when a release should reach installed users: an installed
-plugin updates on version change.
+`claude plugin validate . --strict` (`squad-lint.yml`).
+
+An installed plugin updates only when `version` changes. Nobody bumps it by
+hand: `plugin-version.yml` runs after a PR merges into main and, if the PR
+changed files under `claude/`, bumps `plugin.json` (semver) from the labels on
+the PR and on the issues it closes, then commits
+`chore: bump plugin to vX.Y.Z (#<pr>)` to main. PRs never touch the version, so
+parallel PRs cannot conflict on it.
+
+| Label (PR or closing issue) | Bump |
+|-----------------------------|------|
+| `breaking-change` | major (wins over everything) |
+| `enhancement` | minor |
+| `bug` | patch |
+| only `documentation`, or none of the above | none (a notice is logged) |
+
+Users then run `claude plugin update` to pick the new version up. The rule
+lives in `scripts/plugin-version-bump.sh`.
 
 ## Evals (tier 2)
 

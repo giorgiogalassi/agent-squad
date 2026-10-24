@@ -1395,6 +1395,10 @@ tool-neutral and unchanged (scope boundary of #292); only packaging moves.
 - Skills and agents call scripts as `${CLAUDE_PLUGIN_ROOT}/hooks/<script>`
   instead of `~/.claude/hooks/<script>`. The path-resolution step is still
   a script call; exporting it once is the follow-up (#294).
+- Version bumps are automatic and post-merge: `plugin-version.yml` applies a
+  label-driven semver rule (`breaking-change` major, `enhancement` minor, `bug`
+  patch, else none) via `scripts/plugin-version-bump.sh`, so PRs never edit
+  `plugin.json` and parallel PRs cannot conflict on it.
 - Removed: the README `cp` block, `.agent-squad-source`, the settings.json
   snippets, `squad-doctor.sh`, `test-squad-doctor.sh`, the doctor signal in
   `lore-orient.sh`. The eval scaffold no longer copies hooks into `$HOME`.

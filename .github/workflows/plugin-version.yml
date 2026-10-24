@@ -1,0 +1,90 @@
+name: Plugin version
+
+# Semver bump of the plugin after a merge (#293). Owner rule: a merged PR that
+# changes files under claude/ bumps claude/.claude-plugin/plugin.json from the
+# labels on the PR and on its closing issues:
+#   breaking-change -> major, enhancement -> minor, bug -> patch,
+#   documentation only or no qualifying label -> no bump (a notice is logged).
+# The computation lives in scripts/plugin-version-bump.sh (tested by
+# scripts/test-plugin-version-bump.sh).
+#
+# Post-merge on purpose: PRs never touch plugin.json, so parallel PRs cannot
+# conflict on it. The concurrency group serialises simultaneous merges, and
+# each run checks out the latest main, so it re-reads the current version.
+# Loop guard: the bump commit is pushed with GITHUB_TOKEN (which does not
+# trigger workflows) and runs started by github-actions[bot] are skipped.
+# main is not branch-protected, so the direct push is allowed.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: plugin-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump plugin version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+
+          if ! gh pr diff "$PR" --name-only | grep -q '^claude/'; then
+            echo "::notice::PR #$PR does not touch claude/: no plugin bump"
+            exit 0
+          fi
+
+          labels="$PR_LABELS"
+          for issue in $(gh pr view "$PR" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'); do
+            issue_labels="$(gh issue view "$issue" --json labels --jq '[.labels[].name] | join(",")')"
+            labels="$labels,$issue_labels"
+          done
+
+          manifest=claude/.claude-plugin/plugin.json
+          current="$(jq -r .version "$manifest")"
+          rc=0
+          out="$(bash scripts/plugin-version-bump.sh --version "$current" --labels "$labels")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::plugin-version-bump.sh exited $rc for version '$current'"
+            exit 1
+          fi
+          new="$(printf '%s\n' "$out" | sed -n 's/^NEW_VERSION=//p')"
+          changed="$(printf '%s\n' "$out" | sed -n 's/^CHANGED=//p')"
+
+          if [ "$changed" != yes ]; then
+            echo "::notice::PR #$PR has no bump-worthy label (labels: ${labels:-none}): plugin stays at $current"
+            exit 0
+          fi
+
+          # Targeted edit keeps the diff to the one version line.
+          sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" "$manifest"
+          files="$manifest"
+          if jq -e '.. | objects | select(has("version"))' .claude-plugin/marketplace.json >/dev/null 2>&1; then
+            sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$new\2/" .claude-plugin/marketplace.json
+            files="$files .claude-plugin/marketplace.json"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add $files
+          git commit -m "chore: bump plugin to v$new (#$PR)"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -40,6 +40,8 @@ on:
       - "claude/hooks/squad-stats.py"
       - "scripts/test-squad-stats.sh"
       - "scripts/fixtures/**"
+      - "scripts/plugin-version-bump.sh"
+      - "scripts/test-plugin-version-bump.sh"
       - ".github/workflows/hook-tests.yml"
 
 permissions:
@@ -97,3 +99,7 @@ jobs:
       - name: Run scripts/test-squad-stats.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-stats.sh; else bash scripts/test-squad-stats.sh; fi
+
+      - name: Run scripts/test-plugin-version-bump.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-plugin-version-bump.sh; else bash scripts/test-plugin-version-bump.sh; fi
