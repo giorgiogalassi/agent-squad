@@ -27,3 +27,6 @@ second-brain/
 
 # ── macOS ────────────────────────────────────────────────────────────────────
 .DS_Store
+
+# Agent Squad worktrees (claude/hooks/worktree.sh)
+.claude/worktrees/
