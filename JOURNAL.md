@@ -1031,6 +1031,8 @@ contract could be settled once on two small cases.
   detached-claim `handoff-line` grader is expected to fail until it is
   re-pointed at Ralph's handoff line.
 
+Fixes: #233 made the `squad_emit` key check locale-safe on bash 3.2.
+
 Known gap, documented rather than hidden: Cody's prose still skips the
 claim in detached mode, although `squad-labels.sh claim --handoff`
 exists; Ralph produces the detached In-Progress line at dispatch (Phase
@@ -1171,6 +1173,9 @@ from three sources:
 - *At orientation.* `lore-orient.sh` adds one Signals line when
   `summary` reports recurring incidents. Healing is pull, not push: the
   user decides whether a recurring incident becomes an issue.
+
+Fixes: #249 made the orient test seed its own incident store despite
+`SQUAD_INCIDENTS=off`.
 
 The relayed-yes failure is out of v1 capture; it was fixed directly
 instead (#236): the `/lore` entrypoint shows Tier 2 proposals to the
@@ -1339,18 +1344,21 @@ SessionEnd      lore-checkpoint.sh rebuilds a stale status.md and records denial
 
 ### File Structure
 
+With `context: repo` in `lore-config.json`, `architecture.md`, `scout-cache.md`, `forge/` and `prd/` live in `<PROJECT_ROOT>/.squad` instead; everything else stays in the vault.
+
 | File | Purpose |
 |------|---------|
 | `<vault>/projects/<project>/.squad/forge/output.yaml` | Forge output. Archived to `forge/archive/` once Chisel consumes it. |
 | `<vault>/projects/<project>/.squad/architecture.md` | Stack, patterns, conventions, data flow, owners. Written by Seed, `## Owners` extended by Chisel. |
 | `<vault>/projects/<project>/.squad/scout-cache.md` | Project snapshot. Replaced on each Seed run. |
-| `<vault>/projects/<project>/.squad/decisions.md` | Project decisions. `[rule]` entries always loaded (cap 15); untagged entries by last-20 window. |
 | `<vault>/projects/<project>/.squad/prd/current.md` | Active PRD, archived by Chisel after consumption. |
 | `<vault>/projects/<project>/.squad/chisel-config.json` | Tracker mode and labels. `connected` only when set explicitly. |
 | `<vault>/projects/<project>/.squad/issues/` | Detached-mode batch files, handoff checklists, CSV. |
 | `<vault>/projects/<project>/.squad/progress.txt` | Ralph and Sidecar log, one line per issue or session. |
 | `<vault>/projects/<project>/.squad/ralph-run.md` | Ralph run state for resume. |
 | `<vault>/projects/<project>/status.md` | Resumption handoff, reconstructed from evidence. |
+| `<vault>/projects/<project>/decisions.md` | Project decisions. `[rule]` entries always loaded (cap 15); untagged entries by last-20 window. |
+| `<vault>/projects/<project>/session.log` | Per-project session log, tailed by `lore-orient.sh`. |
 | `<vault>/preferences/development.md` | Global rules only, one line each. |
 | `<vault>/squad-incidents.tsv` | Global incident store. |
 | `<vault>/squad-stats/` | Normalized usage and verdict rows, reports, `questions.md`. |
