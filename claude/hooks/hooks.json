@@ -17,7 +17,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "cody",
+        "matcher": "cody|agent-squad:cody",
         "hooks": [
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/cody-checkpoint.sh\"", "async": true }
         ]

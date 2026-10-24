@@ -90,6 +90,34 @@ echo y >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT
 run_hook reven; check "other agent: status unchanged" "$BEFORE" "$(cat "$STATUS")"
 run_hook "agent-squad:cody"; grep -q 'no PR yet' "$STATUS" && ok "plugin-namespaced agent type matches" || bad "plugin-namespaced agent type matches"
 
+# 4b. fresh branch cut from a stacked base whose tip carries an issue ID, no Cody commit -> nothing recorded
+setup connected
+git -C "$F_PROJECT" checkout -q -b stack
+echo s >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#293] stack tip"
+git -C "$F_PROJECT" checkout -q -b 296-fresh
+mkdir -p "$(dirname "$ENVF")"; echo STATE=old > "$ENVF"
+BEFORE="$(cat "$STATUS")"
+FAKE_PR="9 stack" run_hook
+check "stacked base, no Cody commit: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+[ -f "$PROGRESS" ] && bad "stacked base: no progress line" || ok "stacked base: no progress line"
+[ -f "$ENVF" ] && bad "stacked base: stale summary removed" || ok "stacked base: stale summary removed"
+
+# 4c. progress dedupe matches on PR number, whatever precedes the ID
+setup connected
+commit_on 296-d "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"; echo "[#296] resolved. PR: #7 (base: main). Notes: older" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "progress dedupe by PR number" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+
+# 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
+setup connected
+commit_on 296-p "[#296] add thing"
+echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt
+FAKE_PR="7 main" run_hook
+git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "vault: unrelated file still staged" || bad "vault: unrelated file still staged"
+git -C "$F_VAULT" log --name-only --format= | grep -q unrelated.txt && bad "vault: unrelated file not committed" || ok "vault: unrelated file not committed"
+git -C "$F_VAULT" log --format=%s | grep -q 'lore: progress' && ok "vault: progress commit made" || bad "vault: progress commit made"
+
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?
 check "garbage input exits 0" 0 "$RC"

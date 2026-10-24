@@ -104,5 +104,12 @@ check "worktree HEAD unchanged" "$HEAD_BEFORE" "$(git -C "$F_WT" rev-parse HEAD)
 printf '{"cwd":"%s"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
 check "dirty line is idempotent" 1 "$(grep -c 'uncommitted work on fixture-wt' "$STATUS")"
 
+# 7. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
+echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt
+( cd "$F_PROJECT" && bash "$SUT" --note "[2099-01-01 00:00] [claude-code] by-path probe" </dev/null >/dev/null 2>&1 )
+grep -q 'by-path probe' "$STATUS" && ok "note written" || bad "note written"
+git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "unrelated file still staged" || bad "unrelated file still staged"
+git -C "$F_VAULT" show --name-only --format= HEAD | grep -q unrelated.txt && bad "unrelated file not in commit" || ok "unrelated file not in commit"
+
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -4,7 +4,7 @@
 # maxTurns), so they no longer depend on Cody's prose remembering to write them.
 #
 # Registered by hooks/hooks.json as an async SubagentStop hook with matcher
-# "cody". It only records: it always exits 0 and never blocks the subagent
+# "cody|agent-squad:cody". It only records: it always exits 0 and never blocks the subagent
 # from stopping. Hook input (JSON on stdin) is read for `cwd` and `agent_type`.
 #
 # Evidence, in the working directory (same checks as Ralph 2b):
@@ -44,7 +44,8 @@ done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
 PROJ="$VAULT/projects/$DISPLAY"
 LOG="$PROJ/.cody-checkpoint.log"
-skip() { printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
+ENVF="$PROJ/.squad/cody-checkpoint.env"
+skip() { rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
 [ -d "$PROJ" ] || exit 0
 
 BRANCH="$(git branch --show-current 2>/dev/null)"
@@ -54,7 +55,6 @@ SUBJECT="$(git log -1 --format=%s 2>/dev/null)"
 case "$BRANCH" in main|master|develop|release/*|hotfix/*) skip "shared branch $BRANCH, nothing to record" ;; esac
 ISSUE="$(printf '%s' "$SUBJECT" | sed -n 's/^\[\([^]]*\)\].*/\1/p')"
 [ -n "$ISSUE" ] || skip "HEAD $SHA carries no issue ID, nothing to record"
-# Shared-branch guard also covers a branch whose HEAD is not ahead of the default branch.
 DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 TREE=clean; [ "${DIRTY:-0}" -gt 0 ] && TREE=dirty
 
@@ -69,6 +69,16 @@ else
   STATE=detached
 fi
 
+# HEAD-moved check: Cody committed nothing when HEAD is reachable from the PR
+# base (or, without a PR, from the default branch). Covers a fresh branch cut
+# from a stacked base whose tip carries an issue ID.
+for _ref in ${BASE:+"origin/$BASE" "$BASE"} origin/HEAD origin/main origin/master main master; do
+  if git rev-parse -q --verify "$_ref^{commit}" >/dev/null 2>&1 \
+     && git merge-base --is-ancestor HEAD "$_ref" 2>/dev/null; then
+    skip "HEAD $SHA is not ahead of $_ref, nothing to record"
+  fi
+done
+
 NOW="$(date "+%Y-%m-%d %H:%M")"
 case "$STATE" in
   pr) LINE="[$NOW] [claude-code] PR #$PR opened. Branch: $BRANCH @ $SHA. $SUBJECT" ;;
@@ -82,17 +92,17 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
 fi
 
 PROGRESS="$PROJ/.squad/progress.txt"
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! grep -qF "[$ISSUE] resolved. PR: #$PR " "$PROGRESS" 2>/dev/null; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! grep -qE "\[$ISSUE\] resolved\. PR: #$PR( |$)" "$PROGRESS" 2>/dev/null; then
   printf '[%s] resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$VAULT" add "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1
-    git -C "$VAULT" commit -q -m "lore: progress $DISPLAY" >/dev/null 2>&1 || true
+    git -C "$VAULT" commit -q -m "lore: progress $DISPLAY" -- "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1 || true
   fi
 fi
 
 if [ -d "$PROJ/.squad" ]; then
   printf 'STATE=%s\nISSUE=%s\nBRANCH=%s\nSHA=%s\nTREE=%s\nPR=%s\nBASE=%s\nAT=%s\n' \
-    "$STATE" "$ISSUE" "$BRANCH" "$SHA" "$TREE" "$PR" "$BASE" "$NOW" > "$PROJ/.squad/cody-checkpoint.env"
+    "$STATE" "$ISSUE" "$BRANCH" "$SHA" "$TREE" "$PR" "$BASE" "$NOW" > "$ENVF"
 fi
 rm -f "$LOG"
 exit 0

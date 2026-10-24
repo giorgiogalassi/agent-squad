@@ -143,6 +143,8 @@ if [ "$MODE" = hook ] && [ -n "$TRANSCRIPT" ] && command -v jq >/dev/null 2>&1; 
 fi
 
 [ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
+# Past the preconditions: drop a stale log; any later bail rewrites it.
+[ -n "$LOG" ] && rm -f "$LOG"
 
 TOP="$(git rev-parse --show-toplevel 2>/dev/null)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -152,7 +154,7 @@ NOW="$(date "+%Y-%m-%d %H:%M")"
 commit_vault() {
   if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$VAULT" add "projects/$DISPLAY/status.md" >/dev/null 2>&1
-    git -C "$VAULT" commit -q -m "lore: $1 $DISPLAY" >/dev/null 2>&1 || true
+    git -C "$VAULT" commit -q -m "lore: $1 $DISPLAY" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
   fi
 }
 
