@@ -125,6 +125,16 @@ against it, one by one, and record the outcome per rule in the `## Rules`
 section of the report. A rule you could not check (file not opened, out of
 budget) is `not checked (why)`, never silently dropped.
 
+- `not applicable (reason)` needs a one-line reason grounded in the diff
+  ("no effect, action or error path changed"). A bare `not applicable` is
+  not allowed.
+- If the diff touches code the rule governs (files, kinds of code, or
+  actions it names) and you did not read that code, the outcome is
+  `not checked (why)`, never `not applicable`: a rule judged on unread code
+  reads as cleared and is not.
+- When a rule's surface intersects the diff, reading that surface is part of
+  the rule pass and ranks with the triage's top files.
+
 ## Review criteria
 
 1. **Correctness:** acceptance criteria met, edge cases handled, no bugs.
@@ -160,7 +170,7 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
 
 ## Rules
 [omit only when no `[rule]` entries were loaded]
-- <rule title> -> fired (file:line) | not applicable | not checked (why)
+- <rule title> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
 
 ## Observations
 [optional, non-blocking notes and questions]
