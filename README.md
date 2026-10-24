@@ -593,7 +593,7 @@ changed files under `claude/`, computes the semver bump from the labels on
 the PR and on the issues it closes. `main` has a repository ruleset (no
 deletion, no force push, changes only through a pull request, no bypass
 actors), so the workflow cannot push to it: it opens a one-line PR from
-`chore/plugin-vX.Y.Z` (labelled `documentation`, so it never bumps again) and
+`chore/plugin-vX.Y.Z-prN` (labelled `documentation`, so it never bumps again) and
 merges it itself. That needs the repo setting "Allow GitHub Actions to create
 and approve pull requests". PRs never touch the version, and a
 `plugin-version-guard.yml` check reports any PR that edits `version` in
@@ -604,15 +604,20 @@ block the bump). The ruleset's pull_request rule has
 `require_extra_approval_for_unattributed_changes`: if GitHub asks for an extra
 approval on the bot's commit, the self-merge fails and the owner must approve
 and merge the bump PR (or turn that ruleset option off). The bump is
-idempotent: a re-run reuses an existing `chore/plugin-vX.Y.Z` branch or open
-PR, and `gh pr merge` is retried a few times. If the merge still fails, the
-job fails with an error and leaves the PR open; recover by merging it (or
-closing it and running `git push origin --delete chore/plugin-vX.Y.Z`) and
-re-running the workflow. Limits: PRs and merges made with `GITHUB_TOKEN` start no
-workflows, so the bump PR runs no CI and cannot loop; and the concurrency
-group keeps one running and one pending run, so when three PRs merge at
-once the middle run's bump can be dropped (run the workflow's rule by hand
-then).
+idempotent: the branch is keyed on version and source PR, and a re-run
+reuses an existing `chore/plugin-vX.Y.Z-prN` branch or open PR for the same
+source PR; a leftover branch already on main is deleted and recreated.
+`gh pr merge` is retried a few times and a non-zero exit with the PR in state
+`MERGED` counts as success. If the merge still fails, the job fails with an
+error and leaves the PR open. Recovery: merging that bump PR completes it,
+and you must not re-run the workflow; re-run only after closing the bump PR
+and deleting its branch (`git push origin --delete chore/plugin-vX.Y.Z-prN`).
+Limits: bumps are serialized, so an open bump PR for another source PR blocks
+new bumps (the job fails naming it) until it is merged or closed; PRs and
+merges made with `GITHUB_TOKEN` start no workflows, so the bump PR runs no CI
+and cannot loop; and the concurrency group keeps one running and one pending
+run, so when three PRs merge at once the middle run's bump can be dropped
+(run the workflow's rule by hand then).
 
 | Label (PR or closing issue) | Bump |
 |-----------------------------|------|

@@ -16,7 +16,7 @@ name: Plugin version
 # main is under a repository ruleset (no deletion, no non-fast-forward, changes
 # only through a pull request, 0 required approvals, no bypass actors), so a
 # direct push is rejected (GH013). The job therefore opens a one-line PR from
-# chore/plugin-v<X.Y.Z> against main, labelled `documentation` (which never
+# chore/plugin-v<X.Y.Z>-pr<N> against main, labelled `documentation` (which never
 # bumps), and merges it itself. Needs the repo setting "Allow GitHub Actions to
 # create and approve pull requests".
 #
@@ -26,14 +26,20 @@ name: Plugin version
 # approve and merge the bump PR (or turn that ruleset option off). The job then
 # fails with manual recovery steps and leaves the PR open.
 #
-# Idempotent: if chore/plugin-v<X.Y.Z> or an open PR for it already exists
-# (re-run, or a previous run that could not merge), it is reused instead of
-# creating a second commit or PR.
+# Idempotent: the branch is chore/plugin-v<X.Y.Z>-pr<N> (N = the source PR).
+# If that branch or an open PR for it already exists (re-run, or a previous run
+# that could not merge), it is reused instead of creating a second commit or
+# PR. A leftover branch whose commit is already on main is deleted and
+# recreated. An open bump PR for a DIFFERENT source PR is never reused: the job
+# fails naming it. Recovery: merging the bump PR completes it (do NOT re-run);
+# re-run only after closing the bump PR and deleting its branch.
 #
 # Loop guard: PRs and merges made with GITHUB_TOKEN start no workflows, so the
 # bump PR runs no CI and its merge does not re-trigger this one. The job also
 # skips any PR whose head ref starts with chore/plugin-v.
 #
+# Limitation: bumps are serialized. A pending (unmerged) bump PR for another
+# source PR blocks new bumps until it is merged or closed.
 # Limitation: the concurrency group keeps one running and one pending run. If
 # three PRs merge in quick succession, the middle pending run is replaced by
 # the third and its bump is dropped; re-run it by hand.
@@ -104,12 +110,33 @@ jobs:
             exit 0
           fi
 
-          branch="chore/plugin-v$new"
+          branch="chore/plugin-v$new-pr$PR"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Reuse an existing bump branch or open PR (idempotent re-run).
+          # Bumps are serialized: any open bump PR for a different source PR
+          # blocks this one (merging both would collapse two bumps into one
+          # version line). Fail loudly instead of reusing it.
+          open_bumps="$(gh pr list --state open --json number,headRefName)"
+          other="$(printf '%s' "$open_bumps" | jq -r --arg b "$branch" \
+            '[.[] | select((.headRefName | startswith("chore/plugin-v")) and .headRefName != $b)] | .[0] // empty | "#\(.number) (\(.headRefName))"')"
+          if [ -n "$other" ]; then
+            echo "::error::open bump PR $other belongs to another source PR and blocks the bump for #$PR. Merge it, or close it and delete its branch (git push origin --delete <branch>), then re-run this workflow"
+            exit 1
+          fi
+
+          # Leftover branch whose commit is already on main (nothing ahead):
+          # delete it and start over instead of failing in gh pr create.
           open_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$open_pr" ] && git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            ahead="$(gh api "repos/$REPO/compare/main...$branch" --jq .ahead_by)"
+            if [ "$ahead" = 0 ]; then
+              echo "::notice::branch $branch is already on main: deleting it and recreating"
+              git push origin --delete "$branch"
+            fi
+          fi
+
+          # Reuse an existing bump branch or open PR for this source PR.
           if [ -z "$open_pr" ]; then
             if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
               echo "::notice::branch $branch already exists: reusing it"
@@ -129,6 +156,7 @@ jobs:
             gh pr create --base main --head "$branch" --label documentation \
               --title "chore: bump plugin to v$new" \
               --body "Automatic $current -> $new bump after #$PR (plugin-version.yml)."
+            open_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
           else
             echo "::notice::bump PR #$open_pr for $branch already open: reusing it"
           fi
@@ -136,11 +164,14 @@ jobs:
           # A fresh PR may not be mergeable for a moment: retry briefly.
           merged=0
           for attempt in 1 2 3 4 5; do
-            if gh pr merge "$branch" --merge --delete-branch; then merged=1; break; fi
+            if gh pr merge "$open_pr" --merge --delete-branch; then merged=1; break; fi
+            # gh can exit non-zero after the merge went through (e.g. branch
+            # deletion failed): the PR state is the truth.
+            if [ "$(gh pr view "$open_pr" --json state --jq .state)" = MERGED ]; then merged=1; break; fi
             echo "merge attempt $attempt failed; retrying in 10s"
             sleep 10
           done
           if [ "$merged" != 1 ]; then
-            echo "::error::could not merge the bump PR for $branch; it is left open. Recover by hand: approve and merge the PR (GitHub may require an extra approval for the bot's commit), or close it and delete the branch (git push origin --delete $branch), then re-run this workflow"
+            echo "::error::could not merge the bump PR #$open_pr ($branch); it is left open. Recovery: merging that PR by hand completes the recovery (GitHub may require an extra approval for the bot's commit) - do NOT re-run this workflow. Re-run only after closing the bump PR and deleting its branch (git push origin --delete $branch)"
             exit 1
           fi
