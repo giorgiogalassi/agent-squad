@@ -10,8 +10,8 @@
 # Evidence, in the working directory (same checks as Ralph 2b):
 #   branch, HEAD sha + subject, `status --porcelain`, and in connected mode an
 #   open PR for the branch (`gh pr list --head`).
-# The issue ID is taken from HEAD's subject ([#N] or [KEY-N]); no ID, or a
-# shared integration branch, means Cody committed nothing: no write.
+# The issue ID is taken from HEAD's subject ([#N] or [KEY-N]); no ID, a shared
+# integration branch, or HEAD already on another branch means Cody committed nothing: no write.
 #
 # STATE: pr (open PR) | committed (connected, commit but no PR) |
 #        detached (detached mode, commit ready for manual push).
@@ -58,6 +58,16 @@ ISSUE="$(printf '%s' "$SUBJECT" | sed -n 's/^\[\([^]]*\)\].*/\1/p')"
 DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 TREE=clean; [ "${DIRTY:-0}" -gt 0 ] && TREE=dirty
 
+# HEAD-moved check (no PR needed, so it runs before the `gh` call): Cody committed
+# nothing when HEAD is already reachable from another branch (the stacked base,
+# main, ...). This branch itself is excluded, with its own remote-tracking copies
+# on any remote (refs/remotes/*/<branch>) and fetched pull refs (refs/remotes/*/pr/*).
+# No branch-name vs subject-ID check: Ralph's detached chain branches carry several
+# issues' commits under the lead issue's name.
+_others="$(git for-each-ref --format='%(refname)' --contains HEAD refs/heads refs/remotes 2>/dev/null \
+  | grep -v -e "^refs/heads/$BRANCH\$" -e "^refs/remotes/[^/]*/$BRANCH\$" -e '^refs/remotes/[^/]*/pr/' | head -n 1)"
+[ -z "$_others" ] || skip "HEAD $SHA is already on ${_others#refs/}, nothing to record"
+
 STATE=committed; PR=""; BASE=""
 if [ "${TMODE:-detached}" = connected ]; then
   if command -v gh >/dev/null 2>&1; then
@@ -67,21 +77,6 @@ if [ "${TMODE:-detached}" = connected ]; then
   [ -n "$PR" ] && STATE=pr
 else
   STATE=detached
-fi
-
-# HEAD-moved check: Cody committed nothing when HEAD already belongs to
-# another branch or does not match the branch's own issue. Neither guard needs a
-# PR (a branch with no commit cannot have one).
-# (a) HEAD is reachable from any other local or remote branch (the stacked base,
-#     main, ...), excluding this branch and its own origin/<branch>.
-_others="$(git for-each-ref --format='%(refname)' --contains HEAD refs/heads refs/remotes 2>/dev/null \
-  | grep -vxF -e "refs/heads/$BRANCH" -e "refs/remotes/origin/$BRANCH" | head -n 1)"
-[ -z "$_others" ] || skip "HEAD $SHA is already on ${_others#refs/}, nothing to record"
-# (b) the branch name starts with an issue ID (296-... or KEY-123-...) that differs
-#     from the one in HEAD's subject (a stack tip commit such as [#293]).
-_bid="$(printf '%s' "$BRANCH" | sed -n -e 's/^\([A-Z][A-Z0-9]*-[0-9][0-9]*\)\(-.*\)\{0,1\}$/\1/p' -e 's/^\([0-9][0-9]*\)\(-.*\)\{0,1\}$/\1/p' | head -n 1)"
-if [ -n "$_bid" ] && [ "${ISSUE#\#}" != "$_bid" ]; then
-  skip "HEAD $SHA is for [$ISSUE], branch $BRANCH is for $_bid, nothing to record"
 fi
 
 NOW="$(date "+%Y-%m-%d %H:%M")"

@@ -124,6 +124,25 @@ run_hook
 grep -q 'Branch 296-real committed @ .*\[#296\] real work' "$STATUS" && ok "stacked branch, real commit: recorded" || bad "stacked branch, real commit: recorded"
 check "stacked branch, real commit: summary ISSUE" "#296" "$(envval ISSUE)"
 
+# 4b4. detached chain: one lead-named branch carries several issues' commits; the later one is recorded
+for _m in detached connected; do
+  setup "$_m"
+  commit_on 12-reservations "[#12] reservations table"
+  echo n >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#13] reservation form"
+  run_hook
+  grep -q 'Branch 12-reservations .*@ .*\[#13\] reservation form' "$STATUS" && ok "$_m chain: second issue commit recorded" || bad "$_m chain: second issue commit recorded"
+  check "$_m chain: summary ISSUE" "#13" "$(envval ISSUE)"
+done
+
+# 4b5. HEAD also on its own branch at another remote, or on a fetched pull ref -> still recorded
+for _ref in refs/remotes/upstream/296-rem refs/remotes/origin/pr/5 refs/remotes/upstream/pr/9; do
+  setup connected
+  commit_on 296-rem "[#296] real work"
+  git -C "$F_PROJECT" update-ref "$_ref" HEAD
+  run_hook
+  grep -q 'Branch 296-rem committed @ .*\[#296\] real work' "$STATUS" && ok "$_ref: recorded" || bad "$_ref: recorded"
+done
+
 # 4c. progress dedupe matches on PR number, whatever follows the ID (dated form)
 setup connected
 commit_on 296-d "[#296] add thing"
