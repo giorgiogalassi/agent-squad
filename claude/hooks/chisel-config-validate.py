@@ -55,6 +55,7 @@ from pathlib import Path
 
 MODE_VALUES = {"detached", "connected"}
 PROJECT_KEYS = {"owner", "number"}
+RALPH_KEYS = {"review_rounds"}
 
 SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
 
@@ -317,6 +318,45 @@ def validate_config(data, schema):
                                 "path": ("chisel", "state_labels", inner_key),
                             }
                         )
+        if key == "ralph":
+            ralph = chisel[key]
+            if not isinstance(ralph, dict):
+                violations.append(
+                    {
+                        "message": (
+                            f"chisel.ralph: expected an object, got "
+                            f"{type(ralph).__name__}"
+                        ),
+                        "path": None,
+                    }
+                )
+            else:
+                for inner_key in ralph.keys():
+                    if inner_key not in RALPH_KEYS:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.ralph.{inner_key}: unknown "
+                                    f"key under mode={mode}"
+                                ),
+                                "path": ("chisel", "ralph", inner_key),
+                            }
+                        )
+                rounds = ralph.get("review_rounds")
+                if "review_rounds" in ralph and (
+                    isinstance(rounds, bool)
+                    or not isinstance(rounds, int)
+                    or rounds < 0
+                ):
+                    violations.append(
+                        {
+                            "message": (
+                                "chisel.ralph.review_rounds: expected an "
+                                "integer >= 0"
+                            ),
+                            "path": None,
+                        }
+                    )
         if key == "project":
             project = chisel[key]
             if not isinstance(project, dict):

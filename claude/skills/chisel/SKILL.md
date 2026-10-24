@@ -60,7 +60,7 @@ Ask one at a time:
 your own; defaults to SQ)" and write:
 
 ```json
-{ "chisel": { "mode": "detached", "issue_prefix": "SQ" } }
+{ "chisel": { "mode": "detached", "issue_prefix": "SQ", "ralph": { "review_rounds": 2 } } }
 ```
 
 **Connected** → ask, one at a time:
@@ -85,6 +85,9 @@ and write:
     "project": {
       "owner": "octocat",
       "number": 2
+    },
+    "ralph": {
+      "review_rounds": 2
     }
   }
 }
@@ -98,6 +101,10 @@ already exists. GitHub is the only connected tracker — the config
 carries no `tracker` field; if found, report `tracker` by name as
 disavowed, not as a generic unknown key. A config without `mode` is
 connected (backward compatibility).
+
+`ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
+review-and-fix rounds per issue; hand-editable, never prompted for, and
+2 when the key is absent.
 
 On every connected run:
 

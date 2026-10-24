@@ -165,6 +165,14 @@ lab "$TMPROOT/$C" claim; check "L2 claim without --issue is usage error" 2 "$RC"
 fixture connected --labels-custom
 GH_STUB_LABELS="" lab "$TMPROOT/$C" claim --issue 7
 check "L2 custom: argv uses wip" "gh issue edit 7 $R --add-assignee @me --add-label wip" "$(writes)"
+# A chisel.ralph block (review_rounds) in the config does not disturb label parsing.
+fixture connected
+CFG="$F_VAULT/projects/fixture/.squad/chisel-config.json"
+sed 's/"state_labels"/"ralph": {"review_rounds": 2}, "state_labels"/' "$CFG" > "$TMPROOT/cfg-ralph" \
+  && cp "$TMPROOT/cfg-ralph" "$CFG"
+check "L2 config with chisel.ralph block: precondition" "1" "$(grep -c review_rounds "$CFG" | tr -d ' ')"
+GH_STUB_LABELS="needs-review" lab "$TMPROOT/$C" claim --issue 7
+check "L2 config with chisel.ralph block: claim argv unchanged" "gh issue edit 7 $R --add-assignee @me --add-label in-progress" "$(writes)"
 
 # ---- L3 review
 fixture connected
