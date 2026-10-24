@@ -36,6 +36,9 @@ on:
       - "scripts/test-lore-incidents.sh"
       - "scripts/test-lore-checkpoint.sh"
       - "claude/hooks/lore-checkpoint.sh"
+      - "scripts/test-chisel-config-validate.sh"
+      - "claude/hooks/chisel-config-validate.py"
+      - "claude/skills/chisel/SKILL.md"
       - "scripts/gh-shim/**"
       - "claude/hooks/squad-stats.py"
       - "scripts/test-squad-stats.sh"
@@ -103,3 +106,7 @@ jobs:
       - name: Run scripts/test-plugin-version-bump.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-plugin-version-bump.sh; else bash scripts/test-plugin-version-bump.sh; fi
+
+      - name: Run scripts/test-chisel-config-validate.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-chisel-config-validate.sh; else bash scripts/test-chisel-config-validate.sh; fi

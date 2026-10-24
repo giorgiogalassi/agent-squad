@@ -247,7 +247,7 @@ export CLAUDE_PROJECTS_DIR="$TMPROOT/vprojects"; mkdir -p "$CLAUDE_PROJECTS_DIR/
 VD="$CLAUDE_PROJECTS_DIR/-v/sv/subagents"
 asst 2026-10-14T09:00:00.000Z msg_vm claude-opus-5-5 1 0 0 0 0 sv /v > "$CLAUDE_PROJECTS_DIR/-v/sv.jsonl"
 # text-only verdict
-printf '{"type":"assistant","timestamp":"2026-10-14T10:00:00.000Z","sessionId":"sv","message":{"id":"msg_vt","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"Verdict: COMMENT\\nx"}]}}\n' > "$VD/agent-t.jsonl"
+printf '{"type":"assistant","timestamp":"2026-10-14T10:00:00.000Z","sessionId":"sv","message":{"id":"msg_vt","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1000000},"content":[{"type":"text","text":"Verdict: COMMENT\\nx"}]}}\n' > "$VD/agent-t.jsonl"
 echo '{"agentType":"reven"}' > "$VD/agent-t.meta.json"
 python3 "$SUT" collect >/dev/null 2>&1
 check "text verdict row" 1 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
@@ -265,9 +265,25 @@ python3 "$SUT" collect >/dev/null 2>&1
 check "backfill adds only the missing rows" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "handback-only verdict recorded" 1 "$(grep -c 'APPROVED.toolu_h1:verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "review with text and handback counted once" 1 "$(grep -c 'CHANGES REQUESTED' "$SQUAD_STATS_DIR/verdicts.tsv")"
+printf '{"type":"assistant","timestamp":"2026-10-14T10:20:00.000Z","sessionId":"sv","message":{"id":"msg_vi","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_i1","name":"SubagentHandback","input":{"message":"Review\\nVerdict: INCOMPLETE\\nx"}}]}}\n' > "$VD/agent-i.jsonl"
+echo '{"agentType":"reven"}' > "$VD/agent-i.meta.json"
+python3 "$SUT" collect >/dev/null 2>&1
+check "INCOMPLETE verdict recorded" 1 "$(grep -c 'INCOMPLETE.toolu_i1:verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
 check "Bash input yields no row" 0 "$(grep -c 'toolu_x1' "$SQUAD_STATS_DIR/verdicts.tsv")"
 python3 "$SUT" collect >/dev/null 2>&1
-check "re-collect does not duplicate verdicts" 3 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+check "re-collect does not duplicate verdicts" 4 "$(grep -c ':verdict' "$SQUAD_STATS_DIR/verdicts.tsv")"
+
+# verdict rows carry the model; old 5-column rows read as "unknown"; per-model report row
+check "verdict row carries the message model" claude-opus-5-5 "$(awk -F'\t' '$5 == "msg_vt:verdict" {print $6}' "$SQUAD_STATS_DIR/verdicts.tsv")"
+printf '2026-10-14T10:20:00.000Z\tsv\tv\tAPPROVED\told_msg:verdict\n' >> "$SQUAD_STATS_DIR/verdicts.tsv"
+# a non-Reven agent on the same model must not count towards the per-model cost
+printf '{"type":"assistant","timestamp":"2026-10-14T10:25:00.000Z","sessionId":"sv","message":{"id":"msg_vc","model":"claude-opus-5-5","usage":{"input_tokens":0,"output_tokens":1000000},"content":[{"type":"text","text":"x"}]}}\n' > "$VD/agent-c.jsonl"
+echo '{"agentType":"cody"}' > "$VD/agent-c.meta.json"
+python3 "$SUT" collect >/dev/null 2>&1
+( cd "$TMPROOT" && python3 "$SUT" report --days 30 ) > "$TMPROOT/out" 2>/dev/null; OUT="$(cat "$TMPROOT/out")"
+REPORT="$(key REPORT)"
+grep -q "^| claude-opus-5-5 | 4 | 1 | 1 | 1 | 1 | \$20.00 |" "$REPORT" && ok "per-model row: counts, INCOMPLETE column, Reven-only cost" || bad "per-model row: counts, INCOMPLETE column, Reven-only cost"
+grep -q "^| unknown | 1 | 1 | 0 | 0 | 0 | \$0.00 |" "$REPORT" && ok "old 5-column verdict shows as unknown" || bad "old 5-column verdict shows as unknown"
 
 # ---- trend: 12 sessions per period, last period 20% cheaper per session ----
 export SQUAD_STATS_DIR="$TMPROOT/trendstore"; mkdir -p "$SQUAD_STATS_DIR"

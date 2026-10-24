@@ -11,6 +11,7 @@
 #   L2  Claim    (Cody, connected)    -> verb `claim`
 #   L3  PR opens (Cody, connected)    -> verb `review`
 #   L4  Escalate (Ralph, connected)   -> verb `escalate`
+#   L9  Out of review rounds (Ralph, connected) -> verb `needs-review`
 # Test names are prefixed with the id: "L2 claim: exact argv", "L3 illegal:
 # ...", "L4 idempotent: ...". Detached cases are prefixed "D-".
 #
@@ -165,6 +166,14 @@ lab "$TMPROOT/$C" claim; check "L2 claim without --issue is usage error" 2 "$RC"
 fixture connected --labels-custom
 GH_STUB_LABELS="" lab "$TMPROOT/$C" claim --issue 7
 check "L2 custom: argv uses wip" "gh issue edit 7 $R --add-assignee @me --add-label wip" "$(writes)"
+# A chisel.ralph block (review_rounds) in the config does not disturb label parsing.
+fixture connected
+CFG="$F_VAULT/projects/fixture/.squad/chisel-config.json"
+sed 's/"state_labels"/"ralph": {"review_rounds": 2}, "state_labels"/' "$CFG" > "$TMPROOT/cfg-ralph" \
+  && cp "$TMPROOT/cfg-ralph" "$CFG"
+check "L2 config with chisel.ralph block: precondition" "1" "$(grep -c review_rounds "$CFG" | tr -d ' ')"
+GH_STUB_LABELS="needs-review" lab "$TMPROOT/$C" claim --issue 7
+check "L2 config with chisel.ralph block: claim argv unchanged" "gh issue edit 7 $R --add-assignee @me --add-label in-progress" "$(writes)"
 
 # ---- L3 review
 fixture connected
@@ -215,6 +224,24 @@ GH_STUB_LABELS="wip" lab "$TMPROOT/$C" escalate --issue 7 --reason r
 check "L4 custom: argv uses wip" "gh issue comment 7 $R --body r
 gh issue edit 7 $R --remove-label wip --add-label blocked" "$(writes)"
 
+# ---- L9 needs-review
+fixture connected
+GH_STUB_LABELS="in-review" lab "$TMPROOT/$C" needs-review --issue 7
+check "L9 needs-review: rc/outcome" "0/applied/yes" "$RC/$(key OUTCOME)/$(key CHANGED)"
+check "L9 needs-review: exact argv" "gh issue edit 7 $R --add-label needs-review" "$(writes)"
+check "L9 needs-review: label sets" "in-review|needs-review,in-review" "$(key FROM_LABELS)|$(key TO_LABELS)"
+: > "$GH_SHIM_LOG"
+GH_STUB_LABELS="in-review,needs-review" lab "$TMPROOT/$C" needs-review --issue 7
+check "L9 idempotent: needs-review" "0/unchanged/no/" "$RC/$(key OUTCOME)/$(key CHANGED)/$(writes)"
+GH_STUB_LABELS="in-progress" lab "$TMPROOT/$C" needs-review --issue 7
+check "L9 illegal: needs-review without in-review" "10/" "$RC/$(writes)"
+GH_STUB_RC=4 GH_STUB_LABELS="in-review" lab "$TMPROOT/$C" needs-review --issue 7
+check "L9 gh write failure maps to 20" 20 "$RC"
+lab "$TMPROOT/$C" needs-review; check "L9 needs-review without --issue is usage error" 2 "$RC"
+fixture connected --labels-custom
+GH_STUB_LABELS="in-review" lab "$TMPROOT/$C" needs-review --issue 7
+check "L9 custom: review_label none is illegal" "10/" "$RC/$(writes)"
+
 # ---- detached: zero gh calls, one handoff line per verb
 fixture detached
 H="$TMPROOT/handoff.md"; : > "$H"
@@ -230,10 +257,11 @@ dcase() {  # dcase <expected-line> <verb args...>
 dcase "- [ ] Move PROJ-7 to In Progress" claim --issue PROJ-7
 dcase "- [ ] Move 7 to In Review" review --issue 7
 dcase "- [ ] Move 7 to Blocked, comment: stuck after 3" escalate --issue 7 --reason "stuck after 3"
-check "D- handoff has exactly three lines" 3 "$(wc -l < "$H" | tr -d ' ')"
+dcase "- [ ] Mark 7 as Needs Review (review loop ended without approval)" needs-review --issue 7
+check "D- handoff has exactly four lines" 4 "$(wc -l < "$H" | tr -d ' ')"
 lab "$TMPROOT/shimbin" ensure
 check "D-ensure no-op" "0/unchanged/no" "$RC/$(key OUTCOME)/$(key CHANGED)"
-for v in "claim --issue 7" "review --issue 7" "escalate --issue 7 --reason r"; do
+for v in "claim --issue 7" "review --issue 7" "needs-review --issue 7" "escalate --issue 7 --reason r"; do
   # shellcheck disable=SC2086
   lab "$TMPROOT/shimbin" $v
   check "D-$v without --handoff is usage error" 2 "$RC"

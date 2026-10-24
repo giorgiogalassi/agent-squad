@@ -2,6 +2,16 @@
 
 A personal multi-agent development workflow for Claude Code.
 
+**In plain words:** Agent Squad is a team of AI agents that takes a piece
+of software work from a rough idea to a reviewed pull request. One agent
+helps plan the work, one designs it when it is complex, one splits it into
+tracked issues, one writes the code, and a separate one reviews it before
+anything is merged. Nothing is merged without a person approving it. It is not a
+demo: I use it every day on real projects, including client work. In
+company environments it can run fully hands-off from company tools, with
+no write access to the tracker or the repository (see
+[Tracker modes](#tracker-modes)).
+
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 Sidecar, on an existing branch: opens a worktree and stops (Cody only on
@@ -23,7 +33,8 @@ runs as a required step inside `/forge` before a draft scope closes.
 /ralph          Execute issues in dependency order (invokes Cody). Connected: one stacked branch and PR per issue; detached: one branch per dependency chain.
                 `/ralph --parent <n>` runs a container's sub-issues (default: most recent open container); `/ralph #1 #2` runs named issues.
                 Skips `blocked` and `needs-review` issues unless named explicitly.
-                Persists run state (order, branches, attempt counters) in `.squad/ralph-run.md` and offers resume.
+                Reviews every PR with Reven and runs fix rounds (cap `chisel.ralph.review_rounds`, default 2; the issue gets the `needs-review` label when out of rounds or after a second `INCOMPLETE`); `--no-review` skips it, `--review-context "<text>"` adds batch-wide context for Reven.
+                Persists run state (order, branches, attempt and review-round counters) in `.squad/ralph-run.md` and offers resume.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
 SessionEnd      lore-checkpoint hook rebuilds status.md (detached) when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
@@ -293,6 +304,25 @@ Plugin subagents ignore the `hooks`, `mcpServers`, `permissionMode` and
 `claude/agents/*.md`. `allowed-tools` in a skill pre-approves tools for the
 invoking turn only; it does not restrict other tools.
 
+### Project board workflows (connected mode)
+
+The Agent Squad GitHub Project (<https://github.com/users/giorgiogalassi/projects/2>)
+relies on three built-in project workflows so no issue needs a manual board
+step. They are project settings, not repo files, and only the project owner
+can enable them in the web UI:
+
+1. Open the project, then the `...` menu, then **Workflows**.
+2. **Auto-add to project**: enable, set the repository to
+   `giorgiogalassi/agent-squad`, filter `is:issue`.
+3. **Item closed**: enable, set status to `Done`.
+4. **Item reopened**: enable, set status to `Todo`.
+
+Check: create an issue by hand and confirm it appears on the board, then close
+it and confirm it moves to `Done`, with no manual step. If drift reappears
+later, a scheduled GitHub Action would need a fine-grained PAT with `project`
+scope stored as a secret (the Projects API is GraphQL-only and `GITHUB_TOKEN`
+cannot read user projects).
+
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it, nothing in the squad can
@@ -371,6 +401,8 @@ A read-only hook can inject "where you left off" at the start of every
 session, so you do not have to ask. It never writes and never blocks. It
 also calls `path-resolve.sh`. The plugin registers it in
 `claude/hooks/hooks.json`; there is nothing to install.
+The hook also skips `resume` on its own, so switching sessions in agent
+view does not re-inject the orientation.
 
 It also prints up to two signal lines, omitted when not applicable:
 `Architecture snapshot older than <file>; run /seed` (architecture.md is
@@ -436,7 +468,7 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore start` (setup), `lore prefer`, and `lore recover` commit after their
+  `lore start` (setup), `lore prefer`, `lore supersede`, and `lore recover` commit after their
   writes (commit only, never push); pulling and pushing stay manual. Pull
   before starting work when using multiple machines.
 
@@ -469,7 +501,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
@@ -574,7 +606,7 @@ lives in `scripts/plugin-version-bump.sh`.
 
 ## Evals (tier 2)
 
-`claude/evals/` holds three advisory `claude plugin eval` cases that the bash
+`claude/evals/` holds five advisory `claude plugin eval` cases that the bash
 tests cannot cover, because they check what the agent *prose* does:
 
 | Case | Checks (zero-cost graders only) |
@@ -582,6 +614,8 @@ tests cannot cover, because they check what the agent *prose* does:
 | `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
 | `detached-claim` | no Bash call contains `gh`; a handoff line `- [ ] Move ... to In Progress` is written |
 | `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
+| `ralph-no-review` | Ralph's skill text: with `--no-review` Phase 2e is skipped (reading check, no agents spawned) |
+| `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
 
 Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
 that, inside the run's temporary `$HOME`, builds a fixture with `scripts/fixtures/make-fixture.sh`
