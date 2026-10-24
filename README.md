@@ -2,6 +2,16 @@
 
 A personal multi-agent development workflow for Claude Code.
 
+**In plain words:** Agent Squad is a team of AI agents that takes a piece
+of software work from a rough idea to a reviewed pull request. One agent
+helps plan the work, one designs it when it is complex, one splits it into
+tracked issues, one writes the code, and a separate one reviews it before
+anything is merged. Nothing is merged without a person approving it. It is not a
+demo: I use it every day on real projects, including client work. In
+company environments it can run fully hands-off from company tools, with
+no write access to the tracker or the repository (see
+[Tracker modes](#tracker-modes)).
+
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
 Sidecar, on an existing branch: opens a worktree and stops (Cody only on
@@ -297,6 +307,25 @@ when N is above 0. Run it by hand with `~/.claude/hooks/squad-doctor.sh`;
 `SQUAD_DOCTOR_HOME` overrides the install dir. If agent-squad later ships
 as a native plugin, doctor becomes redundant and should be removed.
 
+### Project board workflows (connected mode)
+
+The Agent Squad GitHub Project (<https://github.com/users/giorgiogalassi/projects/2>)
+relies on three built-in project workflows so no issue needs a manual board
+step. They are project settings, not repo files, and only the project owner
+can enable them in the web UI:
+
+1. Open the project, then the `...` menu, then **Workflows**.
+2. **Auto-add to project**: enable, set the repository to
+   `giorgiogalassi/agent-squad`, filter `is:issue`.
+3. **Item closed**: enable, set status to `Done`.
+4. **Item reopened**: enable, set status to `Todo`.
+
+Check: create an issue by hand and confirm it appears on the board, then close
+it and confirm it moves to `Done`, with no manual step. If drift reappears
+later, a scheduled GitHub Action would need a fine-grained PAT with `project`
+scope stored as a secret (the Projects API is GraphQL-only and `GITHUB_TOKEN`
+cannot read user projects).
+
 `path-resolve.sh` is not optional: every skill and agent's "Path
 resolution protocol" calls it as its first step (see
 `PATH_RESOLUTION.md`). Without it installed, nothing in the squad can
@@ -386,9 +415,11 @@ cp claude/hooks/lore-orient.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/lore
 ```
 Then add to `~/.claude/settings.json`:
 ```json
-{ "hooks": { "SessionStart": [ { "hooks": [
+{ "hooks": { "SessionStart": [ { "matcher": "startup|clear|compact", "hooks": [
   { "type": "command", "command": "~/.claude/hooks/lore-orient.sh" } ] } ] } }
 ```
+The hook also skips `resume` on its own, so switching sessions in agent
+view does not re-inject the orientation.
 
 It also prints up to two signal lines, omitted when not applicable:
 `Architecture snapshot older than <file>; run /seed` (architecture.md is
@@ -463,7 +494,7 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
-  `lore start` (setup), `lore prefer`, and `lore recover` commit after their
+  `lore start` (setup), `lore prefer`, `lore supersede`, and `lore recover` commit after their
   writes (commit only, never push); pulling and pushing stay manual. Pull
   before starting work when using multiple machines.
 
@@ -496,7 +527,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by Cody at PR open.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its

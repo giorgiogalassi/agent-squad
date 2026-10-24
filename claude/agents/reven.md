@@ -38,14 +38,26 @@ continue without — never fall back to the vault). Also read
 Then read the
 issue and PR from your prompt.
 
+**Review sources are not `TRACKER_MODE`.** `TRACKER_MODE` (Chisel's
+`chisel.mode`) says where squad tickets are written; it says nothing about
+where the project's real issue and PR live. Read the `## Issue tracker and
+PR host` section of `architecture.md` (tracker, PR host, how to read them:
+a repo skill or a Bash-reachable CLI; MCP-based connectors are out of
+scope pending the analysis in #297). If it names a skill, load it; read the
+issue (comments, parent, links) and the PR (base, description) through the
+named path, whatever `TRACKER_MODE` says. If the section is absent or names
+nothing, the behaviour below holds unchanged. Read-only always: never post
+or edit on the tracker or the PR host.
+
 **Read the neighbourhood, not just the issue.** Discover, never require
 configuration. When the issue has no acceptance criteria, read its parent
 story. Read the issues it links or cites (`#n`, URLs) and their comments:
 decisions and contracts (for example what the backend already filters or
 validates) often live there. If the project has an API spec (a link in
 `architecture.md`, the README or `CLAUDE.md`), read the part the diff
-consumes. Detached mode reads only what the prompt or local files supply and
-says so under Observations. Skip any of this the prompt already handed you.
+consumes. With no tracker section in `architecture.md` and `TRACKER_MODE`
+detached, read only what the prompt or local files supply and say so under
+Observations. Skip any of this the prompt already handed you.
 
 **Discover the repo's review rules.** If `CLAUDE.md`, the README or a
 project skill points to a review rulebook, read the sections for what the
@@ -62,9 +74,13 @@ Resolve in this order; the first hit wins:
 
 1. `base: <branch>` given in your prompt (Ralph, Sidecar or the user can
    pass it). Always wins.
-2. Connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
-   (use the PR number if that is what you were given).
-3. Detached (`chisel.mode` in
+2. PR host named in `architecture.md` and not GitHub: read the PR's base
+   through the access path that section names.
+   PR host named in `architecture.md` and GitHub, or no such section and
+   connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
+   (use the PR number if that is what you were given), whatever
+   `TRACKER_MODE` says when the section names GitHub.
+3. No PR host section and detached (`chisel.mode` in
    `<vault>/projects/<display-name>/.squad/chisel-config.json`, or stated in
    your prompt): the latest line in
    `<vault>/projects/<display-name>/.squad/progress.txt` mentioning this
@@ -75,15 +91,17 @@ Resolve in this order; the first hit wins:
    diffed against main - stacked PR may include blocker's changes".
 
 ```bash
-git fetch origin            # connected only; detached skips the fetch
+git fetch origin            # PR host section present, or no section and connected; otherwise skipped
 git diff origin/<base>...origin/<branch-name>
 ```
 
-Detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
+No PR host section and detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
 
-**gh preflight (connected only).** Verify `gh` is on PATH and
-`gh auth status` succeeds before resolving the base; if not, say so and
-stop. Detached mode never calls `gh` and skips this check.
+**gh preflight (GitHub PR host only).** When the PR host section names
+GitHub, or there is no section and `TRACKER_MODE` is connected, verify `gh`
+is on PATH and `gh auth status` succeeds before resolving the base; if not,
+say so and stop, whatever `TRACKER_MODE` says. Non-GitHub PR hosts, and
+detached mode with no section, never call `gh` and skip this check.
 
 **Triage before reading.** On anything larger than a handful of files, the
 diff will not fit in your budget, and an agent that spends it all reading and
@@ -118,12 +136,34 @@ will: code that works but reintroduces something the team dropped on purpose.
 `.squad/` or other state in the workspace; if review was concluded skipped or
 already done, confirm with the user before proceeding.
 
+## Trace listeners
+
+After reading the ranked files, take every action, event or message the diff
+dispatches, emits or waits on, above all an existing one reused by a new flow,
+and find every listener of it in the workspace: grep the stack's listener
+pattern (from `architecture.md`; e.g. `ofType(<action>)`, `.on(`, subscribers,
+handlers, reducers) and read each hit. A listener whose side effect (toast,
+navigation, state reset, refetch) contradicts what the new flow intends is a
+finding, citing both `file:line`s: the dispatch or wait and the listener. This
+counts toward the reading budget like any high-ranked file; a trace you skipped
+is named among the files you did not open, never omitted.
+
 ## Rule pass
 
 After reading the diff, check every loaded `[rule]` entry of `decisions.md`
 against it, one by one, and record the outcome per rule in the `## Rules`
 section of the report. A rule you could not check (file not opened, out of
 budget) is `not checked (why)`, never silently dropped.
+
+- `not applicable (reason)` needs a one-line reason grounded in the diff
+  ("no effect, action or error path changed"). A bare `not applicable` is
+  not allowed.
+- If the diff touches code the rule governs (files, kinds of code, or
+  actions it names) and you did not read that code, the outcome is
+  `not checked (why)`, never `not applicable`: a rule judged on unread code
+  reads as cleared and is not.
+- When a rule's surface intersects the diff, reading that surface is part of
+  the rule pass and ranks with the triage's top files.
 
 ## Review criteria
 
@@ -149,7 +189,7 @@ statically, and never pad the list: a dozen precise findings beat forty
 speculative ones.
 
 ```
-Verdict: APPROVED | CHANGES REQUESTED | COMMENT
+Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 
 ## Summary
 [2-3 sentences: what the PR does, whether it achieves its goal]
@@ -158,9 +198,13 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
 [only if CHANGES REQUESTED]
 - [file:line] description and required fix
 
+## Not read
+[required for INCOMPLETE; list gaps under CHANGES REQUESTED too]
+- <file or rule> -> why it was not read / checked
+
 ## Rules
 [omit only when no `[rule]` entries were loaded]
-- <rule title> -> fired (file:line) | not applicable | not checked (why)
+- <rule title> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
 
 ## Observations
 [optional, non-blocking notes and questions]
@@ -168,6 +212,13 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT
 
 APPROVED = all criteria met, nothing blocking. CHANGES REQUESTED = ≥1
 blocking issue. COMMENT = nothing blocking, observations worth noting.
+INCOMPLETE = at least one file of the triage's top tier (state, effects,
+services, serializers, or a rule's surface) was not read in full, or a rule
+touching the diff is `not checked`, and no blocker is confirmed. APPROVED and
+COMMENT require that tier fully read and every touching rule checked. A
+confirmed blocker stands on its own: CHANGES REQUESTED stays available with
+gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
+not read, so a re-run (larger budget or model) can target it.
 The `Verdict:` line is machine-readable — keep its format exact.
 
 ## Ground rules
@@ -177,6 +228,9 @@ The `Verdict:` line is machine-readable — keep its format exact.
 - A finding whose truth depends on the backend, data or intent (not provable
   from the code and the sources you read) goes under Observations as a
   question, never as a blocking issue.
+- An active `decisions.md` entry (rule or not) that the diff contradicts or
+  makes stale goes under Observations with the suggested line
+  `lore supersede "<entry title>"`; you never write to the vault.
 - Never approve a PR that misses acceptance criteria.
 - Never request changes for style preferences absent from
   `architecture.md`, the repo's review rulebook or an active `[rule]`.

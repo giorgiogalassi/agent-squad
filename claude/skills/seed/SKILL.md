@@ -97,6 +97,7 @@ Write `.squad/architecture.md` — specific and factual, nothing invented:
 ## Build and test commands
 ## Data flow
 ## Owners
+## Issue tracker and PR host
 ```
 
 `## Data flow` subsections: `### Collected data`, `### Storage and third
@@ -109,6 +110,14 @@ No evidence → `—` placeholder. Never assert a data flow without
 evidence; the user completes and verifies manually. Consumers: Archy and
 Reven today; a future Lex agent reads this section for compliance
 audits.
+
+`## Issue tracker and PR host` is read by Reven, independent of
+`chisel.mode`. Detect the PR host from `git remote get-url origin`
+(github.com, bitbucket.org, gitlab) and propose the section: tracker, PR
+host, and how to read them (a repo skill or a Bash-reachable CLI; MCP-based connectors are out of
+scope pending the analysis in #297). Fill only what
+the remote and files evidence; the user confirms the tracker and access
+path. Nothing detectable → `—`. Read-only access only.
 
 `## Owners` is a short map of where mappings, shared types and wire keys
 live: one row per concept, `<concept>: <owning lib/module>`. Fill rows

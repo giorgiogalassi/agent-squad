@@ -114,5 +114,22 @@ printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "doctor: JSON stays v
 o="$(run_doc "$TMPROOT/no-such-home")"
 ctx "$o" | grep -q 'squad doctor' && bad "doctor: missing install has a line" || ok "doctor: missing install, silent"
 
+# SessionStart source (#289): resume skips, everything else orients.
+run_src() {  # run_src <stdin-json> [path]
+  (cd "$F_PROJECT" && printf '%s' "$1" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" PATH="${2:-$PATH}" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)
+}
+o="$(run_src '{"source":"resume"}')"
+[ "$o" = "{}" ] && ok "source: resume emits {}" || bad "source: resume: $o"
+o="$(run_src '{"source":"resume"}' "$TMPROOT/nojq")"
+[ "$o" = "{}" ] && ok "source: resume emits {} (no jq)" || bad "source: resume no-jq: $o"
+for src in startup clear compact; do
+  o="$(run_src "{\"source\":\"$src\"}")"
+  printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: $src orients" || bad "source: $src: $o"
+done
+o="$(run_src '')"
+printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: empty stdin orients" || bad "source: empty stdin: $o"
+o="$(run_src 'not json')"
+printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: garbage stdin orients" || bad "source: garbage stdin: $o"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

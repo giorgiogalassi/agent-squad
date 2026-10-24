@@ -120,6 +120,12 @@ as `connected` for backward compatibility: here a missing `mode` is
 `detached`, because this value gates writes to a tracker and must fail
 safe.
 
+`TRACKER_MODE` is about squad tickets only: where Chisel and Ralph write.
+It does not say where the project's real issue and PR live. Reven reads
+those from the `## Issue tracker and PR host` section of `architecture.md`
+(read-only), whatever `TRACKER_MODE` is; without the section it falls back
+to the prompt, local files and, when connected, `gh`.
+
 `SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default, or
 `<PROJECT_ROOT>/.squad` when `lore-config.json` has
 `"context": {"<project root>": "repo"}` (a top-level map keyed by project
