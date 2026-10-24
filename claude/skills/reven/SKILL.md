@@ -5,7 +5,7 @@ description: >
   branch name and the issue it addresses. Reven reads the diff, checks
   it against the acceptance criteria, and produces a structured review.
   Do NOT invoke for planning, implementation, or documentation tasks.
-allowed-tools: Agent, Bash
+allowed-tools: Agent, Bash(gh pr view:*), Bash(git diff:*)
 ---
 
 # Reven (entrypoint)
@@ -23,10 +23,22 @@ Thresholds and models live here, in one place:
 | default model | the `reven` agent's own (no override) |
 | large model | `opus` |
 
-Before delegating, count the changed files: `gh pr view <pr> --json
-changedFiles --jq .changedFiles` when given a PR number, else
-`git diff --name-only <base>...<branch> | wc -l`. This is metadata, not
-reading the diff. Then pick the Agent `model`:
+Before delegating, count the changed files. This is metadata, not
+reading the diff. Try in order, stopping at the first that yields a
+number:
+
+1. Connected mode, PR number or branch name: `gh pr view <pr-or-branch>
+   --json changedFiles --jq .changedFiles`. Detached mode: make no `gh`
+   call.
+2. Otherwise `git diff --name-only <base>...<branch>`, run on its own
+   (no `| wc -l`: a pipeline reports `wc`'s exit status, so a failed git
+   would read as 0). Count lines only if the command succeeded and
+   printed at least one line.
+
+A failed command, empty output or non-numeric output means the count
+cannot be determined: never substitute 0.
+
+Then pick the Agent `model`:
 
 1. The request names a `model:` -> pass it unchanged; it always wins.
 2. Count above `FILE_THRESHOLD` -> pass `model: opus`.
@@ -40,7 +52,10 @@ or branch name, the issue it addresses, and any acceptance criteria or
 tracker mode (`connected` / `detached`) stated in the request, exactly
 as received. Return the agent's structured review to the user unchanged, preceded
 by one header line: `Model: <model used> (<N> changed files)`, where
-`<model used>` is the override passed or `default (agent)`.
+`<model used>` is the override passed or, on the default path, the
+`model:` in the `reven` agent's frontmatter (`claude/agents/reven.md`,
+currently `sonnet`; `default (agent)` only if you cannot tell). When the
+count could not be determined, write `Model: <model used>` with no count.
 
 Never read the diff, the vault, or `.squad/` state yourself; never
 summarize or soften the review. No PR number or branch given → ask for
