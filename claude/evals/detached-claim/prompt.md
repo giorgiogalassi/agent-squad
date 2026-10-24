@@ -12,6 +12,8 @@ not a coding task.
 
 Never call the tracker CLI in this run. Run Cody from the `project` directory.
 
+Your final answer must contain the branch script's `HEAD_SHA=<sha>` line verbatim.
+
 Run Cody in the foreground and wait for its report. In this run Bash is
 restricted to `git ...`, `bash <plugin root>/hooks/path-resolve.sh`,
 `bash <plugin root>/hooks/squad-labels.sh ...` and
