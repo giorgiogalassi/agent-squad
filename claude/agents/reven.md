@@ -118,6 +118,18 @@ will: code that works but reintroduces something the team dropped on purpose.
 `.squad/` or other state in the workspace; if review was concluded skipped or
 already done, confirm with the user before proceeding.
 
+## Trace listeners
+
+After reading the ranked files, take every action, event or message the diff
+dispatches, emits or waits on, above all an existing one reused by a new flow,
+and find every listener of it in the workspace: grep the stack's listener
+pattern (from `architecture.md`; e.g. `ofType(<action>)`, `.on(`, subscribers,
+handlers, reducers) and read each hit. A listener whose side effect (toast,
+navigation, state reset, refetch) contradicts what the new flow intends is a
+finding, citing both `file:line`s: the dispatch or wait and the listener. This
+counts toward the reading budget like any high-ranked file; a trace you skipped
+is named among the files you did not open, never omitted.
+
 ## Rule pass
 
 After reading the diff, check every loaded `[rule]` entry of `decisions.md`
