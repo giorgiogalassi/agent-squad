@@ -111,5 +111,32 @@ grep -q 'by-path probe' "$STATUS" && ok "note written" || bad "note written"
 git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "unrelated file still staged" || bad "unrelated file still staged"
 git -C "$F_VAULT" show --name-only --format= HEAD | grep -q unrelated.txt && bad "unrelated file not in commit" || ok "unrelated file not in commit"
 
+# 8. Next is remove-only: dropping a whole item passes (Next outside the budget),
+#    rewording or adding an item bails and leaves status.md untouched.
+LONG="$(printf 'x%.0s' $(seq 1 1700))"
+next_case() { # next_case <label> <model Next body>
+  printf -- '---\ntitle: s\n---\n# Status\nLast updated: %s by x\n\n## Goal\ng\n\n## Next\nACTION: keep %s\nCONTEXT: k\nACTION: drop me\nCONTEXT: d\n\n## Blocked\n\n## Last checkpoint\n\n## Context refs\n' "$OLD" "$LONG" > "$STATUS"
+  NEXT_BODY="$2" ; export NEXT_BODY
+  cat > "$TMPROOT/fakebin/claude" <<'EOS'
+#!/bin/sh
+cat > /dev/null
+printf -- '---\ntitle: s\n---\n# Status\nLast updated: x\n\n## Goal\nrebuilt\n\n## Done\n\n## Next\n%s\n\n## Blocked\n\n## Last checkpoint\n\n## Context refs\n' "$NEXT_BODY"
+EOS
+  printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
+}
+next_case drop "ACTION: keep $LONG
+CONTEXT: k"
+grep -q 'rebuilt' "$STATUS" && ok "dropping a Next item rebuilds (Next not budgeted)" || bad "dropping a Next item rebuilds (Next not budgeted)"
+grep -q 'drop me' "$STATUS" && bad "dropped item is gone" || ok "dropped item is gone"
+next_case reword "ACTION: keep $LONG
+CONTEXT: k, reworded"
+grep -q 'rebuilt' "$STATUS" && bad "reworded Next item bails" || ok "reworded Next item bails"
+grep -q 'rewrote a Next item' "$F_VAULT/projects/fixture/.lore-checkpoint.log" && ok "bail reason logged" || bad "bail reason logged"
+next_case add "ACTION: keep $LONG
+CONTEXT: k
+ACTION: invented
+CONTEXT: i"
+grep -q 'rebuilt' "$STATUS" && bad "added Next item bails" || ok "added Next item bails"
+
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

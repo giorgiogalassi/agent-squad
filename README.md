@@ -427,7 +427,10 @@ one line and exits 0. Registered by `claude/hooks/hooks.json`; needs `path-resol
   Last updated, or Last updated older than 7 days), runs a headless
   `claude -p` reconstruct from git evidence (skipped when there are no
   commits since `Last updated`). `## Blocked` is preserved verbatim,
-  checkpoints capped to 3, Goal/Done/Next rejected if over ~400 tokens.
+  checkpoints capped to 3, Goal/Done rejected if over ~400 tokens. Next
+  is remove-only: the rebuild may drop a finished ACTION item but must
+  copy every kept one verbatim, else it bails (an ACTION-less Next is
+  written by the model and budgeted with Goal/Done).
   Fresh status: no write. Commits the vault if it is a git repo.
 - Async: the hook is registered with `"async": true`, so Claude Code runs it
   in the background with no timeout and the rebuild runs inline (no detach,

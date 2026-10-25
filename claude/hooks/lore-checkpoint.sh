@@ -181,6 +181,17 @@ replace_section() {
       if (index($0, h) == 1) { print; dump(bf); skip = 1; next } }
     !skip { print }' "$1"
 }
+# next_items: one Next item per output line (an ACTION: line joined with the
+# lines under it by a unit separator), trailing blanks stripped; each line
+# before the first ACTION: is an item of its own.
+next_items() {
+  awk '{ sub(/[ \t]+$/, "") }
+       /^ACTION:/ { if (item != "") print item; item = $0; next }
+       $0 == "" { next }
+       item == "" { print; next }
+       { item = item "\037" $0 }
+       END { if (item != "") print item }'
+}
 TMPC="$(mktemp)"; TMPB="$(mktemp)"
 trap 'rm -f "$TMPC" "$TMPB"' EXIT
 
@@ -283,7 +294,7 @@ $(git log --oneline -10 2>/dev/null)
 Existing status.md:
 $(cat "$STATUS")"
 
-PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file, no code fences, no commentary. Keep the exact schema: YAML front matter (title, tags [status, active], project), '# Status — <project>', 'Last updated: $NOW by claude-code', then sections Goal, Done (under 5 lines, distilled), Next (ACTION: / CONTEXT:), Blocked, Last checkpoint, Context refs. Goal, Done and Next together under 400 tokens. Mark inferences as inferred. Copy Blocked and Context refs from the existing file."
+PROMPT="Rebuild status.md from the evidence on stdin. Output ONLY the full file, no code fences, no commentary. Keep the exact schema: YAML front matter (title, tags [status, active], project), '# Status — <project>', 'Last updated: $NOW by claude-code', then sections Goal, Done (under 5 lines, distilled), Next (ACTION: / CONTEXT:), Blocked, Last checkpoint, Context refs. Goal and Done together under 400 tokens. Mark inferences as inferred. Copy Blocked and Context refs from the existing file. Next: if the existing Next has ACTION: lines, copy each ACTION: line with the lines under it verbatim, in order; you may only delete a whole item the evidence shows is done; never add, reword or merge items. If the existing Next has no ACTION: line, write one ACTION: and one CONTEXT: line."
 
 NEW="$(printf '%s' "$EVIDENCE" | SQUAD_LORE_HOOK=1 claude -p "$PROMPT" --model "${SQUAD_LORE_MODEL:-haiku}" 2>/dev/null)" \
   || bail "headless rebuild failed, status unchanged"
@@ -306,9 +317,24 @@ TMPR="$TMPB.r"; section "$STATUS" "Context refs" > "$TMPR"
 # Intentional: under Last checkpoint only lines starting with "[" are kept;
 # any other text in that section is dropped.
 section "$STATUS" "Last checkpoint" | grep '^\[' | tail -n 3 > "$TMPC"
-MODEL_BYTES="$( { for h in Goal Done Next; do printf '%s\n' "$NEW" > "$TMPB.n"; section "$TMPB.n" "$h"; done; } | wc -c | tr -d ' ')"
+# Next is remove-only once it holds ACTION items: every item (an ACTION: line
+# plus the lines under it) must be copied verbatim from the old Next, so a
+# rebuild can drop finished items but never lose, reword or invent one. Only
+# an ACTION-less Next is model-authored, and then it counts toward the budget.
+printf '%s\n' "$NEW" > "$TMPB.n"
+BUDGETED="Goal Done"
+if section "$STATUS" Next | grep -q '^ACTION:'; then
+  section "$STATUS" Next | next_items > "$TMPB.o"
+  section "$TMPB.n" Next | next_items | while IFS= read -r _item; do
+    grep -qxF -- "$_item" "$TMPB.o" || { echo x; break; }
+  done | grep -q x && { rm -f "$TMPB.n" "$TMPB.o" "$TMPR"; bail "rebuild rewrote a Next item, status unchanged"; }
+  rm -f "$TMPB.o"
+else
+  BUDGETED="Goal Done Next"
+fi
+MODEL_BYTES="$(for h in $BUDGETED; do section "$TMPB.n" "$h"; done | wc -c | tr -d ' ')"
 rm -f "$TMPB.n"
-[ "$MODEL_BYTES" -gt 1600 ] && bail "rebuild over 400-token budget, status unchanged"
+[ "$MODEL_BYTES" -gt 1600 ] && bail "rebuild over 400-token budget ($BUDGETED), status unchanged"
 OUT="$STATUS.tmp.$$"
 printf '%s\n' "$NEW" | sed "s/^Last updated:.*/Last updated: $NOW by claude-code/" > "$OUT.1"
 replace_section "$OUT.1" Blocked "$TMPB" > "$OUT.2"
