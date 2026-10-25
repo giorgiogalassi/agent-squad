@@ -308,7 +308,9 @@ status.md → the hook skips.
 `hooks/lore-checkpoint.sh` applies the staleness rule above at session end
 and rebuilds status.md headlessly (registered async, so it runs inline; main
 checkout only; worktree sessions append a checkpoint line, `uncommitted work
-on <branch>: N files` when the tree is dirty). Other writers add
+on <branch>: N files` when the tree is dirty). The hook's rebuild treats
+`## Next` as remove-only: it may drop a finished ACTION item, never add or
+reword one; only `lore recover` and hand edits change Next items. Other writers add
 checkpoint lines with `lore-checkpoint.sh --note "<line>"`, never `>>`. `lore recover` is the fallback when the hook is
 not installed.
 
