@@ -36,7 +36,9 @@ on:
       - "scripts/test-lore-incidents.sh"
       - "scripts/test-lore-checkpoint.sh"
       - "scripts/test-decisions-lint.sh"
+      - "scripts/test-lore-nudge.sh"
       - "claude/hooks/decisions-lint.sh"
+      - "claude/hooks/lore-nudge.sh"
       - "claude/hooks/lore-decide.sh"
       - "claude/hooks/lore-checkpoint.sh"
       - "scripts/test-cody-checkpoint.sh"
@@ -109,6 +111,10 @@ jobs:
       - name: Run scripts/test-decisions-lint.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-decisions-lint.sh; else bash scripts/test-decisions-lint.sh; fi
+
+      - name: Run scripts/test-lore-nudge.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-nudge.sh; else bash scripts/test-lore-nudge.sh; fi
 
       - name: Run scripts/test-cody-checkpoint.sh (bash 3.2 on macOS)
         run: |
