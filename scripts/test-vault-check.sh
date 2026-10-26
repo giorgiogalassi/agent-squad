@@ -164,6 +164,45 @@ has "fix: INDEX row added" "FIXED_INDEX_ROW_ADDED=clean" "$out"
 check "added row sits at the end of the Projects table" '| [[projects/clean/status\|clean]] | active | 2026-10-25 |' "$(grep -B1 '^$' "$V6/INDEX.md" | grep 'projects/clean/status\\' )"
 has "Content section kept" "## Content" "$(cat "$V6/INDEX.md")"
 
+# ---- --fix commits only what it wrote
+gitvault() { git -C "$1" init -q >/dev/null 2>&1; git -C "$1" config user.email t@t; git -C "$1" config user.name t
+  git -C "$1" add -A >/dev/null 2>&1; git -C "$1" commit -q -m init >/dev/null 2>&1; }
+VG="$TMPROOT/vg"; mkvault "$VG"
+mkdir -p "$VG/projects/other"; printf 'o\n' > "$VG/projects/other/notes.md"
+printf '[2026-10-21 11:55] [sidecar] start — A\n' >> "$VG/projects/clean/.squad/session.log"
+gitvault "$VG"
+printf 'u\n' > "$VG/unrelated.txt"; git -C "$VG" add unrelated.txt
+printf 'dirty\n' >> "$VG/projects/other/notes.md"
+bash "$VC" check --fix --vault "$VG" --project clean >/dev/null
+files="$(git -C "$VG" show --name-only --format= HEAD)"
+check "fix commit holds only the written file" "projects/clean/.squad/session.log" "$files"
+check "unrelated staged file stays staged" "A  unrelated.txt" "$(git -C "$VG" status --porcelain unrelated.txt)"
+check "unrelated dirty file stays dirty" " M projects/other/notes.md" "$(git -C "$VG" status --porcelain projects/other/notes.md)"
+head1="$(git -C "$VG" rev-parse HEAD)"
+bash "$VC" check --fix --vault "$VG" --project clean >/dev/null
+check "fix with nothing to repair creates no commit" "$head1" "$(git -C "$VG" rev-parse HEAD)"
+
+# ---- same-tag orphan plus a live session today
+VS="$TMPROOT/vs"; mkvault "$VS"; LOG="$VS/projects/clean/.squad/session.log"
+printf '[2026-10-21 11:55] [sidecar] start — old\n[2026-10-26 09:00] [sidecar] start — live\n' > "$LOG"
+out="$(bash "$VC" check --fix --vault "$VS" --project clean)"
+has "same-tag fix closes the orphan" "FIXED_SESSION_CLOSED=1 clean" "$out"
+snap="$(cat "$LOG")"
+out="$(bash "$VC" check --fix --vault "$VS" --project clean)"
+lacks "second fix reports nothing closed" "FIXED_SESSION_CLOSED" "$out"
+check "second fix leaves the log unchanged" "$snap" "$(cat "$LOG")"
+check "old orphan closed exactly once" "1" "$(grep -c 'closed without teardown (start 2026-10-21 11:55)' "$LOG")"
+check "live start still open" "2026-10-26 09:00	sidecar" "$(. "$VC"; session_orphans "$LOG")"
+printf '[2026-10-26 11:00] [sidecar] end — done\n' >> "$LOG"
+check "real end pairs with the live start" "" "$(. "$VC"; session_orphans "$LOG")"
+# the unfiltered view: live start closed by its own end, orphan stays closed
+check "no orphan resurfaces" "" "$(. "$VC"; session_orphans "$LOG" 9999-99-99)"
+
+# ---- missing decisions.md renders readably
+VM="$TMPROOT/vm"; mkvault "$VM"; rm -f "$VM/projects/clean/decisions.md"
+txt="$(bash "$VC" check --vault "$VM" --project clean | bash "$VC" render)"
+has "missing decisions.md renders" "decisions.md: file is missing" "$txt"
+
 # ---- orientation wiring (mapped project via lore-config.json)
 V7="$TMPROOT/v7"; mkvault "$V7"
 mkdir -p "$TMPROOT/proj7"; git -C "$TMPROOT/proj7" init -q >/dev/null 2>&1
@@ -195,6 +234,15 @@ now_ms() { python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || 
 s=$(now_ms); bash "$VC" check --vault "$V9" --project clean --vault-wide >/dev/null; e=$(now_ms)
 ms=$((e - s))
 if [ "$ms" -lt 200 ]; then ok "400-file vault check under 200 ms (${ms} ms)"; else bad "400-file vault check took ${ms} ms"; fi
+
+# full orient path (check + render + decisions-lint subprocesses)
+mkdir -p "$TMPROOT/proj9"; git -C "$TMPROOT/proj9" init -q >/dev/null 2>&1
+PROJ9="$(cd "$TMPROOT/proj9" && pwd -P)"
+printf '{"projects":{"%s":"clean"}}\n' "$PROJ9" > "$V9/lore-config.json"
+printf '[2026-10-21 11:55] [sidecar] start — A\n' > "$V9/projects/clean/.squad/session.log"
+s=$(now_ms); (cd "$PROJ9" && SECOND_BRAIN_PATH="$V9" bash "$TMPROOT/hooks/lore-orient.sh" </dev/null >/dev/null 2>&1); e=$(now_ms)
+ms=$((e - s))
+if [ "$ms" -lt 200 ]; then ok "400-file full orientation under 200 ms (${ms} ms)"; else bad "400-file full orientation took ${ms} ms"; fi
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

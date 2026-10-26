@@ -94,20 +94,32 @@ index_set_row() {
 }
 
 # session_orphans <session.log> [<before-date>]: "ts<TAB>tag" per start with no
-# later end for the same tag (an end closes the most recent open start of its
-# tag). With <before-date> only starts dated before it are listed, so a
-# session running today is never reported or closed.
+# end. A closure line ("... end — closed without teardown (start <ts>)") closes
+# exactly the start it names; a plain end closes the most recent open start of
+# its tag. A closure whose named start is absent closes nothing, so it can
+# never swallow a live session's start. With <before-date> only starts dated
+# before it are listed, so a session running today is never reported or closed.
 session_orphans() {
   [ -f "$1" ] || return 0
   awk -v before="${2:-9999-99-99}" '
     match($0, /^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\] \[[^]]+\] (start|end)/) {
       ts = substr($0, 2, 16); rest = substr($0, 21)
       tag = rest; sub(/\].*/, "", tag)
-      if (rest ~ /\] start/) { cnt[tag]++; st[tag, cnt[tag]] = ts; if (!(tag in seen)) { seen[tag] = 1; tags[++nt] = tag } }
-      else if (cnt[tag] > 0) cnt[tag]--
+      if (rest ~ /\] start/) {
+        c[tag]++; st[tag, c[tag]] = ts
+        if (!(tag in seen)) { seen[tag] = 1; tags[++nt] = tag }
+      } else {
+        ref = ""
+        if (match($0, /\(start [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\)$/)) ref = substr($0, RSTART + 7, 16)
+        if (ref != "") {
+          for (j = 1; j <= c[tag]; j++) if (!cl[tag, j] && st[tag, j] == ref) { cl[tag, j] = 1; break }
+        } else {
+          for (j = c[tag]; j >= 1; j--) if (!cl[tag, j]) { cl[tag, j] = 1; break }
+        }
+      }
     }
-    END { for (i = 1; i <= nt; i++) for (j = 1; j <= cnt[tags[i]]; j++)
-            if (substr(st[tags[i], j], 1, 10) < before) print st[tags[i], j] "\t" tags[i] }' "$1" \
+    END { for (i = 1; i <= nt; i++) for (j = 1; j <= c[tags[i]]; j++)
+            if (!cl[tags[i], j] && substr(st[tags[i], j], 1, 10) < before) print st[tags[i], j] "\t" tags[i] }' "$1" \
     | sort
 }
 
@@ -155,17 +167,22 @@ check_project() {
     if [ -f "$status" ] && [ -n "$updated" ]; then
       r="$(index_set_row "$idx" "$name" "$([ "$paused" = 1 ] && echo paused || echo active)" "${updated%% *}")"
       case "$r" in
-        date) fixed="${fixed}FIXED_INDEX_ROW_DATE=$name${NL}" ;;
-        added) fixed="${fixed}FIXED_INDEX_ROW_ADDED=$name${NL}" ;;
+        date) fixed="${fixed}FIXED_INDEX_ROW_DATE=$name${NL}"; FIXED_FILES="${FIXED_FILES}INDEX.md${NL}" ;;
+        added) fixed="${fixed}FIXED_INDEX_ROW_ADDED=$name${NL}"; FIXED_FILES="${FIXED_FILES}INDEX.md${NL}" ;;
       esac
     fi
     if [ -f "$log" ]; then
       r="$(close_orphans "$log" "$today")"
-      [ "${r:-0}" -gt 0 ] && fixed="${fixed}FIXED_SESSION_CLOSED=$r $name${NL}"
+      if [ "${r:-0}" -gt 0 ]; then
+        fixed="${fixed}FIXED_SESSION_CLOSED=$r $name${NL}"
+        FIXED_FILES="${FIXED_FILES}projects/$name/.squad/session.log${NL}"
+      fi
     fi
     if [ -s "$proj/decisions.md" ]; then
+      local dsum; dsum="$(cksum < "$proj/decisions.md")"
       r="$(bash "$HERE/decisions-lint.sh" fix "$proj/decisions.md" 2>/dev/null | grep '^DECISIONS_APPLIED_INVERSE=')"
       [ -n "$r" ] && fixed="${fixed}${r}${NL}"
+      [ "$(cksum < "$proj/decisions.md")" != "$dsum" ] && FIXED_FILES="${FIXED_FILES}projects/$name/decisions.md${NL}"
     fi
   fi
 
@@ -275,6 +292,7 @@ render() {
 }
 
 NL=$'\n'
+FIXED_FILES=""
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
@@ -315,9 +333,19 @@ main() {
     check_project "$vault" "$name" "$ctx" "$fix"
     [ "$vwide" = 1 ] && check_vault "$vault"
   fi
-  if [ "$fix" = 1 ] && [ "$(git -C "$vault" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$vault" && pwd -P)" ]; then
-    git -C "$vault" add INDEX.md projects 2>/dev/null
-    git -C "$vault" commit -q -m "[lore] check --fix $(now_ts)" >/dev/null 2>&1 || true
+  # Commit only the files --fix wrote (pathspec leaves the rest of the index
+  # and tree alone); nothing fixed, nothing committed.
+  if [ "$fix" = 1 ] && [ -n "$FIXED_FILES" ] \
+     && [ "$(git -C "$vault" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$vault" && pwd -P)" ]; then
+    local f paths=()
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case " ${paths[*]:-} " in *" $f "*) continue ;; esac
+      git -C "$vault" add -- "$f" >/dev/null 2>&1 && paths+=("$f")
+    done <<< "$FIXED_FILES"
+    if [ "${#paths[@]}" -gt 0 ] && ! git -C "$vault" diff --cached --quiet -- "${paths[@]}" 2>/dev/null; then
+      git -C "$vault" commit -q -m "[lore] check --fix $(now_ts)" -- "${paths[@]}" >/dev/null 2>&1 || true
+    fi
   fi
   return 0
 }
