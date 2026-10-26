@@ -45,6 +45,7 @@ if [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       PROJECT_ROOT) ROOT="$_value" ;;
       DISPLAY_NAME) DISPLAY="$_value" ;;
       SQUAD_DIR) SQUAD_DIR="$_value" ;;
+      TRACKER_MODE) TRACKER_MODE="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else
@@ -118,6 +119,8 @@ OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
 
 if [ -f "$STATUS" ]; then
   OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS")${NL}"
+  # Older versions live in the vault's git history (the checkpoints commit them).
+  OUTPUT="${OUTPUT}Previous versions: git -C $VAULT log --oneline -- projects/$DISPLAY/status.md${NL}"
 else
   OUTPUT="${OUTPUT}No status.md for this project yet. Reconstruct from the evidence below,${NL}or run /seed.${NL}"
 fi
@@ -170,6 +173,37 @@ fi
 OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may be stale)${NL}"
 OUTPUT="${OUTPUT}Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
 OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
+
+# Open PRs (#328): connected mode only; detached prints nothing. The call is
+# network-bound at SessionStart, so it runs in the background with a hard
+# deadline (PR_TIMEOUT seconds, default 5) and can never block orientation.
+if [ "${TRACKER_MODE:-}" = connected ]; then
+  PR_TIMEOUT="${SQUAD_ORIENT_PR_TIMEOUT:-5}"
+  PR_OUT=""
+  if ! command -v gh >/dev/null 2>&1; then
+    PR_OUT="Open PRs: unavailable (gh not found)"
+  else
+    _prf="$(mktemp 2>/dev/null)"
+    ( gh auth status >/dev/null 2>&1 || { echo "AUTH" > "$_prf.err"; exit 1; }
+      gh pr list --state open --limit 10 --json number,title,headRefName,baseRefName \
+        --jq '.[] | "#\(.number) \(.title) (\(.headRefName) -> \(.baseRefName))"' > "$_prf" 2>/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    _pid=$!; _i=0
+    while kill -0 "$_pid" 2>/dev/null && [ "$_i" -lt $((PR_TIMEOUT * 10)) ]; do sleep 0.1; _i=$((_i + 1)); done
+    if kill -0 "$_pid" 2>/dev/null; then
+      pkill -P "$_pid" 2>/dev/null; kill "$_pid" 2>/dev/null
+      PR_OUT="Open PRs: unavailable (gh timed out after ${PR_TIMEOUT}s)"
+    elif wait "$_pid" 2>/dev/null; then
+      if [ -s "$_prf" ]; then PR_OUT="Open PRs:${NL}$(cat "$_prf")"; else PR_OUT="Open PRs: none"; fi
+    elif [ -f "$_prf.err" ]; then
+      PR_OUT="Open PRs: unavailable (gh not authenticated)"
+    else
+      PR_OUT="Open PRs: unavailable (gh pr list failed)"
+    fi
+    rm -f "$_prf" "$_prf.err"
+  fi
+  OUTPUT="${OUTPUT}${PR_OUT}${NL}"
+fi
 
 # Open worktrees with uncommitted work: a killed session never ran SessionEnd,
 # so derive it from git (one line per dirty linked worktree, at most 5).

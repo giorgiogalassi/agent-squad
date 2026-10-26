@@ -122,5 +122,41 @@ printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: empty stdin 
 o="$(run_src 'not json')"
 printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: garbage stdin orients" || bad "source: garbage stdin: $o"
 
+# Open PRs and status history (#328). gh is a stub on PATH; fixtures only.
+mkdir -p "$TMPROOT/ghok" "$TMPROOT/ghdead" "$TMPROOT/ghslow" "$TMPROOT/ghnone"
+cat > "$TMPROOT/ghok/gh" <<'EOS'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+echo "#7 Add thing (feat -> main)"
+echo "#8 Fix other (fix -> main)"
+EOS
+printf '#!/bin/sh\n[ "$1" = auth ] && exit 1\nexit 1\n' > "$TMPROOT/ghdead/gh"
+printf '#!/bin/sh\nsleep 30\n' > "$TMPROOT/ghslow/gh"
+chmod +x "$TMPROOT"/ghok/gh "$TMPROOT"/ghdead/gh "$TMPROOT"/ghslow/gh
+# PATH with the basics but no gh, for the "gh not installed" case.
+for t in bash git cat sed awk grep dirname basename tr wc head tail sort date stat ls mkdir cut find jq mktemp rm sleep kill pkill; do
+  p="$(command -v "$t" 2>/dev/null)" && [ -x "$p" ] && ln -sf "$p" "$TMPROOT/ghnone/$t"
+done
+run_pr() {  # run_pr <path-prefix> [vault]
+  (cd "$F_PROJECT" && SQUAD_ORIENT_PR_TIMEOUT=1 SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="${2:-$F_VAULT}" PATH="$1:$PATH" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)
+}
+c="$(ctx "$(run_pr "$TMPROOT/ghok")")"
+printf '%s\n' "$c" | grep -q '^Open PRs:' && printf '%s\n' "$c" | grep -q '#7 Add thing (feat -> main)' && ok "open PRs: connected lists them" || bad "open PRs listed: $c"
+c="$(ctx "$(run_pr "$TMPROOT/ghdead")")"
+printf '%s\n' "$c" | grep -q 'Open PRs: unavailable (gh not authenticated)' && ok "open PRs: unauthenticated one-liner" || bad "open PRs unauth: $c"
+t0=$SECONDS
+c="$(ctx "$(run_pr "$TMPROOT/ghslow")")"
+printf '%s\n' "$c" | grep -q 'Open PRs: unavailable (gh timed out' && [ $((SECONDS - t0)) -lt 10 ] && ok "open PRs: timeout is bounded" || bad "open PRs timeout: $c"
+printf '%s\n' "$c" | grep -q 'Lore orientation' && ok "open PRs: orientation survives a hang" || bad "orientation lost on hang"
+c="$(ctx "$(cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" PATH="$TMPROOT/ghnone" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)")"
+printf '%s\n' "$c" | grep -q 'Open PRs: unavailable (gh not found)' && ok "open PRs: gh missing one-liner" || bad "open PRs no gh: $c"
+# Detached: same vault with chisel.mode flipped, gh would succeed, nothing printed.
+sed -i.bak 's/"mode": "connected"/"mode": "detached"/' "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+c="$(ctx "$(run_pr "$TMPROOT/ghok")")"
+printf '%s\n' "$c" | grep -q 'Open PRs' && bad "detached: PR line printed" || ok "detached: nothing about PRs"
+mv "$F_VAULT/projects/fixture/.squad/chisel-config.json.bak" "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+c="$(ctx "$(run_pr "$TMPROOT/ghok")")"
+printf '%s\n' "$c" | grep -q 'Previous versions: git -C '"$F_VAULT"' log --oneline -- projects/fixture/status.md' && ok "previous versions line names the git command" || bad "previous versions: $c"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
