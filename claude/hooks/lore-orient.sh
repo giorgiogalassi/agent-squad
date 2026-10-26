@@ -214,7 +214,18 @@ if [ -f "$SQUAD_DIR/architecture.md" ]; then
     SIGNALS="${SIGNALS}Architecture snapshot older than $NEWEST_F; run /seed${NL}"
   fi
 fi
-if [ -f "$STATUS" ] && [ "$(wc -w < "$STATUS" | tr -d ' ')" -gt 300 ]; then
+# Vault health (#333): one shared script; its lines replace the status budget
+# line and the saved SessionEnd decisions findings below, so nothing prints
+# twice. Whole-vault pass only on small vaults (<= 60 projects).
+HEALTH=""
+if [ -x "$HOOK_DIR/vault-check.sh" ]; then
+  _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
+  [ "$SQUAD_DIR" != "$PROJ/.squad" ] && _vc_args+=(--context repo)
+  _projs=("$VAULT"/projects/*/)
+  [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
+  HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"
+fi
+if [ -z "$HEALTH" ] && [ ! -x "$HOOK_DIR/vault-check.sh" ] && [ -f "$STATUS" ] && [ "$(wc -w < "$STATUS" | tr -d ' ')" -gt 300 ]; then
   SIGNALS="${SIGNALS}status.md over budget; next rebuild compresses${NL}"
 fi
 # Recurring squad incidents (one awk pass inside the store script). Silent
@@ -227,11 +238,12 @@ if [ -x "$HOOK_DIR/squad-incidents.sh" ]; then
 fi
 # Decisions lint findings left by the last SessionEnd (read-only here; the
 # human text comes from decisions-lint.sh render, shared with `lore check`).
-if [ -s "$PROJ/.decisions-lint" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
+if [ ! -x "$HOOK_DIR/vault-check.sh" ] && [ -s "$PROJ/.decisions-lint" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
   _dl="$(bash "$HOOK_DIR/decisions-lint.sh" render < "$PROJ/.decisions-lint" 2>/dev/null)"
   [ -n "$_dl" ] && SIGNALS="${SIGNALS}${_dl}${NL}"
 fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
+[ -n "$HEALTH" ] && OUTPUT="${OUTPUT}${NL}${HEALTH}${NL}"
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"
 
