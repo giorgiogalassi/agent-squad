@@ -122,5 +122,11 @@ printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: empty stdin 
 o="$(run_src 'not json')"
 printf '%s' "$o" | "$JQ" -e "$CHECK" >/dev/null 2>&1 && ok "source: garbage stdin orients" || bad "source: garbage stdin: $o"
 
+# A squad-hook child session (SQUAD_LORE_HOOK=1) gets no orientation; a normal one does.
+q="$(cd "$F_PROJECT" && SQUAD_LORE_HOOK=1 SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)"
+if [ -z "$q" ]; then ok "SQUAD_LORE_HOOK=1: silent"; else bad "SQUAD_LORE_HOOK=1: not silent"; fi
+q="$(cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)"
+if [ -n "$q" ]; then ok "unset SQUAD_LORE_HOOK: still orients"; else bad "normal session lost orientation"; fi
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

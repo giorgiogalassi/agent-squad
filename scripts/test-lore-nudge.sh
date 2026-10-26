@@ -22,8 +22,9 @@ HOOK="$TMPROOT/hooks/lore-nudge.sh"
 CALLS="$TMPROOT/claude-calls"
 cat > "$TMPROOT/fakebin/claude" <<EOF2
 #!/bin/sh
-echo "called child=\${LORE_NUDGE_CHILD:-}" >> "$CALLS"
+echo "called child=\${LORE_NUDGE_CHILD:-} hook=\${SQUAD_LORE_HOOK:-}" >> "$CALLS"
 cat > "$TMPROOT/claude-stdin"
+[ -z "\${FAKE_SLEEP:-}" ] || exec sleep "\$FAKE_SLEEP"
 printf '%s\n' "\${FAKE_ANSWER:-NO}"
 EOF2
 chmod +x "$TMPROOT/fakebin/claude"
@@ -70,13 +71,39 @@ check "off (false): no model call" "0" "$(calls)"
 # On: eligible, proposes lore decide
 setcfg '.lore = {nudge: true}'
 r="$(run "$F_PROJECT")"
-check "on: block decision" "block" "$(printf '%s' "$r" | jq -r .decision 2>/dev/null)"
-has "on: reason proposes lore decide" 'lore decide "Gate nudge: lore.nudge setting, off by default"' "$(printf '%s' "$r" | jq -r .reason)"
-has "on: reason says wait" "wait for the user" "$(printf '%s' "$r" | jq -r .reason)"
+CTX="$(printf '%s' "$r" | jq -r .hookSpecificOutput.additionalContext 2>/dev/null)"
+check "on: hookEventName Stop" "Stop" "$(printf '%s' "$r" | jq -r .hookSpecificOutput.hookEventName 2>/dev/null)"
+check "on: no block decision" "null" "$(printf '%s' "$r" | jq -r .decision 2>/dev/null)"
+has "on: context proposes lore decide" 'lore decide "Gate nudge: lore.nudge setting, off by default"' "$CTX"
+has "on: context says wait" "wait for the user" "$CTX"
 check "on: one model call" "1" "$(calls)"
 has "on: judge saw the turn" "ok, do that" "$(cat "$TMPROOT/claude-stdin")"
 has "on: judge saw known headings" "Old choice" "$(cat "$TMPROOT/claude-stdin")"
 has "on: judge run flagged as child" "child=1" "$(cat "$CALLS")"
+has "on: judge env carries SQUAD_LORE_HOOK" "hook=1" "$(cat "$CALLS")"
+
+# Quote/backslash in LINE cannot break out of lore decide "..."
+r="$(FAKE_ANSWER='YES: T: say "hi" \ now' run "$F_PROJECT")"
+CTX="$(printf '%s' "$r" | jq -r .hookSpecificOutput.additionalContext 2>/dev/null)"
+has "quote in LINE: stripped" 'lore decide "T: say hi  now"' "$CTX"
+
+# Long turn: the end (the confirmation) survives truncation
+LONGTR="$TMPROOT/long.jsonl"
+{
+  printf '{"type":"user","message":{"role":"user","content":"start"}}\n'
+  printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$(head -c 20000 /dev/zero | tr '\0' 'x')"
+  printf '{"type":"user","message":{"role":"user","content":"FINAL-CONFIRMATION"}}\n'
+} > "$LONGTR"
+jq -n --arg c "$F_PROJECT" --arg t "$LONGTR" '{cwd:$c, transcript_path:$t, stop_hook_active:false}' | bash "$HOOK" >/dev/null 2>&1
+has "long turn: tail keeps the end" "FINAL-CONFIRMATION" "$(cat "$TMPROOT/claude-stdin")"
+
+# Timeout: a hung judge is cut off, hook stays silent and exits 0 within the bound
+s0=$(date +%s)
+r="$(FAKE_SLEEP=20 LORE_NUDGE_TIMEOUT=1 run "$F_PROJECT")"; rc=$?
+el=$(( $(date +%s) - s0 ))
+check "timeout: silent" "" "$r"
+check "timeout: exit 0" "0" "$rc"
+[ "$el" -lt 10 ] && ok "timeout: returned within bound (${el}s)" || bad "timeout: took ${el}s"
 
 # On, answer NO: nothing visible
 r="$(FAKE_ANSWER=NO run "$F_PROJECT")"

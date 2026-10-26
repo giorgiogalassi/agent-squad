@@ -483,8 +483,10 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   one small model call per turn end, only in vault-mapped projects. With the
   setting off the hook is a shell check that exits at once (no model call).
   It is a command hook, not `type: prompt`, because a prompt hook always calls
-  the model and has no setting gate; it surfaces the proposal through a
-  `block` decision, since Stop has no non-blocking additional-context field.
+  the model and has no setting gate; it surfaces the proposal through Stop's
+  `additionalContext` output, which continues the turn without a hook-error
+  notice. The judge call is capped at 45s and runs with `SQUAD_LORE_HOOK=1`
+  so its child session skips the squad hooks.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,

@@ -7,9 +7,10 @@
 # call (no cheap gate) and its only outputs are {ok, reason}; it cannot be
 # switched off by a setting. So the gate is this shell script and the judge is
 # one `claude -p` call that runs only when the gate is open.
-# Why `decision: block`: Stop has no additionalContext field; blocking the stop
-# with a `reason` is the supported way to hand Claude text and make it speak
-# once more. stop_hook_active ends the loop after that one extra turn.
+# Output: Stop's `hookSpecificOutput.additionalContext` (hooks reference, "Stop
+# decision control"): it continues the conversation with the text as "Stop hook
+# feedback", under the same loop protections as `block`, with no hook-error
+# notice. stop_hook_active ends the loop after that one extra turn.
 #
 # Gate (cheap, no model): `lore.nudge` is true in <vault>/lore-config.json AND
 # the session's project is mapped in `projects`. Otherwise: silent exit 0.
@@ -20,14 +21,16 @@ set -u
 
 [ -z "${LORE_NUDGE_CHILD:-}" ] || exit 0   # the judge's own session must not nudge
 command -v jq >/dev/null 2>&1 || exit 0
-INPUT="$(cat)"
-[ -n "$INPUT" ] || exit 0
-[ "$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
 
+# Config gate first: with the setting off nothing else (stdin parse) runs.
 VAULT="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
 CONFIG="$VAULT/lore-config.json"
 [ -f "$CONFIG" ] || exit 0
 [ "$(jq -r '.lore.nudge // false' "$CONFIG" 2>/dev/null)" = true ] || exit 0
+
+INPUT="$(cat)"
+[ -n "$INPUT" ] || exit 0
+[ "$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
 
 CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
 TRANSCRIPT="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)"
@@ -47,7 +50,7 @@ TURN="$(jq -rs '
        | {t: .type, s: (.message.content | txt)} | select(.s != "")] as $m
   | (([range(0; $m | length)] | map(select($m[.].t == "user")) | last) // 0) as $i
   | $m[$i:] | map((if .t == "user" then "USER: " else "ASSISTANT: " end) + .s) | join("\n\n")
-' "$TRANSCRIPT" 2>/dev/null | head -c 8000)"
+' "$TRANSCRIPT" 2>/dev/null | tail -c 8000)"
 [ -n "$TURN" ] || exit 0
 
 DEC="$VAULT/projects/$NAME/decisions.md"
@@ -68,12 +71,33 @@ $KNOWN
 TURN:
 $TURN"
 
-ANSWER="$(printf '%s' "$PROMPT" | LORE_NUDGE_CHILD=1 claude -p --model haiku 2>/dev/null | sed -n '/^YES:/{p;q;}')"
+# Judge call, bounded below the 60s hook timeout. SQUAD_LORE_HOOK=1 makes the
+# child's own SessionStart/SessionEnd squad hooks exit at once. timeout/gtimeout
+# when present, else background + watchdog kill; on timeout stay silent.
+JUDGE_OUT="$(mktemp "${TMPDIR:-/tmp}/lore-nudge.XXXXXX")" || exit 0
+trap 'rm -f "$JUDGE_OUT"' EXIT
+BOUND="${LORE_NUDGE_TIMEOUT:-45}"
+TO="$(command -v timeout || command -v gtimeout || true)"
+if [ -n "$TO" ]; then
+  printf '%s' "$PROMPT" | LORE_NUDGE_CHILD=1 SQUAD_LORE_HOOK=1 "$TO" "$BOUND" claude -p --model haiku >"$JUDGE_OUT" 2>/dev/null || true
+else
+  printf '%s' "$PROMPT" > "$JUDGE_OUT.in"
+  LORE_NUDGE_CHILD=1 SQUAD_LORE_HOOK=1 claude -p --model haiku <"$JUDGE_OUT.in" >"$JUDGE_OUT" 2>/dev/null &
+  CPID=$!
+  ( sleep "$BOUND"; kill "$CPID" 2>/dev/null ) >/dev/null 2>&1 &
+  WPID=$!
+  wait "$CPID" 2>/dev/null; RC=$?
+  pkill -P "$WPID" 2>/dev/null; kill "$WPID" 2>/dev/null; wait "$WPID" 2>/dev/null
+  rm -f "$JUDGE_OUT.in"
+  [ "$RC" -eq 0 ] || exit 0   # killed or failed: silent
+fi
+ANSWER="$(sed -n '/^YES:/{p;q;}' "$JUDGE_OUT")"
 case "$ANSWER" in "YES: "?*) ;; *) exit 0 ;; esac
 LINE="${ANSWER#YES: }"
-LINE="$(printf '%s' "$LINE" | tr -d '\n' | head -c 300)"
+# Strip what could break out of the quoted lore decide "..." (quotes, backslash, $, backtick).
+LINE="$(printf '%s' "$LINE" | tr -d '\n"\\`$' | head -c 300)"
 
 REASON="Lore noticed a possible unrecorded decision: ${LINE}
 In one short sentence, propose recording it with: lore decide \"${LINE}\" -- then stop and wait for the user to confirm or decline. Do not run it yourself and do not write decisions.md."
-jq -n --arg r "$REASON" '{decision: "block", reason: $r}'
+jq -n --arg r "$REASON" '{hookSpecificOutput: {hookEventName: "Stop", additionalContext: $r}}'
 exit 0
