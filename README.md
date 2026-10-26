@@ -38,6 +38,7 @@ runs as a required step inside `/forge` before a draft scope closes.
 Cody            Implement one issue on a branch cut from origin/<base> (local <base> in detached mode), with preferences and active decisions injected; open its PR.
 Reven           Review each PR against its own base (stacked PRs show only their diff).
 SessionEnd      lore-checkpoint hook (async) rebuilds status.md when stale (worktree sessions append a checkpoint only); /lore recover rebuilds explicitly.
+                The same hook lints decisions.md: it adds the inverse marker for `Supersedes:` lines and leaves findings for the next SessionStart (see docs/lore-decisions.md).
 
 Checks (this repo)
 Tier 1 (gate)   bash scripts/squad-lint.sh
@@ -260,6 +261,8 @@ agent-squad/
                        hook" section below).
       lore-orient.sh   SessionStart read-only orientation script
       lore-checkpoint.sh
+      decisions-lint.sh   decisions.md checks (KEY=value per finding), shared by the hook, lore decide and lore check
+      lore-decide.sh      single write path for a project decision (lore decide)
                        SessionEnd status.md refresh
       chisel-config-validate.py
                        Validates chisel-config.json shape
@@ -508,7 +511,7 @@ vault files directly when needed.
       progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by the `cody-checkpoint.sh` SubagentStop hook when Cody finishes.
-    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
+    decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore decide` is the single write path (`lore prefer` project-only calls it; `Superseded in part by:` keeps an entry active); `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
 Sidecar is the one exception to "all runtime files live in the vault": its
