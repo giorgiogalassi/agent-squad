@@ -25,6 +25,8 @@ on:
       - "scripts/test-gh-shim.sh"
       - "scripts/test-squad-common.sh"
       - "scripts/test-squad-labels.sh"
+      - "scripts/test-squad-pr-desc.sh"
+      - "claude/hooks/squad-pr-desc.sh"
       - "claude/hooks/squad-labels.sh"
       - "scripts/test-squad-branch.sh"
       - "claude/hooks/squad-branch.sh"
@@ -82,6 +84,10 @@ jobs:
       - name: Run scripts/test-squad-labels.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-labels.sh; else bash scripts/test-squad-labels.sh; fi
+
+      - name: Run scripts/test-squad-pr-desc.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-pr-desc.sh; else bash scripts/test-squad-pr-desc.sh; fi
 
       - name: Run scripts/test-squad-branch.sh (bash 3.2 on macOS)
         run: |

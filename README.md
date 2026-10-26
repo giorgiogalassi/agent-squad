@@ -344,6 +344,10 @@ agent prose only calls them (the rule is in `CLAUDE.md`):
   mutating `gh` path and refuses in detached mode.
 - `squad-labels.sh` (ensure, claim, review, escalate, with `--handoff`)
   moves issue labels; it makes zero `gh` calls in detached mode.
+- `squad-pr-desc.sh` (apply, with `--handoff` when detached) applies
+  Reven's mandatory `## Description drift` block to the PR body (exact
+  whole-line replacements and appended bullets); detached it records
+  checklist lines instead. The block never affects the verdict.
 - `squad-branch.sh` (create, continue) handles branches, with no `gh`
   calls, worktree-safe, never `-f`, stash or reset. It resolves
   `origin/<base>`, then local `<base>`, and emits `BASE_REF`; detached mode
