@@ -105,6 +105,9 @@ when explicitly requested or named by a context ref.
    original. n → proceed; note the local `.squad/` is ignored and name
    the vault path.
 6. Update INDEX.md's active project (full overwrite, always).
+   For a `context: repo` project, also run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-journal-pointer.sh` (JOURNAL pointer in
+   `decisions.md` and `status.md`; idempotent). Exit 10: report the stderr reason.
 7. Output one line: project name, vault path, mapping recorded. For
    status reconstruction use `lore recover`. When `decisions.md` has
    active entries, add: `Run lore audit to check them against the code.`

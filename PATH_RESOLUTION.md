@@ -174,6 +174,18 @@ this fix but deliberately aren't touched by it:
   common-dir fix; the evidence-gathering git calls were changed from `git
   -C "$ROOT"` to plain `git` for exactly this reason.
 
+## Where decisions live per context
+
+With the default (vault) context, design decisions live in
+`<vault>/projects/<name>/decisions.md`. A project declared `context: repo` in
+`lore-config.json` keeps them in the repository instead (`JOURNAL.md` for
+agent-squad), and the vault's `decisions.md` holds only vault-only rules. So a
+session started from the vault can find them, `/seed` and `lore start` run
+`lore-journal-pointer.sh`, which writes a one-line header into `decisions.md`
+and a line under `## Context refs` in `status.md` naming
+`<PROJECT_ROOT>/JOURNAL.md` (marked missing when the file does not exist), and
+the SessionStart orientation includes the last 40 lines of that `JOURNAL.md`.
+
 ## Installing the script
 
 `path-resolve.sh` is a required dependency, not an optional hook: every

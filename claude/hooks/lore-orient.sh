@@ -165,6 +165,14 @@ if [ -f "$STATUS" ]; then
   [ -n "$REFS_OUT" ] && OUTPUT="${OUTPUT}${NL}### Context refs${NL}${REFS_OUT}"
 fi
 
+# JOURNAL tail (#330): a `context: repo` project keeps its decisions in the
+# repository's JOURNAL.md, so show the last 40 lines (at most 2400 chars, the
+# same budget as the context refs). Silent when the file is absent.
+if [ "$SQUAD_DIR" != "$PROJ/.squad" ] && [ -f "$ROOT/JOURNAL.md" ]; then
+  _jt="$(tail -n 40 "$ROOT/JOURNAL.md" | tail -c 2400)"
+  [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
+fi
+
 # Local evidence: cheap, offline, lets the model reconcile a stale status.md
 # Uses the actual working directory, not $ROOT: $ROOT is the main project
 # root (needed for the vault lookup above), but the branch/commits should

@@ -233,6 +233,13 @@ project: <project-name>
 > Managed by Lore.
 ```
 
+For a `context: repo` project (`SQUAD_DIR` is not `<vault>/projects/<name>/.squad`),
+whether the project files are new or already exist, finish with
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-journal-pointer.sh` (idempotent; writes the
+JOURNAL pointer header into `decisions.md` and a line under `## Context refs` in
+`status.md`, never touches decision entries). Add its `JOURNAL=missing` result to the
+final summary; otherwise it prints `OUTCOME=unchanged` and writes nothing.
+
 If `<vault>/INDEX.md` does not exist, create:
 ```markdown
 ---
