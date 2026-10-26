@@ -38,6 +38,9 @@
 # decisions.md (inverse markers added, findings left in .decisions-lint for
 # lore-orient.sh); see the block before the status work.
 #
+# Session log (#329): SessionEnd closes this session's open start lines through
+# vault-check.sh's close_session_starts; see close_session_log below.
+#
 # INDEX sync (#328): on every exit past the status precondition the project's
 # INDEX.md row (date, status) and the active project are updated through
 # vault-check.sh's index_set_row / index_set_active; see sync_index below.
@@ -174,6 +177,38 @@ if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x 
     git -C "$VAULT" $_id commit -q -m "lore: decisions lint $DISPLAY" -- "projects/$DISPLAY/decisions.md" >/dev/null 2>&1 || true
   fi
 fi
+
+# Session log (#329), every hook SessionEnd, before the status work: closes the
+# start lines of THIS session. Ownership rule (start lines carry no session
+# id): the start is dated at or after the first timestamp of this session's
+# transcript and names this session's branch ("branch: <b>"). Without a
+# transcript timestamp or a branch nothing is closed here (vault-check --fix
+# still closes past-day orphans). Same function as `lore check --fix`
+# (vault-check.sh, sourced in a subshell: it sets -u); skill-closed sessions
+# are already paired, so no duplicate end is written. Only session.log is
+# committed, by pathspec, and only when it changed.
+close_session_log() {
+  local log="$VAULT/projects/$DISPLAY/.squad/session.log" first epoch since br n _id=""
+  [ -f "$log" ] && [ -f "$HOOK_DIR/vault-check.sh" ] && [ -f "$TRANSCRIPT" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  first="$(jq -r '.timestamp // empty' "$TRANSCRIPT" 2>/dev/null | head -n 1)"
+  [ -n "$first" ] || return 0
+  epoch="$(date -d "$first" +%s 2>/dev/null || TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "${first%%.*}" +%s 2>/dev/null)"
+  [ -n "$epoch" ] || return 0
+  since="$(date -d "@$epoch" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r "$epoch" "+%Y-%m-%d %H:%M" 2>/dev/null)"
+  br="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  [ -n "$since" ] && [ -n "$br" ] && [ "$br" != HEAD ] || return 0
+  n="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; close_session_starts "$log" "$since" "$br" 2>/dev/null )"
+  [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
+  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$VAULT" add "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1
+    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
+    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
+    # shellcheck disable=SC2086
+    git -C "$VAULT" $_id commit -q -m "lore: session log $DISPLAY" -- "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1 || true
+  fi
+}
+[ "$MODE" = hook ] && close_session_log
 
 [ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
 # Past the preconditions: drop a stale log; any later bail rewrites it.

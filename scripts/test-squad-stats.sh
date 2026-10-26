@@ -309,6 +309,39 @@ grep -q "^| Cost per vanilla session | lower | \$1.00 | \$0.80 | -20% | 12 / 12 
 grep -q "^| Cost per squad session | lower | \$0.00 | \$0.00 | too few units | 1 / 1 |" "$REPORT" && ok "trend: too few units" || bad "trend: too few units"
 grep -q "^| Squad cost per merged PR | lower | n/a | n/a | n/a | 0 / 0 |" "$REPORT" && ok "trend: n/a without PRs" || bad "trend: n/a without PRs"
 
+# ---- branch view (#329) -------------------------------------------------
+BP="$TMPROOT/bprojects/-b"; mkdir -p "$BP"
+for sid in b1 b2; do
+  printf '{"type":"assistant","timestamp":"2026-10-14T10:00:00.000Z","sessionId":"%s","cwd":"/b","gitBranch":"feat-x","message":{"id":"m_%s","model":"claude-sonnet-5-5","usage":{"input_tokens":1000000,"output_tokens":0},"content":[{"type":"text","text":"x"}]}}\n' "$sid" "$sid" > "$BP/$sid.jsonl"
+done
+printf '{"type":"assistant","timestamp":"2026-10-14T10:00:00.000Z","sessionId":"b3","cwd":"/b","gitBranch":"other","message":{"id":"m_b3","model":"claude-sonnet-5-5","usage":{"input_tokens":1000000,"output_tokens":0},"content":[{"type":"text","text":"x"}]}}\n' > "$BP/b3.jsonl"
+BLOG="$SECOND_BRAIN_PATH/projects/b/.squad"; mkdir -p "$BLOG"
+cat > "$BLOG/session.log" <<'LOGEOF'
+[2026-10-14 10:00] [forge] start — branch: feat-x
+[2026-10-14 10:30] [forge] end — complexity: low
+[2026-10-14 11:00] [ralph] start — batch: [1, 2], branch: feat-x
+[2026-10-14 12:15] [ralph] end — closed at session end (start 2026-10-14 11:00)
+[2026-10-14 13:00] [chisel] start — branch: feat-x
+[2026-10-15 09:00] [chisel] end — closed without teardown (start 2026-10-14 13:00)
+[2026-10-14 14:00] [archy] start — branch: other
+[2026-10-14 14:10] [archy] end — PRD written
+LOGEOF
+export SQUAD_STATS_DIR="$TMPROOT/bstore"
+CLAUDE_PROJECTS_DIR="$TMPROOT/bprojects" python3 "$SUT" collect >/dev/null 2>&1
+run branch feat-x
+check "branch: exit 0" "0" "$RC"
+check "branch: BRANCH" "feat-x" "$(key BRANCH)"
+check "branch: SESSIONS" "2" "$(key SESSIONS)"
+check "branch: COST_USD from the transcript" "4.00" "$(key COST_USD)"
+check "branch: LOG_SESSIONS (forge + ralph pairs)" "2" "$(key LOG_SESSIONS)"
+check "branch: WALL_MINUTES (30 + 75)" "105" "$(key WALL_MINUTES)"
+check "branch: teardown closure is unclosed, not wall time" "1" "$(key UNCLOSED_STARTS)"
+run branch nothing-here
+check "branch: unknown branch is zeros" "0|0.00|0" "$(key SESSIONS)|$(key COST_USD)|$(key WALL_MINUTES)"
+run branch
+check "branch: no name is a usage error" "2" "$RC"
+unset SQUAD_STATS_DIR
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -406,11 +406,16 @@ reflecting only what actually changed):
 
 ## Session log
 
-When all phases complete, append to `.squad/session.log` (read first,
-append; create it if missing; timestamp via
-`date "+%Y-%m-%d %H:%M"`):
+Append to `.squad/session.log` (read first, append; create it if
+missing; timestamp via `date "+%Y-%m-%d %H:%M"`) a start line before
+phase 1 and an end line when all phases complete:
 
+  [YYYY-MM-DD HH:MM] [seed] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [seed] end — context files written
+
+`<branch>` is `git branch --show-current` (`detached` if empty). The
+SessionEnd hook closes a start that has no end by matching this branch, so
+keep the `— branch:` field exactly in this form.
 
 ---
 

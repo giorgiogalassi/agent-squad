@@ -334,5 +334,9 @@ still exist, they just aren't on the board yet:
 Append to `.squad/session.log` (read first, append, create if missing;
 timestamps via `date "+%Y-%m-%d %H:%M"`):
 
-  [YYYY-MM-DD HH:MM] [chisel] start
+  [YYYY-MM-DD HH:MM] [chisel] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
+
+`<branch>` is `git branch --show-current` (`detached` if empty). The
+SessionEnd hook closes a start that has no end by matching this branch, so
+keep the `— branch:` field exactly in this form.
