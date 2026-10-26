@@ -4,6 +4,9 @@
 # (lore-decide.sh) and, later, `lore check` / the SessionStart health block
 # (#333). Contract: SCRIPT_CONTRACT.md (stdout is KEY=value lines only,
 # one per finding; exit 0 on success even with findings, 2 usage, 20 I/O).
+# Exception: check and fix emit findings only, no OUTCOME=/CHANGED= lines;
+# callers (lore-checkpoint.sh, lore-decide.sh) consume the finding keys as-is
+# and an empty stdout means clean.
 #
 # Usage:
 #   decisions-lint.sh check  <decisions.md> [--new-only]
@@ -13,6 +16,9 @@
 # check is read-only. fix adds the inverse marker to the entry named by a
 # Supersedes: / Supersedes in part: line when that entry lacks it (one line
 # directly under its heading); it never rewrites or deletes any other text.
+# A Supersedes: target is also looked up in decisions-archive.md next to the
+# file (lore decide moves fully superseded entries there), so archiving never
+# produces DECISIONS_TARGET_NOT_FOUND.
 # --new-only restricts the "cites without marker" report to entries absent
 # from the file at git HEAD (every entry when the file is not tracked).
 #
@@ -34,6 +40,7 @@ die() { echo "$1" >&2; exit "${2:-2}"; }
 render() {
   local k v
   while IFS='=' read -r k v; do
+    v="${v//\\\\/\\}" # undo the awk esc() doubling of backslashes
     case "$k" in
       DECISIONS_FILE) echo "decisions.md: file is $v" ;;
       DECISIONS_BULLETS) echo "decisions.md: $v entries use '- [YYYY-MM-DD]' bullets, invisible to the Forge/Ralph decisions window; convert to '## [YYYY-MM-DD]' headings" ;;
@@ -69,9 +76,19 @@ new_keys() {
 lint() { # lint <check|fix> <file> <newkeys>
   local mode="$1" f="$2" newk="$3" out=""
   [ "$mode" = fix ] && out="$f.lint.$$"
-  awk -v mode="$mode" -v out="$out" -v newk="$newk" '
+  awk -v mode="$mode" -v out="$out" -v newk="$newk" -v archk="$ARCHK" '
   function esc(s) { gsub(/\\/, "\\\\", s); return s }
   function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+  function archived(d, t,   n, a, m, p, ad, at) {
+    n = split(archk, a, "|")
+    for (m = 1; m <= n; m++) {
+      if (a[m] == "") continue
+      ad = substr(a[m], 1, 10); at = substr(a[m], 12)
+      if (ad != d) continue
+      if (t == "" || at == t || index(at, t) == 1) return 1
+    }
+    return 0
+  }
   function label(i) { return "[" date[i] "] " title[i] }
   function prepare(   i, k, j, c, n, seen, cs, d, ln, tgt) {
     for (i = 1; i <= n_e; i++) dset[date[i]] = 1
@@ -82,6 +99,7 @@ lint() { # lint <check|fix> <file> <newkeys>
           if (j == i || date[j] != sd[i, k]) continue
           if (st[i, k] == "" || title[j] == st[i, k] || index(title[j], st[i, k]) == 1) { tgt = j; break }
         }
+        if (!tgt && archived(sd[i, k], st[i, k])) continue
         if (!tgt) { print "DECISIONS_TARGET_NOT_FOUND=" esc(label(i)) " names " sd[i, k] " " esc(st[i, k]); continue }
         if (index(sbd[tgt], " " date[i] " ")) continue
         sbd[tgt] = sbd[tgt] " " date[i] " "
@@ -172,5 +190,8 @@ if ! grep -q '[^[:space:]]' "$FILE"; then echo "DECISIONS_FILE=empty"; exit 0; f
 
 NEWK=ALL
 [ "$NEWONLY" = 1 ] && NEWK="$(new_keys "$FILE")"
+ARCHK=""
+ARCHF="$(dirname "$FILE")/decisions-archive.md"
+[ -f "$ARCHF" ] && ARCHK="$(keys "$ARCHF" | tr '\n' '|')"
 lint "$SUB" "$FILE" "$NEWK"
 exit 0

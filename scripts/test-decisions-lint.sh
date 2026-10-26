@@ -135,6 +135,16 @@ bash "$DECIDE" "Trigger: pushes over the cap" 2>&1 | grep -q 'ARCHIVED=1' && ok 
 check "archived entry left decisions.md" "0" "$(grep -c 'Old one' "$DEC")"
 check "archived entry is in decisions-archive.md" "1" "$(grep -c 'Old one' "$PDIR/decisions-archive.md")"
 
+# ---- lint after archiving: a surviving Supersedes: pointing at an archived entry is not a finding
+{ i=1; while [ $i -le 60 ]; do printf '## [2026-05-01] Active %d\nbody\n' "$i"; i=$((i+1)); done
+  printf '## [2026-04-01] Old two\nold body\n'
+  printf '## [2026-05-02] Newer two\nSupersedes: [2026-04-01] Old two\n'; } > "$DEC"
+rm -f "$PDIR/decisions-archive.md"
+bash "$DECIDE" "Trigger: archive again" 2>&1 | grep -q 'ARCHIVED=1' && ok "second archive moves the entry" || bad "second archive moves the entry"
+check "archived target no longer in decisions.md" "0" "$(grep -c '^## .*Old two' "$DEC")"
+check "lint after archiving has no target-not-found" "0" "$(bash "$LINT" check "$DEC" | grep -c TARGET_NOT_FOUND)"
+check "lint --new-only after archiving has no target-not-found" "0" "$(bash "$LINT" check "$DEC" --new-only | grep -c TARGET_NOT_FOUND)"
+
 # ---- SessionEnd: inverse added to a hand-appended entry; cite reported at start
 cat > "$DEC" <<'EOF'
 # Decisions
