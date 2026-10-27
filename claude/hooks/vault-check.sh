@@ -58,8 +58,9 @@ week_ago() {
 # ---- reusable repairs (also the entry points for #328 and #329) -----------
 
 # index_set_row <index.md> <project> <status> <date> [set-status]
-# With set-status=1 (SessionEnd, #328) an existing row also takes <status>, and
-# an up-to-date date no longer short-circuits a status change.
+# With set-status=1 (SessionEnd, #328) an existing row also takes <status> when
+# its current status is empty, active or paused (a hand-set blocked or done
+# stays), and an up-to-date date no longer short-circuits a status change.
 # Prints CHANGED/ADDED/NONE-style result on stdout: "date", "added" or "".
 # Updates the date of the project's row when behind, or appends a row at the
 # end of the Projects table when there is none. Never touches other rows.
@@ -78,7 +79,7 @@ index_set_row() {
         ost = f[c - 2]; gsub(/^ +| +$/, "", ost) } }
     END {
       if (row) {
-        chgd = (old < date); chgs = (setst == 1 && ost != st)
+        chgd = (old < date); chgs = (setst == 1 && ost != st && (ost == "" || ost == "active" || ost == "paused"))
         if (!chgd && !chgs) exit
         l = lines[row]; c = split(l, f, "|")
         if (chgd) f[c - 1] = " " date " "

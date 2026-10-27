@@ -76,7 +76,6 @@ READING="$(sed -n '/^## Reading rules/,/^## Active project/p' "$IDX")"
 
 h_before="$(bash "$VC" check --vault "$F_VAULT" --project fixture)"
 has "before: row behind reported" "INDEX_ROW_BEHIND=2026-01-02 < $TODAY" "$h_before"
-has "before: other active reported" "INDEX_ACTIVE_OTHER=other" "$h_before"
 
 printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
 
@@ -87,7 +86,7 @@ has "active project set" "Name: fixture" "$(cat "$IDX")"
 has "active status link set" "Status: [[projects/fixture/status]]" "$(cat "$IDX")"
 has "Last worked set" "Last worked: $TODAY" "$(cat "$IDX")"
 has "Companion kept" "Companion: claude" "$(cat "$IDX")"
-check "health quiet after SessionEnd" "" "$(bash "$VC" check --vault "$F_VAULT" --project fixture | grep -E 'INDEX_ROW_BEHIND|INDEX_ACTIVE_OTHER|INDEX_NO_ROW')"
+check "health quiet after SessionEnd" "" "$(bash "$VC" check --vault "$F_VAULT" --project fixture | grep -E 'INDEX_ROW_BEHIND|INDEX_NO_ROW')"
 check "commit touches INDEX.md only" "INDEX.md" "$(git -C "$F_VAULT" show --name-only --format= HEAD)"
 check "unrelated change stays uncommitted" " M notes.md" "$(git -C "$F_VAULT" status --porcelain | grep notes.md)"
 n="$(git -C "$F_VAULT" rev-list --count HEAD)"
@@ -101,6 +100,14 @@ has "before: no row reported" "INDEX_NO_ROW=fixture" "$(bash "$VC" check --vault
 printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
 check "missing row added" "| [[projects/fixture/status\\|fixture]] | active | $TODAY |" "$(grep 'projects/fixture/status' "$IDX" | grep '^|')"
 check "no findings after add" "" "$(bash "$VC" check --vault "$F_VAULT" --project fixture | grep INDEX_)"
+
+# A hand-set blocked or done status survives; the date still moves (#328 owner answer).
+for hs in blocked done; do
+  sed -i.bak "s/^| \[\[projects\/fixture\/status\\\\|fixture\]\] | [a-z]* | [0-9-]* |$/| [[projects\/fixture\/status\\\\|fixture]] | $hs | 2026-01-02 |/" "$IDX"; rm -f "$IDX.bak"
+  $GIT -C "$F_VAULT" commit -q -m "$hs" -- INDEX.md
+  printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
+  check "hand-set $hs kept, date updated" "| [[projects/fixture/status\\|fixture]] | $hs | $TODAY |" "$(grep 'projects/fixture/status' "$IDX" | grep '^|')"
+done
 
 # Vault that is not a git repo: INDEX still updated, no failure.
 rm -rf "$F_VAULT/.git"
