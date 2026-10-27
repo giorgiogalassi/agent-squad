@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Nine checks, each independent and each able to fail
+# done") into a gate. Ten checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -27,6 +27,9 @@
 #      claude/hooks/hooks.json registers exists, and no agent sets a
 #      frontmatter key plugin subagents ignore (hooks, mcpServers,
 #      permissionMode, initialPrompt)
+#  10. description drift: reven.md must keep the mandatory `## Description
+#      drift` section in its output template, with the `none:` form, and
+#      ralph/SKILL.md must apply it through squad-pr-desc.sh
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -492,6 +495,29 @@ check_plugin_layout() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "plugin manifest, hooks.json and agent frontmatter are consistent"
 }
 
+# ---------------------------------------------------------------------
+# Check 10: Reven's description-drift block is mandatory and Ralph applies it
+# ---------------------------------------------------------------------
+check_description_drift() {
+  local before="$VIOLATIONS" r=claude/agents/reven.md k=claude/skills/ralph/SKILL.md
+  section "10. description drift section"
+  if [ ! -f "$r" ]; then
+    fail "$r is missing"
+  else
+    grep -q '^## Description drift$' "$r" || fail "$r has no '## Description drift' section"
+    # Present in the output template (a fenced line) and in the grammar section.
+    [ "$(grep -c '^## Description drift' "$r")" -ge 2 ] || fail "$r must carry the section in both its output template and its grammar"
+    grep -q -- '- none: ' "$r" || fail "$r does not define the '- none: <reason>' form"
+    grep -q -- '- line: ' "$r" && grep -q -- '- add: ' "$r" || fail "$r does not define the line/to and add items"
+  fi
+  if [ ! -f "$k" ]; then
+    fail "$k is missing"
+  else
+    grep -q 'hooks/squad-pr-desc.sh' "$k" || fail "$k does not apply the block through squad-pr-desc.sh"
+  fi
+  [ "$VIOLATIONS" -eq "$before" ] && ok "Reven requires the description-drift section; Ralph applies it via squad-pr-desc.sh"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -501,6 +527,7 @@ check_gh_write_ban
 check_label_doc_tests
 check_hook_refs_exist
 check_plugin_layout
+check_description_drift
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

@@ -206,6 +206,9 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 [omit only when no `[rule]` entries were loaded]
 - <rule title> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
 
+## Description drift
+[mandatory in every review, whatever the verdict; grammar below]
+
 ## Observations
 [optional, non-blocking notes and questions]
 ```
@@ -220,6 +223,40 @@ confirmed blocker stands on its own: CHANGES REQUESTED stays available with
 gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
 not read, so a re-run (larger budget or model) can target it.
 The `Verdict:` line is machine-readable — keep its format exact.
+
+## Description drift
+
+Every review ends its body (before `## Observations`) with a `## Description
+drift` section: the lines of the current PR description that the diff
+contradicts or leaves incomplete, plus new bullets for behaviour the
+description does not cover. Ralph applies it to the PR through
+`squad-pr-desc.sh`, so the grammar is exact and each item is one entry:
+
+```
+## Description drift
+- line: <exact current description line, verbatim>
+  to: <proposed replacement line>
+- add: <new bullet text, without the leading "- ">
+```
+
+- `line:` must quote one whole line of the description exactly as
+  written (it is matched whole-line); a claim spanning several lines
+  gets one entry per line. Empty `to:` proposes removing the line.
+- Where the description comes from: connected (or a PR host section in
+  `architecture.md`) = the PR body read through the access path above,
+  read-only. Detached = the paste-ready description in your prompt
+  (Ralph passes Cody's); none supplied, or no PR body to read =
+  `- none: no description available (<why>)`, never invented lines.
+- Nothing affected = exactly one line `- none: <reason>`, e.g. `- none:
+  no claim touched: change limited to tests`. An empty section or a
+  bare `none` is a defect of the review.
+- Fix rounds: the diff in scope is the fix round's, but the section
+  still checks the whole current description against it.
+- Drift never changes the verdict. It is not a blocking issue, does not
+  turn APPROVED into COMMENT, and does not make a review INCOMPLETE;
+  only the existing rules above decide that. A description that
+  misstates the acceptance criteria stays an ordinary finding only if
+  those rules already make it one.
 
 ## Ground rules
 
