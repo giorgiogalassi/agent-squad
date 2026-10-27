@@ -83,7 +83,7 @@ has "missing inverse (decisions-lint)" "DECISIONS_MISSING_INVERSE=" "$out"
 has "status stale" "STATUS_STALE=2026-10-10" "$out"
 has "checkpoint newer" "STATUS_CHECKPOINT_NEWER=2026-10-12 09:00 > 2026-10-10 09:00" "$out"
 has "index row behind" "INDEX_ROW_BEHIND=2026-10-05 < 2026-10-10" "$out"
-has "index active other" "INDEX_ACTIVE_OTHER=other" "$out"
+lacks "another active project is not reported (#333)" "INDEX_ACTIVE_OTHER" "$out"
 has "session unclosed count and oldest" "SESSION_UNCLOSED=2 oldest 2026-10-21 sidecar" "$out"
 # decisions lines come from decisions-lint.sh, not reimplemented
 want="$(bash "$TMPROOT/hooks/decisions-lint.sh" check "$P/decisions.md")"

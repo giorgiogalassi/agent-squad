@@ -30,7 +30,6 @@
 #   INDEX_FILE=missing
 #   INDEX_NO_ROW=<project>
 #   INDEX_ROW_BEHIND=<row date> < <status date>
-#   INDEX_ACTIVE_OTHER=<name>   informational
 #   SESSION_UNCLOSED=<n> oldest <date> <tag>
 #   JOURNAL_POINTER_MISSING=<project>   context: repo only (#330)
 # Vault scope (preceded by VAULT_SCOPE=vault):
@@ -59,8 +58,9 @@ week_ago() {
 # ---- reusable repairs (also the entry points for #328 and #329) -----------
 
 # index_set_row <index.md> <project> <status> <date> [set-status]
-# With set-status=1 (SessionEnd, #328) an existing row also takes <status>, and
-# an up-to-date date no longer short-circuits a status change.
+# With set-status=1 (SessionEnd, #328) an existing row also takes <status> when
+# its current status is empty, active or paused (a hand-set blocked or done
+# stays), and an up-to-date date no longer short-circuits a status change.
 # Prints CHANGED/ADDED/NONE-style result on stdout: "date", "added" or "".
 # Updates the date of the project's row when behind, or appends a row at the
 # end of the Projects table when there is none. Never touches other rows.
@@ -79,7 +79,7 @@ index_set_row() {
         ost = f[c - 2]; gsub(/^ +| +$/, "", ost) } }
     END {
       if (row) {
-        chgd = (old < date); chgs = (setst == 1 && ost != st)
+        chgd = (old < date); chgs = (setst == 1 && ost != st && (ost == "" || ost == "active" || ost == "paused"))
         if (!chgd && !chgs) exit
         l = lines[row]; c = split(l, f, "|")
         if (chgd) f[c - 1] = " " date " "
@@ -258,17 +258,14 @@ check_project() {
   else
     line="$(awk -v key="[[projects/$name/status" '
       /^## / { insec = ($0 == "## Projects") }
-      /^Name:/ { act = substr($0, 7) }
       insec && substr($0, 1, 1) == "|" && index($0, key) > 0 { found = 1; c = split($0, f, "|"); d = f[c - 1]; gsub(/ /, "", d) }
-      END { printf "%d|%s|%s\n", found, d, act }' "$idx")"
-    local found="${line%%|*}" rest="${line#*|}"
-    local rdate="${rest%%|*}" act="${rest#*|}"
+      END { printf "%d|%s\n", found, d }' "$idx")"
+    local found="${line%%|*}" rdate="${line#*|}"
     if [ "$found" = 0 ]; then
       [ -f "$status" ] && findings="${findings}INDEX_NO_ROW=$name${NL}"
     elif [ -n "$updated" ] && [[ "$rdate" < "${updated%% *}" ]]; then
       findings="${findings}INDEX_ROW_BEHIND=$rdate < ${updated%% *}${NL}"
     fi
-    [ -n "$act" ] && [ "$act" != "$name" ] && findings="${findings}INDEX_ACTIVE_OTHER=$act${NL}"
   fi
 
   # session.log
@@ -324,7 +321,6 @@ render() {
       INDEX_FILE) echo "INDEX.md: file is $v" ;;
       INDEX_NO_ROW) echo "INDEX.md: no row for $v" ;;
       INDEX_ROW_BEHIND) echo "INDEX.md: row says ${v%% < *}, status.md says ${v##* < }" ;;
-      INDEX_ACTIVE_OTHER) echo "INDEX.md: active project is $v (informational)" ;;
       SESSION_UNCLOSED) echo "session.log: ${v%% oldest *} start(s) without end (oldest ${v##* oldest })" ;;
       JOURNAL_POINTER_MISSING) echo "decisions.md: context is repo and $v has no JOURNAL pointer (#330)" ;;
       VAULT_STRAY_ROOT) echo "vault root: stray file $v" ;;

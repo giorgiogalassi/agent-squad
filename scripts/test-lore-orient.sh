@@ -157,6 +157,11 @@ printf '%s\n' "$c" | grep -q 'Open PRs' && bad "detached: PR line printed" || ok
 mv "$F_VAULT/projects/fixture/.squad/chisel-config.json.bak" "$F_VAULT/projects/fixture/.squad/chisel-config.json"
 c="$(ctx "$(run_pr "$TMPROOT/ghok")")"
 printf '%s\n' "$c" | grep -q 'Previous versions: git -C '"$F_VAULT"' log --oneline -- projects/fixture/status.md' && ok "previous versions line names the git command" || bad "previous versions: $c"
+# A squad-hook child session (SQUAD_LORE_HOOK=1) gets no orientation; a normal one does.
+q="$(cd "$F_PROJECT" && SQUAD_LORE_HOOK=1 SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)"
+if [ -z "$q" ]; then ok "SQUAD_LORE_HOOK=1: silent"; else bad "SQUAD_LORE_HOOK=1: not silent"; fi
+q="$(cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)"
+if [ -n "$q" ]; then ok "unset SQUAD_LORE_HOOK: still orients"; else bad "normal session lost orientation"; fi
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

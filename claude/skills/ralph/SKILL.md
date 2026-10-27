@@ -402,11 +402,35 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    user-supplied context. From the second review of an issue on, add the
    previous verdict and `git -C <wd> diff <Reviewed>..HEAD` as the scope
    and tell Reven to check that the previous blocking issues are
-   resolved and to review only that diff, not the whole PR. Set
+   resolved and to review only that diff, not the whole PR. Detached:
+   also pass Cody's paste-ready PR description as the current description.
+   Set
    `Reviewed` to HEAD and `Verdict` to the verdict after the review.
 2. **Print the verdict** line (`Verdict: ...`) and the blocking issues
    in the conversation, verbatim, one review per issue. `/stats` and any
    `/goal` on top read the conversation.
+   **Apply the description drift** (every review, whatever the verdict,
+   before step 3 acts on it; never edits code, and the review's `Verdict:`
+   is not affected by it). Save Reven's `## Description drift` section
+   verbatim to `${TMPDIR:-/tmp}/ralph-desc-<ID>.md` (do not re-read the
+   diff or rewrite the items), then connected:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-pr-desc.sh apply --block <file> --pr <n>
+   ```
+   Detached (the PR does not exist yet; the items become handoff checklist lines):
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-pr-desc.sh apply --block <file> --issue <ID> --handoff <handoff path>
+   ```
+   Read `OUTCOME`, `CHANGED`, `REPLACED`, `ADDED` and `MISSED`. Act on the exit code:
+
+   | Exit | Action |
+   |------|--------|
+   | 0 | Continue. `MISSED` above 0: list the unmatched lines in the end-of-batch report. Connected and `CHANGED=yes`: re-read the PR body with `gh pr view <n> --json body` and check each `to:` and `add:` text is present; list any that is not in the report. |
+   | 10 | The section is missing or malformed: re-run Reven once for the section only, then continue with the verdict as is and note the reason in the report. |
+   | 20 | Note the stderr reason in the end-of-batch report and continue. |
+
+   The next round's Reven (or the end of the loop) then sees the updated
+   description.
 3. **Classify the verdict:**
    - `APPROVED`, or `COMMENT` with nothing blocking: done, no Cody run.
      Count the round, append to `progress.txt`
