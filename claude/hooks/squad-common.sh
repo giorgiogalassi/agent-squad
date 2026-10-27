@@ -5,7 +5,8 @@
 #
 # Functions that EXIT the calling script:   squad_fail
 # Functions that RETURN a code (no exit):   squad_resolve, squad_gh_write,
-#                                           squad_record_local, squad_emit
+#                                           squad_record_local, squad_emit,
+#                                           squad_local_only, squad_public_name
 # Return codes: squad_resolve 0/20; squad_gh_write 0/20;
 #   squad_record_local 0 changed / 1 unchanged / 20 I/O error;
 #   squad_emit 0/2. The 1 is library-only, never a script exit code; callers
@@ -102,6 +103,30 @@ squad_record_local() {
   fi
   printf '%s\n' "$line" >> "$file" || { echo "squad: cannot write $file" >&2; return 20; }
   return 0
+}
+
+# squad_local_only <vault> <project>: 0 when the vault git-ignores the project
+# folder (a local-only project, #351), so its name must stay out of tracked files.
+squad_local_only() {
+  [ -n "${1:-}" ] && [ -n "${2:-}" ] || return 1
+  git -C "$1" check-ignore -q "projects/$2/status.md" >/dev/null 2>&1
+}
+
+# squad_shared_projects <vault>: project names on stdin, the non-local-only ones on
+# stdout; one git call, since a fork per project breaks the vault-check time budget.
+squad_shared_projects() {
+  local names ign
+  names="$(cat)"; [ -n "$names" ] || return 0
+  ign="$(printf '%s\n' "$names" | sed 's|.*|projects/&/status.md|' \
+    | git -C "$1" check-ignore --stdin 2>/dev/null | sed 's|^projects/||; s|/status.md$||')"
+  [ -n "$ign" ] || { printf '%s\n' "$names"; return 0; }
+  printf '%s\n' "$names" | grep -vxF "$ign"
+  return 0
+}
+
+# squad_public_name <vault> <project>: the project name, or "local" when local-only.
+squad_public_name() {
+  if squad_local_only "$1" "$2"; then printf 'local'; else printf '%s' "$2"; fi
 }
 
 # squad_emit KEY value: print KEY=value on stdout. KEY must match

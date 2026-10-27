@@ -122,6 +122,11 @@ for n in orphan-a orphan-b orphan-c; do mkdir -p "$V4/projects/$n"; printf '# St
 printf 'loose\n' > "$V4/insights-fix-plan.md"; printf 'x\n' > "$V4/squad-incidents.tsv"
 out="$(bash "$VC" check --vault "$V4" --all)"
 for n in orphan-a orphan-b orphan-c; do has "--all lists $n" "VAULT_PROJECT_NO_INDEX=$n" "$out"; done
+git -C "$V4" init -q >/dev/null 2>&1; printf 'projects/orphan-b/\n' >> "$V4/.git/info/exclude"
+outx="$(bash "$VC" check --vault "$V4" --all)"
+lacks "--all skips a local-only project (#351)" "VAULT_PROJECT_NO_INDEX=orphan-b" "$outx"
+for n in orphan-a orphan-c; do has "--all still lists shared $n" "VAULT_PROJECT_NO_INDEX=$n" "$outx"; done
+rm -rf "$V4/.git"
 has "--all lists stray root file" "VAULT_STRAY_ROOT=insights-fix-plan.md" "$out"
 lacks "--all ignores known root files" "VAULT_STRAY_ROOT=squad-incidents.tsv" "$out"
 lacks "--all ignores CLAUDE.md" "VAULT_STRAY_ROOT=CLAUDE.md" "$out"

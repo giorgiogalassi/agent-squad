@@ -8,6 +8,8 @@
 #   ts session_id project source kind component signature dedupe_id excerpt
 # Path: $SQUAD_INCIDENTS_FILE, else $SECOND_BRAIN_PATH/squad-incidents.tsv,
 # else ~/second-brain/squad-incidents.tsv.
+# The local-only check (#351) takes the store's directory as the vault, so a
+# SQUAD_INCIDENTS_FILE outside the vault keeps the real project name.
 #
 #   record  --session S --project P --source script|transcript
 #           --kind failure|escalation|denial --component C [--exit N]
@@ -77,6 +79,7 @@ cmd_record() (
      awk -F'\t' -v d="$dedupe" '$8==d{f=1} END{exit !f}' "$file"; then
     exit 0
   fi
+  case "$project" in ""|local) ;; *) squad_local_only "$(dirname "$file")" "$project" && project=local ;; esac
   sig="$comp|$kind|$(safe_token "$code")|$(normalise "$reason")"
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \

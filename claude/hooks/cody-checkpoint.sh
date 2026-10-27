@@ -23,6 +23,8 @@
 
 [ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=squad-common.sh
+. "$HOOK_DIR/squad-common.sh"
 
 INPUT="$(cat 2>/dev/null)"
 command -v jq >/dev/null 2>&1 || exit 0
@@ -104,7 +106,7 @@ if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -F "[$ISSUE] " "$PROGR
     git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
     git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
     # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: progress $DISPLAY" -- "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1 || true
+    git -C "$VAULT" $_id commit -q -m "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1 || true
   fi
 fi
 

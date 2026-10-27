@@ -287,7 +287,8 @@ tags: [preferences]
 ```
 
 Project already in the vault → add it to INDEX.md's Projects table if
-missing.
+missing, except a local-only project (`git -C <vault> check-ignore -q
+projects/<n>/status.md` succeeds): no INDEX row, not set active.
 
 If `<vault>/docs/backends.md` does not exist, create:
 ```markdown

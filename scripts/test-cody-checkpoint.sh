@@ -159,6 +159,20 @@ git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "vaul
 git -C "$F_VAULT" log --name-only --format= | grep -q unrelated.txt && bad "vault: unrelated file not committed" || ok "vault: unrelated file not committed"
 git -C "$F_VAULT" log --format=%s | grep -q 'lore: progress' && ok "vault: progress commit made" || bad "vault: progress commit made"
 
+# 4e. local-only project (only status.md excluded, so the progress commit still happens):
+#     the vault commit message carries no project name; a non-excluded control keeps it
+setup connected
+git -C "$F_VAULT" rm -q --cached projects/fixture/status.md; $GIT -C "$F_VAULT" commit -q -m untrack
+printf 'projects/fixture/status.md\n' >> "$F_VAULT/.git/info/exclude"
+commit_on 296-l "[#296] add thing"
+FAKE_PR="7 main" run_hook
+git -C "$F_VAULT" log --format=%s | grep -q '^lore: progress local$' && ok "local-only: progress commit uses public name" || bad "local-only: progress commit uses public name"
+git -C "$F_VAULT" log --format=%B | grep -q fixture && bad "local-only: name absent from git log" || ok "local-only: name absent from git log"
+setup connected
+commit_on 296-c "[#296] add thing"
+FAKE_PR="7 main" run_hook
+git -C "$F_VAULT" log --format=%s | grep -qx 'lore: progress fixture' && ok "control: progress commit keeps name" || bad "control: progress commit keeps name"
+
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?
 check "garbage input exits 0" 0 "$RC"

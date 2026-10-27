@@ -104,7 +104,9 @@ when explicitly requested or named by a context ref.
    move it to `<vault>/projects/<project-name>/.squad/` and remove the
    original. n → proceed; note the local `.squad/` is ignored and name
    the vault path.
-6. Update INDEX.md's active project (full overwrite, always).
+6. Update INDEX.md's active project (full overwrite, always), except a
+   local-only project (`git -C <vault> check-ignore -q
+   projects/<n>/status.md` succeeds): no INDEX row, not set active.
    For a `context: repo` project, also run
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-journal-pointer.sh` (JOURNAL pointer in
    `decisions.md` and `status.md`; idempotent). Exit 10: report the stderr reason.
@@ -172,7 +174,8 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    git), merging overlapping bullets. Append exactly one line:
    `- [YYYY-MM-DD] [global] <rule>`, or
    `- [YYYY-MM-DD] [global, from <project>] <rule>` when validated on a
-   project. Never a `[<project>]`-only tag. Write nothing to decisions.md.
+   project, except a local-only project (`git -C <vault> check-ignore -q
+   projects/<n>/status.md` succeeds): write `[global]`, never its name. Never a `[<project>]`-only tag. Write nothing to decisions.md.
 3. **Project-only.** Write through `lore decide` (same entry and caps as below). Append exactly one `[rule]` entry to
    `projects/<n>/decisions.md` (see Decision format), with project
    context. `--decision` (or, when the text is a design decision rather

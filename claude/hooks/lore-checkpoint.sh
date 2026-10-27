@@ -70,6 +70,8 @@ case "${1:-}" in
   --incidents) MODE=incidents ;;
 esac
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=squad-common.sh
+. "$HOOK_DIR/squad-common.sh"
 SELF="$HOOK_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
 
 # --- Denial pass (detached) ------------------------------------------------
@@ -174,7 +176,7 @@ if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x 
     git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
     git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
     # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: decisions lint $DISPLAY" -- "projects/$DISPLAY/decisions.md" >/dev/null 2>&1 || true
+    git -C "$VAULT" $_id commit -q -m "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/decisions.md" >/dev/null 2>&1 || true
   fi
 fi
 
@@ -205,7 +207,7 @@ close_session_log() {
     git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
     git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
     # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: session log $DISPLAY" -- "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1 || true
+    git -C "$VAULT" $_id commit -q -m "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1 || true
   fi
 }
 [ "$MODE" = hook ] && close_session_log
@@ -228,7 +230,7 @@ commit_vault() {
     git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
     git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
     # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: $1 $DISPLAY" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
+    git -C "$VAULT" $_id commit -q -m "lore: $1 $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
   fi
 }
 
@@ -271,6 +273,7 @@ TMPC="$(mktemp)"; TMPB="$(mktemp)"
 sync_index() {
   local idx="$VAULT/INDEX.md" upd st r1 r2 _id=""
   [ -f "$idx" ] && [ -f "$STATUS" ] && [ -f "$HOOK_DIR/vault-check.sh" ] || return 0
+  squad_local_only "$VAULT" "$DISPLAY" && return 0
   upd="$(sed -n 's/^Last updated: \([0-9-]*\).*/\1/p' "$STATUS" | head -n 1)"
   [ -n "$upd" ] || return 0
   st=active; grep -q '^tags:.*paused' "$STATUS" && st=paused

@@ -113,7 +113,7 @@ if git -C "$VAULT_PATH" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$VAULT_PATH" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
   git -C "$VAULT_PATH" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
   # shellcheck disable=SC2086
-  git -C "$VAULT_PATH" $_id commit -q -m "[lore] $NAME decide $(date '+%Y-%m-%d %H:%M')" -- \
+  git -C "$VAULT_PATH" $_id commit -q -m "[lore] $(squad_public_name "$VAULT_PATH" "$NAME") decide $(date '+%Y-%m-%d %H:%M')" -- \
     "projects/$NAME/decisions.md" $([ -f "$(dirname "$FILE")/decisions-archive.md" ] && echo "projects/$NAME/decisions-archive.md") >/dev/null 2>&1 || true
 fi
 
