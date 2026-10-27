@@ -121,5 +121,19 @@ guarded record --session s1 --project p --source bogus --kind failure --componen
 check "invalid source still exits 0" 0 "$RC"
 check "invalid source dropped" "" "$(cut -f4 "$SQUAD_INCIDENTS_FILE")"
 
-echo; echo "passed=$PASS failed=$FAIL"
+echo; # 3. local-only project (#351): name replaced by "local"; control keeps its name
+V="$TMPROOT/vault"; mkdir -p "$V"; git -C "$V" init -q
+mkdir -p "$V/projects/secretproj" "$V/projects/openproj"
+touch "$V/projects/secretproj/status.md" "$V/projects/openproj/status.md"
+printf 'projects/secretproj/\n' >> "$V/.git/info/exclude"
+export SQUAD_INCIDENTS_FILE="$V/squad-incidents.tsv"; : > "$SQUAD_INCIDENTS_FILE"
+for pr in secretproj openproj; do
+  bash "$SUT" record --session s --project $pr --source script --kind failure \
+    --component squad-labels --exit 10 --reason "boom" >/dev/null 2>&1
+done
+check "local-only project recorded as local" local "$(sed -n 1p "$SQUAD_INCIDENTS_FILE" | awk -F'\t' '{print $3}')"
+check "non-excluded project keeps its name" openproj "$(sed -n 2p "$SQUAD_INCIDENTS_FILE" | awk -F'\t' '{print $3}')"
+case "$(cat "$SQUAD_INCIDENTS_FILE")" in *secretproj*) bad "no local-only name in store" ;; *) ok "no local-only name in store" ;; esac
+
+echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

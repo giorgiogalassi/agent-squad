@@ -115,5 +115,33 @@ sed -i.bak 's/^Name: .*/Name: other/' "$IDX"; rm -f "$IDX.bak"
 printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
 has "non-git vault: active set" "Name: fixture" "$(cat "$IDX")"
 
+# Local-only project (#351): excluded through .git/info/exclude, its name never
+# reaches INDEX.md, the commit log or the active project; a control still syncs.
+out2="$("$MK" connected)"
+L_ROOT="$(printf '%s\n' "$out2" | sed -n 's/^FIXTURE_ROOT=//p')"
+L_PROJECT="$(printf '%s\n' "$out2" | sed -n 's/^PROJECT=//p')"
+L_VAULT="$(printf '%s\n' "$out2" | sed -n 's/^VAULT=//p')"
+FIXROOTS="$FIXROOTS $L_ROOT"
+export SECOND_BRAIN_PATH="$L_VAULT"
+LIDX="$L_VAULT/INDEX.md"
+printf -- '---\ntitle: s\ntags: [status, active]\n---\n# Status\nLast updated: %s 09:00 by x\n\n## Goal\ng\n\n## Last checkpoint\n\n## Context refs\n' "$TODAY" > "$L_VAULT/projects/fixture/status.md"
+grep -v 'fixture' "$IDX" > "$LIDX"
+git -C "$L_VAULT" init -q
+printf 'projects/fixture/\n' >> "$L_VAULT/.git/info/exclude"
+$GIT -C "$L_VAULT" add INDEX.md lore-config.json && $GIT -C "$L_VAULT" commit -q -m base
+BASE_SHA="$(git -C "$L_VAULT" rev-parse HEAD)"
+before_idx="$(cat "$LIDX")"
+before_log="$(git -C "$L_VAULT" log --format=%s | wc -l | tr -d ' ')"
+printf '{"cwd":"%s"}' "$L_PROJECT" | bash "$SUT" >/dev/null 2>&1
+check "local-only: INDEX untouched" "$before_idx" "$(cat "$LIDX")"
+lacks "local-only: no name in INDEX" "fixture" "$(cat "$LIDX")"
+lacks "local-only: no name in git log" "fixture" "$(git -C "$L_VAULT" log --format=%B "$BASE_SHA"..HEAD)"
+check "local-only: no vault commit" "$before_log" "$(git -C "$L_VAULT" log --format=%s | wc -l | tr -d ' ')"
+has "local-only: INDEX has other rows" "projects/other/status" "$(cat "$LIDX")"
+(. "$VC"; index_set_row "$LIDX" fixture active 2026-01-01 1 >/dev/null; index_set_active "$LIDX" fixture 2026-01-01 >/dev/null)
+check "local-only: index functions skip it" "$before_idx" "$(cat "$LIDX")"
+(. "$VC"; index_set_row "$LIDX" control active 2026-01-01 1 >/dev/null)
+has "control: non-excluded project still gets a row" "projects/control/status" "$(cat "$LIDX")"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

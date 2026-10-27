@@ -38,6 +38,8 @@
 # Fix results: FIXED_INDEX_ROW_DATE, FIXED_INDEX_ROW_ADDED,
 #   FIXED_SESSION_CLOSED=<n> <tag>, DECISIONS_APPLIED_INVERSE.
 set -u
+# shellcheck source=squad-common.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/squad-common.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 KNOWN_ROOT_FILES=" CLAUDE.md INDEX.md lore-config.json squad-incidents.tsv "
@@ -67,6 +69,7 @@ week_ago() {
 index_set_row() {
   local idx="$1" name="$2" st="$3" date="$4" setst="${5:-0}" tmp res
   [ -f "$idx" ] || return 0
+  squad_local_only "$(dirname "$idx")" "$name" && return 0
   tmp="$idx.vc.$$"
   res="$(IDX_NAME="$name" IDX_ST="$st" IDX_DATE="$date" IDX_SET="$setst" awk -v out="$tmp" '
     BEGIN { name = ENVIRON["IDX_NAME"]; st = ENVIRON["IDX_ST"]; date = ENVIRON["IDX_DATE"]; setst = ENVIRON["IDX_SET"]
@@ -104,6 +107,7 @@ index_set_row() {
 index_set_active() {
   local idx="$1" name="$2" date="${3:-}" tmp
   [ -f "$idx" ] || return 0
+  squad_local_only "$(dirname "$idx")" "$name" && return 0
   grep -q '^## Active project' "$idx" || return 0
   tmp="$idx.va.$$"
   IDX_NAME="$name" IDX_DATE="$date" awk '
@@ -262,7 +266,7 @@ check_project() {
       END { printf "%d|%s\n", found, d }' "$idx")"
     local found="${line%%|*}" rdate="${line#*|}"
     if [ "$found" = 0 ]; then
-      [ -f "$status" ] && findings="${findings}INDEX_NO_ROW=$name${NL}"
+      [ -f "$status" ] && ! squad_local_only "$vault" "$name" && findings="${findings}INDEX_NO_ROW=$name${NL}"
     elif [ -n "$updated" ] && [[ "$rdate" < "${updated%% *}" ]]; then
       findings="${findings}INDEX_ROW_BEHIND=$rdate < ${updated%% *}${NL}"
     fi
@@ -301,6 +305,7 @@ check_vault() {
     for p in "$vault"/projects/*/status.md; do
       [ -f "$p" ] || continue
       n="${p%/status.md}"; n="${n##*/}"
+      squad_local_only "$vault" "$n" && continue
       case "$idx" in *"[[projects/$n/status"*) ;; *) out="${out}VAULT_PROJECT_NO_INDEX=$n${NL}" ;; esac
     done
   fi

@@ -131,7 +131,7 @@ fi
 if [ "$(git -C "$VAULT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$VAULT" && pwd -P)" ]; then
   # shellcheck disable=SC2086
   git -C "$VAULT" add -- $WROTE >/dev/null 2>&1 \
-    && git -C "$VAULT" commit -q -m "[lore] $NAME journal pointer" -- $WROTE >/dev/null 2>&1 || true
+    && git -C "$VAULT" commit -q -m "[lore] $(squad_public_name "$VAULT" "$NAME") journal pointer" -- $WROTE >/dev/null 2>&1 || true
 fi
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit JOURNAL "$STATE"
 exit 0

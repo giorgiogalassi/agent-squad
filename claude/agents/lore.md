@@ -172,7 +172,8 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    git), merging overlapping bullets. Append exactly one line:
    `- [YYYY-MM-DD] [global] <rule>`, or
    `- [YYYY-MM-DD] [global, from <project>] <rule>` when validated on a
-   project. Never a `[<project>]`-only tag. Write nothing to decisions.md.
+   project, except a local-only project (`git -C <vault> check-ignore -q
+   projects/<n>/status.md` succeeds): write `[global]`, never its name. Never a `[<project>]`-only tag. Write nothing to decisions.md.
 3. **Project-only.** Write through `lore decide` (same entry and caps as below). Append exactly one `[rule]` entry to
    `projects/<n>/decisions.md` (see Decision format), with project
    context. `--decision` (or, when the text is a design decision rather

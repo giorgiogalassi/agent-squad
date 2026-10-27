@@ -77,6 +77,7 @@ cmd_record() (
      awk -F'\t' -v d="$dedupe" '$8==d{f=1} END{exit !f}' "$file"; then
     exit 0
   fi
+  case "$project" in ""|local) ;; *) squad_local_only "$(dirname "$file")" "$project" && project=local ;; esac
   sig="$comp|$kind|$(safe_token "$code")|$(normalise "$reason")"
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
