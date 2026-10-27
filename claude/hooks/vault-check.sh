@@ -57,29 +57,35 @@ week_ago() {
 
 # ---- reusable repairs (also the entry points for #328 and #329) -----------
 
-# index_set_row <index.md> <project> <status> <date>
+# index_set_row <index.md> <project> <status> <date> [set-status]
+# With set-status=1 (SessionEnd, #328) an existing row also takes <status> when
+# its current status is empty, active or paused (a hand-set blocked or done
+# stays), and an up-to-date date no longer short-circuits a status change.
 # Prints CHANGED/ADDED/NONE-style result on stdout: "date", "added" or "".
 # Updates the date of the project's row when behind, or appends a row at the
 # end of the Projects table when there is none. Never touches other rows.
 index_set_row() {
-  local idx="$1" name="$2" st="$3" date="$4" tmp res
+  local idx="$1" name="$2" st="$3" date="$4" setst="${5:-0}" tmp res
   [ -f "$idx" ] || return 0
   tmp="$idx.vc.$$"
-  res="$(IDX_NAME="$name" IDX_ST="$st" IDX_DATE="$date" awk -v out="$tmp" '
-    BEGIN { name = ENVIRON["IDX_NAME"]; st = ENVIRON["IDX_ST"]; date = ENVIRON["IDX_DATE"]
+  res="$(IDX_NAME="$name" IDX_ST="$st" IDX_DATE="$date" IDX_SET="$setst" awk -v out="$tmp" '
+    BEGIN { name = ENVIRON["IDX_NAME"]; st = ENVIRON["IDX_ST"]; date = ENVIRON["IDX_DATE"]; setst = ENVIRON["IDX_SET"]
             key = "[[projects/" name "/status"; res = "" }
     { lines[++n] = $0
       if ($0 ~ /^## /) insec = ($0 == "## Projects")
       if (insec && substr($0, 1, 1) == "|") last = n
       if (insec && index($0, key) > 0 && substr($0, 1, 1) == "|") {
-        row = n; c = split($0, f, "|"); old = f[c - 1]; gsub(/^ +| +$/, "", old) } }
+        row = n; c = split($0, f, "|"); old = f[c - 1]; gsub(/^ +| +$/, "", old)
+        ost = f[c - 2]; gsub(/^ +| +$/, "", ost) } }
     END {
       if (row) {
-        if (old >= date) exit
+        chgd = (old < date); chgs = (setst == 1 && ost != st && (ost == "" || ost == "active" || ost == "paused"))
+        if (!chgd && !chgs) exit
         l = lines[row]; c = split(l, f, "|")
-        f[c - 1] = " " date " "
+        if (chgd) f[c - 1] = " " date " "
+        if (chgs) f[c - 2] = " " st " "
         s = ""; for (i = 2; i < c; i++) s = s "|" f[i]
-        lines[row] = s "|"; res = "date"
+        lines[row] = s "|"; res = (chgd ? "date" : "status")
       } else if (last) {
         new = "| [[projects/" name "/status\\|" name "]] | " st " | " date " |"
         for (i = n; i > last; i--) lines[i + 1] = lines[i]
@@ -90,6 +96,24 @@ index_set_row() {
     }' "$idx")" || res=""
   if [ -n "$res" ] && [ -s "$tmp" ]; then mv "$tmp" "$idx"; else rm -f "$tmp"; res=""; fi
   echo "$res"
+}
+
+# index_set_active <index.md> <project> [<date>]: points the "## Active project"
+# section at <project> (Name, Status wikilink, and Last worked when the line
+# exists). Replaces those lines only; prints "set" when the file changed.
+index_set_active() {
+  local idx="$1" name="$2" date="${3:-}" tmp
+  [ -f "$idx" ] || return 0
+  grep -q '^## Active project' "$idx" || return 0
+  tmp="$idx.va.$$"
+  IDX_NAME="$name" IDX_DATE="$date" awk '
+    BEGIN { name = ENVIRON["IDX_NAME"]; date = ENVIRON["IDX_DATE"] }
+    /^## / { insec = ($0 == "## Active project") }
+    insec && /^Name:/ { print "Name: " name; next }
+    insec && /^Status:/ { print "Status: [[projects/" name "/status]]"; next }
+    insec && date != "" && /^Last worked:/ { print "Last worked: " date; next }
+    { print }' "$idx" > "$tmp" || { rm -f "$tmp"; return 0; }
+  if cmp -s "$tmp" "$idx"; then rm -f "$tmp"; else mv "$tmp" "$idx" && echo set; fi
 }
 
 # session_orphans <session.log> [<before-date>]: "ts<TAB>tag" per start with no

@@ -38,6 +38,10 @@
 # decisions.md (inverse markers added, findings left in .decisions-lint for
 # lore-orient.sh); see the block before the status work.
 #
+# INDEX sync (#328): on every exit past the status precondition the project's
+# INDEX.md row (date, status) and the active project are updated through
+# vault-check.sh's index_set_row / index_set_active; see sync_index below.
+#
 # Worktree session with a dirty tree: the checkpoint line is
 # "uncommitted work on <branch>: N files" (no progress.txt line, never a commit).
 #
@@ -222,7 +226,31 @@ next_items() {
        END { if (item != "") print item }'
 }
 TMPC="$(mktemp)"; TMPB="$(mktemp)"
-trap 'rm -f "$TMPC" "$TMPB"' EXIT
+
+# INDEX sync (#328), on every exit past the status precondition (a rebuild, a
+# checkpoint line, or nothing to write): the project's INDEX row takes
+# status.md's Last updated date and status, a missing row is added, and the
+# project becomes the active one. Same functions as `lore check --fix`
+# (vault-check.sh, sourced in a subshell: it sets -u). Only INDEX.md is
+# committed, by pathspec, so unrelated vault changes are never swept in.
+sync_index() {
+  local idx="$VAULT/INDEX.md" upd st r1 r2 _id=""
+  [ -f "$idx" ] && [ -f "$STATUS" ] && [ -f "$HOOK_DIR/vault-check.sh" ] || return 0
+  upd="$(sed -n 's/^Last updated: \([0-9-]*\).*/\1/p' "$STATUS" | head -n 1)"
+  [ -n "$upd" ] || return 0
+  st=active; grep -q '^tags:.*paused' "$STATUS" && st=paused
+  r1="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_row "$idx" "$DISPLAY" "$st" "$upd" 1 2>/dev/null )"
+  r2="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_active "$idx" "$DISPLAY" "$upd" 2>/dev/null )"
+  [ -n "$r1$r2" ] || return 0
+  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$VAULT" add INDEX.md >/dev/null 2>&1
+    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
+    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
+    # shellcheck disable=SC2086
+    git -C "$VAULT" $_id commit -q -m "lore: index $DISPLAY" -- INDEX.md >/dev/null 2>&1 || true
+  fi
+}
+trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended
