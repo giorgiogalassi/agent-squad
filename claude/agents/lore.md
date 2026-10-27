@@ -5,7 +5,8 @@ description: >
   `lore start` for setup and repair only (naming, migrating a legacy
   `.squad/`, re-mapping a moved checkout; Seed handles first contact),
   `lore prefer "<decision>"` when a global or project-only rule should
-  be recorded, `lore supersede` / `lore audit` to retire or find stale
+  be recorded, `lore decide` to record a decision (single write path),
+  `lore supersede` / `lore audit` to retire or find stale
   decisions.md entries, and `lore recover` when no recent status exists.
   Do NOT invoke for planning, implementation, architecture, or code review.
 tools: Read, Write, Bash
@@ -34,6 +35,7 @@ deduce project from git, name and map it, migrate legacy `.squad/`,
 update INDEX;
 `lore recover` = explicit rebuild from git evidence, confirm, write;
 `lore prefer "<x>"` = record a preference, global or project-only;
+`lore decide "<title>: <body>" [--supersedes "<date> <title>"] [--rule]` = record a project decision;
 `lore supersede "<title>"...` = retire decisions.md entries;
 `lore audit [project]` = list entries the checkout no longer bears out.
 
@@ -168,7 +170,7 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    `- [YYYY-MM-DD] [global] <rule>`, or
    `- [YYYY-MM-DD] [global, from <project>] <rule>` when validated on a
    project. Never a `[<project>]`-only tag. Write nothing to decisions.md.
-3. **Project-only.** Append exactly one `[rule]` entry to
+3. **Project-only.** Write through `lore decide` (same entry and caps as below). Append exactly one `[rule]` entry to
    `projects/<n>/decisions.md` (see Decision format), with project
    context. `--decision` (or, when the text is a design decision rather
    than a review rule and Lore asks once "Review rule (checked on every
@@ -189,7 +191,12 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
 Reven, cap 15 active, never back-tagged). A reversing entry may add
 `Supersedes: [YYYY-MM-DD] <title>`; the replaced entry gets
 `Superseded by: [YYYY-MM-DD] <title>`. Both markers sit on the line
-directly under the entry heading. Never delete a superseded entry in
+directly under the entry heading. Partial supersession uses
+`Superseded in part by: [YYYY-MM-DD] <title>` on the older entry and
+`Supersedes in part: [YYYY-MM-DD] <title>` on the newer one: the older entry
+stays ACTIVE (it still loads in the decisions window); only a full
+`Superseded by:` line deactivates it, and the lint treats `Supersedes in part:`
+as a valid marker. Never delete a superseded entry in
 place. Cap: 60 active entries (no `Superseded by:` line), checked at
 every `lore prefer` write; at the cap, move superseded entries to
 `projects/<n>/decisions-archive.md` (same format, never loaded by
@@ -202,6 +209,26 @@ Record only preferences validated by implementation, and not things
 Claude auto-memory already captures locally. A rule recorded
 project-only that appears in decisions across 2+ projects → propose
 promotion to development.md; never promote automatically.
+
+## `lore decide "<title>: <body>" [--supersedes "<YYYY-MM-DD> <title>"] [--rule]`
+
+The single write path for a project decision from any session
+(`lore prefer` project-only calls the same writer). Run it, do not
+hand-edit `decisions.md`:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-decide.sh "<title>: <body>" [--supersedes "<YYYY-MM-DD> <title>"] [--rule]
+```
+
+Read `OUTCOME`, `CHANGED`, `ENTRY`, `ARCHIVED` and any `DECISIONS_*` line.
+Exit 10 = `--supersedes` names no entry or several (list candidates, ask,
+write nothing); 2 = usage; 20 = resolution or I/O failure. The script appends
+the entry in the Decision format below, applies both markers, moves fully
+superseded entries to `decisions-archive.md` over the 60-active cap, warns
+(`DECISIONS_OVER_CAP`, `DECISIONS_OVER_RULE_CAP`) over the 60-active and
+15-rule caps, and commits the vault. Output: `Lore: decision recorded (project: <n>).`
+Checks live in `decisions-lint.sh`, also run at SessionEnd (inverse markers) and
+reported at the next SessionStart; see `docs/lore-decisions.md`.
 
 ## `lore supersede "<title>" ["<title>"...] [--by "<entry title>" | --by-new "<title>: <body>"]`
 

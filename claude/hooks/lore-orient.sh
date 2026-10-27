@@ -225,6 +225,12 @@ if [ -x "$HOOK_DIR/squad-incidents.sh" ]; then
     SIGNALS="${SIGNALS}${_rec} recurring squad incidents: run $HOOK_DIR/squad-incidents.sh summary${NL}" ;;
   esac
 fi
+# Decisions lint findings left by the last SessionEnd (read-only here; the
+# human text comes from decisions-lint.sh render, shared with `lore check`).
+if [ -s "$PROJ/.decisions-lint" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
+  _dl="$(bash "$HOOK_DIR/decisions-lint.sh" render < "$PROJ/.decisions-lint" 2>/dev/null)"
+  [ -n "$_dl" ] && SIGNALS="${SIGNALS}${_dl}${NL}"
+fi
 [ -n "$SIGNALS" ] && OUTPUT="${OUTPUT}${NL}### Signals${NL}${SIGNALS}"
 
 OUTPUT="${OUTPUT}${NL}If the status looks stale next to the evidence, run /lore recover to rebuild it.${NL}"

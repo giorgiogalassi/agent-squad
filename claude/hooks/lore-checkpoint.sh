@@ -34,6 +34,10 @@
 # and record them via squad-incidents.sh (source=transcript, kind=denial,
 # dedupe_id=tool_use_id). It needs jq (skipped without) and never commits the vault.
 #
+# Decisions lint: every hook SessionEnd also runs decisions-lint.sh on
+# decisions.md (inverse markers added, findings left in .decisions-lint for
+# lore-orient.sh); see the block before the status work.
+#
 # Worktree session with a dirty tree: the checkpoint line is
 # "uncommitted work on <branch>: N files" (no progress.txt line, never a commit).
 #
@@ -140,6 +144,31 @@ STATUS="$VAULT/projects/$DISPLAY/status.md"
 # the status rebuild below.
 if [ "$MODE" = hook ] && [ -n "$TRANSCRIPT" ] && command -v jq >/dev/null 2>&1; then
   bash "$SELF" --incidents "$TRANSCRIPT" "$SESSION_ID" "$DISPLAY" >/dev/null 2>&1 </dev/null
+fi
+
+# Decisions lint (#327), every hook SessionEnd, before the status work so a
+# missing status.md does not skip it. Adds the inverse marker for entries
+# carrying Supersedes: (deterministic, never rewrites text) and leaves the
+# remaining findings in <project>/.decisions-lint for the next SessionStart
+# (lore-orient.sh prints them). decisions.md is committed when it differs from
+# HEAD, so "new entry" means new since the last lint.
+if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
+  _df="$VAULT/projects/$DISPLAY/decisions.md"
+  _dl="$VAULT/projects/$DISPLAY/.decisions-lint"
+  # Report first (new-only is relative to HEAD), then fix and commit.
+  bash "$HOOK_DIR/decisions-lint.sh" check "$_df" --new-only 2>/dev/null \
+    | grep -v '^DECISIONS_MISSING_INVERSE=' > "$_dl.tmp"
+  bash "$HOOK_DIR/decisions-lint.sh" fix "$_df" >/dev/null 2>&1
+  if [ -s "$_dl.tmp" ]; then mv "$_dl.tmp" "$_dl"; else rm -f "$_dl.tmp" "$_dl"; fi
+  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
+     && [ -n "$(git -C "$VAULT" status --porcelain -- "projects/$DISPLAY/decisions.md" 2>/dev/null)" ]; then
+    git -C "$VAULT" add "projects/$DISPLAY/decisions.md" >/dev/null 2>&1
+    _id=""
+    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
+    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
+    # shellcheck disable=SC2086
+    git -C "$VAULT" $_id commit -q -m "lore: decisions lint $DISPLAY" -- "projects/$DISPLAY/decisions.md" >/dev/null 2>&1 || true
+  fi
 fi
 
 [ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
