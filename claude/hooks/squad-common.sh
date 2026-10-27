@@ -112,6 +112,18 @@ squad_local_only() {
   git -C "$1" check-ignore -q "projects/$2/status.md" >/dev/null 2>&1
 }
 
+# squad_shared_projects <vault>: project names on stdin, the non-local-only ones on
+# stdout; one git call, since a fork per project breaks the vault-check time budget.
+squad_shared_projects() {
+  local names ign
+  names="$(cat)"; [ -n "$names" ] || return 0
+  ign="$(printf '%s\n' "$names" | sed 's|.*|projects/&/status.md|' \
+    | git -C "$1" check-ignore --stdin 2>/dev/null | sed 's|^projects/||; s|/status.md$||')"
+  [ -n "$ign" ] || { printf '%s\n' "$names"; return 0; }
+  printf '%s\n' "$names" | grep -vxF "$ign"
+  return 0
+}
+
 # squad_public_name <vault> <project>: the project name, or "local" when local-only.
 squad_public_name() {
   if squad_local_only "$1" "$2"; then printf 'local'; else printf '%s' "$2"; fi

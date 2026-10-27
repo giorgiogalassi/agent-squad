@@ -302,12 +302,17 @@ check_vault() {
     case "$KNOWN_ROOT_FILES" in *" $b "*) ;; *) out="${out}VAULT_STRAY_ROOT=$b${NL}" ;; esac
   done
   if [ -n "$idx" ]; then
+    local miss=""
     for p in "$vault"/projects/*/status.md; do
       [ -f "$p" ] || continue
       n="${p%/status.md}"; n="${n##*/}"
-      squad_local_only "$vault" "$n" && continue
-      case "$idx" in *"[[projects/$n/status"*) ;; *) out="${out}VAULT_PROJECT_NO_INDEX=$n${NL}" ;; esac
+      case "$idx" in *"[[projects/$n/status"*) ;; *) miss="${miss}$n${NL}" ;; esac
     done
+    while IFS= read -r n; do
+      [ -n "$n" ] && out="${out}VAULT_PROJECT_NO_INDEX=$n${NL}"
+    done <<EOF
+$(printf '%s' "$miss" | squad_shared_projects "$vault")
+EOF
   fi
   if [ -n "$out" ]; then emit VAULT_SCOPE vault; printf '%s' "$out"; fi
 }
