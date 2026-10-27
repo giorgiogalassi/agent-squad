@@ -48,8 +48,9 @@ Then pick the Agent `model`:
 ## Delegate
 
 Delegate to the `reven` agent (Agent) immediately, passing the PR number
-or branch name, the issue it addresses, and any acceptance criteria or
-tracker mode (`connected` / `detached`) stated in the request, exactly
+or branch name, the issue it addresses, and any acceptance criteria,
+tracker mode (`connected` / `detached`) or paste-ready PR description
+(detached) stated in the request, exactly
 as received. Return the agent's structured review to the user unchanged, preceded
 by one header line: `Model: <model used> (<N> changed files)`, where
 `<model used>` is the override passed or, on the default path, the
