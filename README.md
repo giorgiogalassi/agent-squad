@@ -263,6 +263,7 @@ agent-squad/
       lore-checkpoint.sh
       decisions-lint.sh   decisions.md checks (KEY=value per finding), shared by the hook, lore decide and lore check
       lore-decide.sh      single write path for a project decision (lore decide)
+      vault-check.sh     vault health checks (KEY=value per finding), shared by the SessionStart block and lore check [--fix] [--all]
                        SessionEnd status.md refresh
       chisel-config-validate.py
                        Validates chisel-config.json shape

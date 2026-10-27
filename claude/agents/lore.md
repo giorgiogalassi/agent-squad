@@ -7,7 +7,7 @@ description: >
   `lore prefer "<decision>"` when a global or project-only rule should
   be recorded, `lore decide` to record a decision (single write path),
   `lore supersede` / `lore audit` to retire or find stale
-  decisions.md entries, and `lore recover` when no recent status exists.
+  decisions.md entries, `lore check` for vault health, and `lore recover` when no recent status exists.
   Do NOT invoke for planning, implementation, architecture, or code review.
 tools: Read, Write, Bash
 model: sonnet
@@ -271,6 +271,17 @@ missing → say so and stop).
 Never supersede automatically and write nothing: the user confirms, then
 runs `lore supersede`. `lore start` ends with one line offering
 `lore audit` when the project has active decisions.
+
+## `lore check [--fix] [--all]`
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-check.sh check [--fix] [--all]
+```
+
+Read the finding lines (`VAULT_SCOPE`, `DECISIONS_*`, `STATUS_*`, `INDEX_*`,
+`SESSION_UNCLOSED`, `JOURNAL_POINTER_MISSING`, `VAULT_*`, `FIXED_*`); empty
+stdout = clean, say so. Pipe the lines to `vault-check.sh render` and show the
+text. Exit 0 = done; 2 = usage or no project resolved, report it and stop.
 
 ## `lore recover`
 
