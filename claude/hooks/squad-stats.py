@@ -4,6 +4,8 @@
 Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
   collect             Import Claude Code transcripts into the stats store.
+  branch <name>       Per-branch view: sessions, wall time from session.log
+                      start/end pairs, cost from the store (see cmd_branch).
   report [--days N]   Aggregate the store (plus GitHub PR outcomes in
                       connected mode) into a Markdown report and an HTML
                       view of it with charts (self-contained, offline).
@@ -112,7 +114,7 @@ HAIKU_TIER_LIMIT = 100_000
 
 USAGE_COLS = ["ts", "session_id", "project", "agent", "skill", "model",
               "input", "cache_write_5m", "cache_write_1h", "cache_read",
-              "output", "message_id", "tools", "tool_errors", "cc_version"]
+              "output", "message_id", "tools", "tool_errors", "cc_version", "branch"]
 VERDICT_COLS = ["ts", "session_id", "project", "verdict", "message_id", "model"]
 HOOK_COLS = ["ts", "session_id", "project", "event", "hook", "outcome",
              "duration_ms", "chars", "hook_id"]
@@ -420,6 +422,7 @@ def usage_rows(records, agent, events, project):
             "output": int(usage.get("output_tokens") or 0),
             "message_id": mid,
             "cc_version": rec.get("version") or "",
+            "branch": rec.get("gitBranch") or "",
         }
     for mid, row in by_id.items():
         calls = tools.get(mid, [])
@@ -635,6 +638,96 @@ def cmd_collect(args):
     emit("FILES_SCANNED", files)
     emit("OLDEST_TRANSCRIPT", oldest.strftime("%Y-%m-%d") if oldest else "")
     emit("STORE", d)
+
+
+# ----------------------------------------------------------------- branch
+
+LOG_LINE_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] \[([^\]]+)\] (start|end)\b(.*)$")
+LOG_REF_RE = re.compile(r"\(start (\d{4}-\d{2}-\d{2} \d{2}:\d{2})\)$")
+LOG_BRANCH_RE = re.compile(r"branch: ([^,)\s]+)")
+
+
+def log_pairs(path):
+    """(start_ts, end_ts or None, tag, branch, closure) per start line of one
+    session.log. Pairing is the one vault-check.sh session_orphans uses: an end
+    ending in "(start <ts>)" closes exactly that start, a plain end closes the
+    latest open start of its tag. Times are local, minute resolution."""
+    starts = {}
+    order = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        m = LOG_LINE_RE.match(line)
+        if not m:
+            continue
+        ts, tag, kind, rest = m.groups()
+        if kind == "start":
+            b = LOG_BRANCH_RE.search(rest)
+            rec = [ts, b.group(1) if b else "", None, ""]
+            starts.setdefault(tag, []).append(rec)
+            order.append((tag, rec))
+            continue
+        ref = LOG_REF_RE.search(rest)
+        closure = "teardown" if "closed without teardown" in rest else ""
+        cands = starts.get(tag, [])
+        if ref:
+            hit = next((c for c in cands if c[2] is None and c[0] == ref.group(1)), None)
+        else:
+            hit = next((c for c in reversed(cands) if c[2] is None), None)
+        if hit:
+            hit[2] = ts
+            hit[3] = closure
+    return [(r[0], r[2], t, r[1], r[3]) for t, r in order]
+
+
+def cmd_branch(args):
+    """Per-branch view. Sessions and cost come from the usage store (rows carry
+    the transcript's gitBranch; rows collected before that column existed have
+    no branch and are not counted). Wall time comes from the session.log
+    start/end pairs whose start names the branch ("branch: <name>"), across
+    every project in the vault. An end written by the repair path ("closed
+    without teardown") has the repair's time, not the session's, so it is
+    counted as unclosed and left out of the wall time."""
+    if len(args) != 1 or args[0].startswith("-"):
+        fail(2, "branch: usage: branch <name>")
+    name = args[0]
+    d = ensure_store()
+    prices = load_prices(d)
+    rows = [to_int_row(r) for r in read_tsv(os.path.join(d, "usage.tsv"), USAGE_COLS)
+            if r.get("branch") == name]
+    for r in rows:
+        r["_cost"] = row_cost(r, prices)
+    sessions = {r["session_id"] for r in rows}
+    unpriced = sorted({r["model"] for r in rows if r["_cost"] is None})
+    pairs = 0
+    wall = 0
+    unclosed = 0
+    fmt = "%Y-%m-%d %H:%M"
+    for log in sorted(glob.glob(os.path.join(vault_dir(), "projects", "*", ".squad", "session.log"))):
+        for start, end, _tag, branch, closure in log_pairs(log):
+            if branch != name:
+                continue
+            if end is None or closure == "teardown":
+                unclosed += 1
+                continue
+            try:
+                minutes = (dt.datetime.strptime(end, fmt) - dt.datetime.strptime(start, fmt)).total_seconds() / 60
+            except ValueError:
+                continue
+            if minutes >= 0:
+                pairs += 1
+                wall += int(minutes)
+    emit("BRANCH", name)
+    emit("SESSIONS", len(sessions))
+    emit("API_CALLS", len(rows))
+    emit("COST_USD", "%.2f" % sum(r["_cost"] or 0 for r in rows))
+    emit("LOG_SESSIONS", pairs)
+    emit("WALL_MINUTES", wall)
+    emit("UNCLOSED_STARTS", unclosed)
+    emit("UNPRICED_MODELS", ",".join(unpriced))
 
 
 # ----------------------------------------------------------------- report
@@ -1490,12 +1583,14 @@ def render_html(md_lines, ctx):
 
 def main(argv):
     if not argv:
-        fail(2, "usage: squad-stats.py collect | report [--days N]")
+        fail(2, "usage: squad-stats.py collect | report [--days N] | branch <name>")
     verb, args = argv[0], argv[1:]
     if verb == "collect":
         cmd_collect(args)
     elif verb == "report":
         cmd_report(args)
+    elif verb == "branch":
+        cmd_branch(args)
     else:
         fail(2, "unknown verb: %s" % verb)
 

@@ -131,7 +131,7 @@ echo "#7 Add thing (feat -> main)"
 echo "#8 Fix other (fix -> main)"
 EOS
 printf '#!/bin/sh\n[ "$1" = auth ] && exit 1\nexit 1\n' > "$TMPROOT/ghdead/gh"
-printf '#!/bin/sh\nsleep 30\n' > "$TMPROOT/ghslow/gh"
+printf '#!/bin/sh\nexec sleep 30\n' > "$TMPROOT/ghslow/gh"
 chmod +x "$TMPROOT"/ghok/gh "$TMPROOT"/ghdead/gh "$TMPROOT"/ghslow/gh
 # PATH with the basics but no gh, for the "gh not installed" case.
 for t in bash git cat sed awk grep dirname basename tr wc head tail sort date stat ls mkdir cut find jq mktemp rm sleep kill pkill; do

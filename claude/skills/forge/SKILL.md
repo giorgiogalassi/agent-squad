@@ -301,8 +301,12 @@ optional fields.
 Append to `.squad/session.log` (read first, append, create if missing;
 timestamps via `date "+%Y-%m-%d %H:%M"`):
 
-  [YYYY-MM-DD HH:MM] [forge] start
+  [YYYY-MM-DD HH:MM] [forge] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>, rounds: <N>
+
+`<branch>` is `git branch --show-current` (`detached` if empty). The
+SessionEnd hook closes a start that has no end by matching this branch, so
+keep the `— branch:` field exactly in this form.
 
 `rounds` = number of `AskUserQuestion` calls actually made (0 is legal).
 Neither the opening challenge nor the delta check calls

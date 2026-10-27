@@ -533,8 +533,12 @@ its last 30 lines into Cody; the file itself is never truncated):
 Append to `.squad/session.log` (read first, append, create if missing;
 timestamps via `date "+%Y-%m-%d %H:%M"`):
 
-  [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs]
+  [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs], branch: <branch>
   [YYYY-MM-DD HH:MM] [ralph] end — resolved: N, escalated: [...], skipped: [...]
+
+`<branch>` is `git branch --show-current` (`detached` if empty). The
+SessionEnd hook closes a start that has no end by matching this branch, so
+keep the `— branch:` field exactly in this form.
 
 Per-issue detail stays in `progress.txt`; the log records batch
 boundaries only.

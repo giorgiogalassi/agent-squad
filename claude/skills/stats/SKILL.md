@@ -5,7 +5,7 @@ description: >
   squad or not: sessions by kind (squad, custom, vanilla), cost by skill,
   agent, project and model, weekly per-session trend, cache hit ratio,
   Reven verdicts and, in connected mode, PR outcomes. Triggers: /stats,
-  /stats --days <n>, "squad stats", "how much did the squad cost",
+  /stats --days <n>, /stats --branch <name>, "squad stats", "how much did the squad cost",
   "usage report". Do NOT trigger for questions about a single PR or
   issue; use gh or the tracker for those.
 allowed-tools: Read, Write, Bash
@@ -27,7 +27,8 @@ worktrees; see PATH_RESOLUTION.md). Run every command below from the
 current working directory.
 
 **Arguments.** `--days <n>` (positive integer) sets the window; default
-30. Anything else: ask once what window the user wants.
+30. `--branch <name>` shows one branch instead of the report (Step 1b).
+Anything else: ask once what window the user wants.
 
 ## Step 1: collect
 
@@ -42,6 +43,28 @@ Read `ROWS_ADDED`, `VERDICTS_ADDED`, `OLDEST_TRANSCRIPT`.
 | 0 | Continue. |
 | 10 | Print the stderr reason and `Vault not found: run /seed first.` Stop. |
 | 2, 20 | Print the stderr reason. Stop. |
+
+## Step 1b: branch view (only with `--branch <name>`)
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-stats.py branch <name>
+```
+
+Read `BRANCH`, `SESSIONS`, `API_CALLS`, `COST_USD`, `LOG_SESSIONS`,
+`WALL_MINUTES`, `UNCLOSED_STARTS`, `UNPRICED_MODELS`. Exit codes as in
+Step 1. Print, then stop (skip Steps 2 to 4):
+
+```
+Branch <BRANCH>
+  Sessions:   <SESSIONS> (<API_CALLS> API calls)
+  Cost:       $<COST_USD>
+  Wall time:  <WALL_MINUTES> min over <LOG_SESSIONS> logged skill sessions
+```
+
+Add `Unclosed starts: <UNCLOSED_STARTS> (not counted in wall time).` when
+non-zero and the unpriced-models line from Step 3 when
+`UNPRICED_MODELS` is non-empty. If `SESSIONS` is 0, add: `No transcript rows
+for this branch yet (rows collected before branch tracking carry none).`
 
 ## Step 2: report
 

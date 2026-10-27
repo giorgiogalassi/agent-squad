@@ -159,6 +159,31 @@ close_orphans() {
   echo "$n"
 }
 
+# close_session_starts <session.log> <since "YYYY-MM-DD HH:MM"> <branch>:
+# SessionEnd (#329). Closes the open starts that belong to the session that
+# just ended and prints how many. Start lines carry no session id (skills write
+# them), so ownership is: the start is dated at or after <since> (the first
+# transcript timestamp of the ending session, in local time) AND its
+# "branch: <b>" field equals <branch>. A start of another live session is left
+# alone unless it was written after this session began on the very same
+# branch; a start with no branch field is never closed here (--fix closes it
+# once it is past-day). Starts already closed by a skill are not open, so no
+# duplicate end is written. Same "(start <ts>)" closure format as close_orphans.
+close_session_starts() {
+  local log="$1" since="$2" branch="$3" ts tag n=0 now b
+  [ -f "$log" ] && [ -n "$since" ] && [ -n "$branch" ] || { echo 0; return 0; }
+  now="$(now_ts)"
+  while IFS=$'\t' read -r ts tag; do
+    [ -n "$ts" ] || continue
+    [[ "$ts" < "$since" ]] && continue
+    b="$(grep -F -m 1 "[$ts] [$tag] start" "$log" | sed -n 's/.*branch: \([^,)[:space:]]*\).*/\1/p')"
+    [ "$b" = "$branch" ] || continue
+    printf '[%s] [%s] end — closed at session end (start %s)\n' "$now" "$tag" "$ts" >> "$log" || { echo "$n"; return 0; }
+    n=$((n + 1))
+  done < <(session_orphans "$log")
+  echo "$n"
+}
+
 # ---- checks ---------------------------------------------------------------
 
 emit() { printf '%s=%s\n' "$1" "$2"; }

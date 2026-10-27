@@ -38,6 +38,10 @@ on:
       - "scripts/test-lore-incidents.sh"
       - "scripts/test-lore-checkpoint.sh"
       - "scripts/test-decisions-lint.sh"
+      - "scripts/test-vault-check.sh"
+      - "claude/hooks/vault-check.sh"
+      - "scripts/test-lore-index.sh"
+      - "scripts/test-lore-session.sh"
       - "scripts/test-lore-nudge.sh"
       - "claude/hooks/decisions-lint.sh"
       - "claude/hooks/lore-nudge.sh"
@@ -118,6 +122,17 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-decisions-lint.sh; else bash scripts/test-decisions-lint.sh; fi
 
+      - name: Run scripts/test-vault-check.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-vault-check.sh; else bash scripts/test-vault-check.sh; fi
+
+      - name: Run scripts/test-lore-index.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-index.sh; else bash scripts/test-lore-index.sh; fi
+
+      - name: Run scripts/test-lore-session.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-session.sh; else bash scripts/test-lore-session.sh; fi
       - name: Run scripts/test-lore-nudge.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-nudge.sh; else bash scripts/test-lore-nudge.sh; fi
