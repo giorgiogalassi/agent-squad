@@ -31,6 +31,8 @@ on:
       - "scripts/test-squad-branch.sh"
       - "claude/hooks/squad-branch.sh"
       - "scripts/test-lore-orient.sh"
+      - "scripts/test-lore-journal-pointer.sh"
+      - "claude/hooks/lore-journal-pointer.sh"
       - "claude/hooks/lore-orient.sh"
       - "scripts/test-squad-incidents.sh"
       - "claude/hooks/squad-incidents.sh"
@@ -105,6 +107,10 @@ jobs:
       - name: Run scripts/test-lore-orient.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-orient.sh; else bash scripts/test-lore-orient.sh; fi
+
+      - name: Run scripts/test-lore-journal-pointer.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-journal-pointer.sh; else bash scripts/test-lore-journal-pointer.sh; fi
 
       - name: Run scripts/test-squad-incidents.sh (bash 3.2 on macOS)
         run: |

@@ -163,5 +163,20 @@ if [ -z "$q" ]; then ok "SQUAD_LORE_HOOK=1: silent"; else bad "SQUAD_LORE_HOOK=1
 q="$(cd "$F_PROJECT" && SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null </dev/null)"
 if [ -n "$q" ]; then ok "unset SQUAD_LORE_HOOK: still orients"; else bad "normal session lost orientation"; fi
 
+# JOURNAL tail (#330): context: repo only, last 40 lines, silent when absent.
+JQ_CFG="$F_VAULT/lore-config.json"
+cp "$JQ_CFG" "$TMPROOT/lore-config.orig"
+seq 1 60 | sed 's/^/journal line /' > "$F_PROJECT/JOURNAL.md"
+c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
+printf '%s' "$c" | grep -q 'journal line' && bad "journal: vault context leaks the tail" || ok "journal: vault context prints nothing"
+"$JQ" --arg k "$F_PROJECT" '.context = {($k): "repo"}' "$TMPROOT/lore-config.orig" > "$JQ_CFG"
+c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
+printf '%s\n' "$c" | grep -qx 'journal line 60' && printf '%s\n' "$c" | grep -qx 'journal line 21' && ! printf '%s\n' "$c" | grep -qx 'journal line 20' \
+  && ok "journal: repo context includes exactly the last 40 lines" || bad "journal: tail wrong: $c"
+rm -f "$F_PROJECT/JOURNAL.md"
+c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
+printf '%s' "$c" | grep -q 'JOURNAL.md (tail' && bad "journal: absent file prints a header" || ok "journal: absent file prints nothing"
+cp "$TMPROOT/lore-config.orig" "$JQ_CFG"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
