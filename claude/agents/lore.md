@@ -104,7 +104,9 @@ when explicitly requested or named by a context ref.
    move it to `<vault>/projects/<project-name>/.squad/` and remove the
    original. n → proceed; note the local `.squad/` is ignored and name
    the vault path.
-6. Update INDEX.md's active project (full overwrite, always).
+6. Update INDEX.md's active project (full overwrite, always), except a
+   local-only project (`git -C <vault> check-ignore -q
+   projects/<n>/status.md` succeeds): no INDEX row, not set active.
    For a `context: repo` project, also run
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-journal-pointer.sh` (JOURNAL pointer in
    `decisions.md` and `status.md`; idempotent). Exit 10: report the stderr reason.

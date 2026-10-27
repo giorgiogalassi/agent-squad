@@ -8,6 +8,8 @@
 #   ts session_id project source kind component signature dedupe_id excerpt
 # Path: $SQUAD_INCIDENTS_FILE, else $SECOND_BRAIN_PATH/squad-incidents.tsv,
 # else ~/second-brain/squad-incidents.tsv.
+# The local-only check (#351) takes the store's directory as the vault, so a
+# SQUAD_INCIDENTS_FILE outside the vault keeps the real project name.
 #
 #   record  --session S --project P --source script|transcript
 #           --kind failure|escalation|denial --component C [--exit N]
