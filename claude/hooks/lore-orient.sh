@@ -13,6 +13,9 @@
 # Missing or unparseable stdin keeps orienting, so the hook never goes
 # silent on a host that passes no input. Drop `clear` from the matcher above
 # if re-orienting after /clear turns out to be unwanted.
+# A session spawned by a squad hook (SQUAD_LORE_HOOK=1, e.g. the nudge judge or
+# the checkpoint writer) needs no orientation; a normal session never sets it.
+[ -z "${SQUAD_LORE_HOOK:-}" ] || exit 0
 HOOK_INPUT=""
 if [ ! -t 0 ]; then
   IFS= read -r -t 2 -d '' HOOK_INPUT || true

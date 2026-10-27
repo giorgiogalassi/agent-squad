@@ -480,6 +480,18 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `<project>/.squad/` so it is versioned with the code. `path-resolve.sh`
   reports the choice as `SQUAD_DIR`. Status, decisions, preferences and
   session log stay in the vault. Never both; keep client repos on `vault`.
+- Optional decision nudge, off by default: set `"lore": {"nudge": true}` in
+  `lore-config.json` and a `Stop` hook (`lore-nudge.sh`) asks a small model
+  (`claude -p --model haiku`) at the end of each turn whether the turn settled
+  a choice you confirmed that `decisions.md` lacks. On yes, Claude proposes
+  `lore decide "<one line>"` and waits; nothing is written without you. Cost:
+  one small model call per turn end, only in vault-mapped projects. With the
+  setting off the hook is a shell check that exits at once (no model call).
+  It is a command hook, not `type: prompt`, because a prompt hook always calls
+  the model and has no setting gate; it surfaces the proposal through Stop's
+  `additionalContext` output, which continues the turn without a hook-error
+  notice. The judge call is capped at 45s and runs with `SQUAD_LORE_HOOK=1`
+  so its child session skips the squad hooks.
 - Recommended: initialize the vault as a private git repository. It is the
   single source of truth for all squad memory; a repo gives it history,
   backup, and multi-machine sync at zero cost. When the repo exists,
