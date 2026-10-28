@@ -16,8 +16,36 @@
 # allows Bash writes there (verified; see README "Evals (tier 2)").
 set -eu
 
+# Sandbox guard (#392). These scaffolds write $HOME/second-brain/lore-config.json
+# and projects/; run against a real HOME they destroy the user's vault. They
+# proceed only when provably in the eval sandbox: the run's cwd is physically
+# $HOME/cwd (how `claude plugin eval` lays out its temp HOME), or the caller
+# opted in explicitly with SQUAD_EVAL_SANDBOX=1 (used by the tests).
+squad_in_sandbox() {
+  local here home
+  [ "${SQUAD_EVAL_SANDBOX:-}" = "1" ] && return 0
+  [ -n "${HOME:-}" ] && [ -d "$HOME/cwd" ] || return 1
+  here="$(pwd -P)"; home="$(cd "$HOME/cwd" && pwd -P)"
+  [ "$here" = "$home" ]
+}
+
+# Succeeds when <file> is absent or maps only "fixture" (an earlier scaffold
+# run); fails when it maps any other project name.
+squad_config_is_fixture_only() {
+  [ -f "$1" ] || return 0
+  ! sed 's/"[^"]*" *: *"fixture"//g' "$1" | grep -q '"[^"]*" *: *"[^"]'
+}
+
 squad_scaffold() {
   local self repo out key val
+  if ! squad_in_sandbox; then
+    echo "scaffold: refusing to run outside the eval sandbox: it would overwrite \$HOME/second-brain (lore-config.json, projects/). Case scaffolds are for 'claude plugin eval' only; set SQUAD_EVAL_SANDBOX=1 with a throwaway HOME to override." >&2
+    exit 1
+  fi
+  if ! squad_config_is_fixture_only "$HOME/second-brain/lore-config.json"; then
+    echo "scaffold: refusing to overwrite $HOME/second-brain/lore-config.json: it maps non-fixture projects" >&2
+    exit 1
+  fi
   self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo="$(cd "$self/../../.." && pwd)"
   WORKSPACE="$(pwd -P)"
@@ -42,8 +70,9 @@ $out
 EOT
   [ -n "$PROJECT" ] && [ -n "$VAULT" ] || { echo "scaffold: make-fixture.sh gave no PROJECT/VAULT" >&2; exit 1; }
 
-  mkdir -p "$HOME/second-brain"
-  cp -R "$VAULT/projects" "$HOME/second-brain/projects"
+  mkdir -p "$HOME/second-brain/projects"
+  rm -rf "$HOME/second-brain/projects/fixture"
+  cp -R "$VAULT/projects/fixture" "$HOME/second-brain/projects/fixture"
   {
     printf '{"projects":{"%s":"fixture","%s":"fixture"' "$PROJECT" "$WORKSPACE"
     [ -z "$WORKTREE" ] || printf ',"%s":"fixture"' "$WORKTREE"
