@@ -195,8 +195,11 @@ Detached mode uses the same file (branch = chain branch).
 - **Write** it at the end of Phase 1b, once order and branches are
   known; **update** the affected row after every 2b classification
   (attempt counter, state) and after every Phase 2e review (Rounds,
-  Reviewed, Verdict, state). Set `Status: complete` at Phase 3.
-- **On start,** before computing the order: if `ralph-run.md` exists with
+  Reviewed, Verdict, state). Set `Status: complete` at Phase 3. All of it
+  through `squad-progress.sh` (section Vault writes below), never by
+  editing the file.
+- **On start,** before computing the order: if `ralph-run.md` (read from
+  the path `squad-progress.sh where --file run` returns) exists with
   `Status: running` and at least one issue not `resolved`/`escalated`/
   `skipped`/`needs-review`, compare its `Batch:` with the current batch. Same batch =
   identical sorted issue-ID set. Same: ask the user whether to resume.
@@ -207,13 +210,42 @@ Detached mode uses the same file (branch = chain branch).
   notice (`Ignoring ralph-run.md for batch [#..] — different batch.`) and
   overwrite it at the end of Phase 1b.
 
+## Vault writes: `squad-progress.sh`
+
+Ralph never edits `progress.txt`, `session.log` or `ralph-run.md` itself;
+every write is one call, committed through the vault write path (the lore
+branch in a PR-mode vault). Reads use the same current copy.
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh append --issue <ID> --line "<text>"
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --line "<text>"
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-write --from <file>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-row --issue <ID> --set <Column>=<value> [--set ...]
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-status --value <Status>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh where --file progress|log|run
+```
+
+`append` writes `[<ID>] <text>` and skips a `resolved. PR: #N` line already
+present (the SubagentStop hook may have written it), so call it
+unconditionally. `log` adds the `[YYYY-MM-DD HH:MM] [ralph]` prefix.
+`run-write --from` takes the whole file (write it to a `mktemp` file first).
+`where` emits `FILE=<path>`: read run state, `progress.txt` and
+`session.log` from that path, never from the vault `.squad/` directory.
+Read `OUTCOME`, `CHANGED` (and `FILE`). Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue (`unchanged` = already recorded). |
+| 10 | Note the stderr reason in the end-of-batch report and continue. |
+| 20 | Note the stderr reason in the end-of-batch report and continue. |
+
 ## Phase 2: execute in order
 
 ### 2a. Invoke Cody
 
 Spawn Cody as a subagent with: the full issue description, acceptance
 criteria, contents of `.squad/architecture.md`, `scout-cache.md`, and
-the last 30 lines of `progress.txt` (`tail -n 30`, if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and `<VAULT_PATH>/projects/<display-name>/decisions.md`. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load. Bounded at 100 lines + 15 rules + 20 entries. Missing files are skipped. Plus per Phase 1b:
+the last 30 lines of `progress.txt` (`tail -n 30` of the `where --file progress` path, if present), `<VAULT_PATH>/preferences/development.md` (full, at most 100 lines), and `<VAULT_PATH>/projects/<display-name>/decisions.md`. Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load. Bounded at 100 lines + 15 rules + 20 entries. Missing files are skipped. Plus per Phase 1b:
 
 - `mode: connected` or `mode: detached`
 - `branch: <branch>` — the issue's own branch (connected); its chain's
@@ -269,8 +301,10 @@ Hook summary first: the plugin's `SubagentStop` hook leaves
 `BRANCH` equals the assigned branch and `SHA` equals HEAD's short sha,
 otherwise ignore it. It is a hint that saves a lookup, not evidence: the
 three checks below and their classification are unchanged. When
-`STATE=pr`, the hook already appended the `[ID] resolved. PR: #N (base: …)`
-line to `progress.txt`; do not append a second one.
+`STATE=pr`, the hook may already have appended the `[ID] resolved. PR: #N
+(base: …)` line, or still be about to (it is async, so the file can hold a
+previous run's values): record the line with `squad-progress.sh append`
+anyway, it skips an equivalent line.
 
 1. **Commit check:** HEAD's subject carries this issue's ID. Match the
    ID token tolerantly across conventions (`[SQ-26]`, bare `ABC-1234`,
@@ -281,8 +315,8 @@ line to `progress.txt`; do not append a second one.
    *new* may be uncommitted).
 3. **Branch check:** current branch equals the assigned `branch`.
 
-After classifying, update the issue's row in `ralph-run.md` (Attempts,
-State) before moving on.
+After classifying, update the issue's row with
+`squad-progress.sh run-row` (Attempts, State) before moving on.
 
 **Branch mismatch stops the batch.** Never commit, reset, or stash to
 repair another branch. Print
@@ -290,8 +324,8 @@ repair another branch. Print
 and stop everything, escalating to the user.
 
 **No-op success:** HEAD and tree unchanged, branch correct, and Cody's
-summary explicitly says no change was needed → append
-`[ID] resolved, no-op. Notes: <reason>` to `progress.txt`, mark
+summary explicitly says no change was needed → `squad-progress.sh append`
+`[ID] resolved, no-op. Notes: <reason>`, mark
 unblocking, move on. Connected: comment the reason on the issue instead
 of opening a PR.
 
@@ -480,12 +514,12 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    the label). The PR keeps `in_review`; `review_label` now keeps the issue out of the
    next `--parent` batch (Phase 1 review gate). Continue with the next issue.
 
-Update the `ralph-run.md` row after every review and fix round.
+Update the `ralph-run.md` row (`run-row`) after every review and fix round.
 Ralph never merges.
 
 ## Phase 3: end of batch report
 
-Detached: first set `Status: executed` in the batch file. Set `Status: complete` in `ralph-run.md`.
+Detached: first set `Status: executed` in the batch file. Set `Status: complete` with `squad-progress.sh run-status`.
 
   Ralph complete.
   Handoff:   <path> (detached only — replay into your tracker)
@@ -505,7 +539,7 @@ A batch that ran in worktrees ends with
 
 ## Context between iterations
 
-Each Cody invocation is a fresh context. Persist in
+Each Cody invocation is a fresh context. Persist (via `squad-progress.sh append`) in
 `.squad/progress.txt`, one line per resolved issue (Ralph injects only
 its last 30 lines into Cody; the file itself is never truncated):
 
@@ -530,8 +564,8 @@ its last 30 lines into Cody; the file itself is never truncated):
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Append to `.squad/session.log` with `squad-progress.sh log --line "<text>"`
+(the script adds the timestamp and `[ralph]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs], branch: <branch>
   [YYYY-MM-DD HH:MM] [ralph] end — resolved: N, escalated: [...], skipped: [...]
