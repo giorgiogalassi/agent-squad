@@ -7,9 +7,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SUT="${1:-$REPO_ROOT/claude/hooks/squad-stats.py}"
 [ -f "$SUT" ] || { echo "error: $SUT not found" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "error: python3 required" >&2; exit 2; }
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-squad-stats.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
-trap 'rm -rf "$TMPROOT"' EXIT
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-squad-stats
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

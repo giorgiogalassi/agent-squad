@@ -7,10 +7,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 FX="$REPO_ROOT/scripts/fixtures/transcripts"
 command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 1; }
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-lore-incidents.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-lore-incidents
 FIXROOTS=""
-trap 'rm -rf "$TMPROOT" $FIXROOTS' EXIT
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

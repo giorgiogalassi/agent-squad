@@ -62,6 +62,9 @@ on:
       - "scripts/test-plugin-version-bump.sh"
       - "scripts/plugin-version-guard.sh"
       - "scripts/test-plugin-version-guard.sh"
+      - "scripts/test-safe-tmproot.sh"
+      - "scripts/lib/**"
+      - "scripts/squad-lint.sh"
       - ".github/workflows/hook-tests.yml"
 
 permissions:
@@ -166,3 +169,7 @@ jobs:
       - name: Run scripts/test-vault-pr.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-vault-pr.sh; else bash scripts/test-vault-pr.sh; fi
+
+      - name: Run scripts/test-safe-tmproot.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-safe-tmproot.sh; else bash scripts/test-safe-tmproot.sh; fi

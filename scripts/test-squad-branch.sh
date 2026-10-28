@@ -15,10 +15,9 @@ MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 SUT="${1:-$REPO_ROOT/claude/hooks/squad-branch.sh}"
 [ -f "$SUT" ] || { echo "error: $SUT not found" >&2; exit 2; }
 SUT_DIR="$(cd "$(dirname "$SUT")" && pwd)"; SUT_NAME="$(basename "$SUT")"
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-squad-branch.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-squad-branch
 FIXROOTS=""
-trap 'rm -rf "$TMPROOT" $FIXROOTS' EXIT
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

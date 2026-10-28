@@ -33,6 +33,7 @@ for a in "$@"; do
 done
 
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/squad-fixture.XXXXXX")"
+[ -n "$ROOT" ] && [ -d "$ROOT" ] || { echo "make-fixture.sh: mktemp failed; refusing to build in the working directory" >&2; exit 2; }
 ROOT="$(cd "$ROOT" && pwd -P)"
 PROJECT="$ROOT/project"; ORIGIN="$ROOT/origin.git"; VAULT="$ROOT/vault"
 NAME="fixture"

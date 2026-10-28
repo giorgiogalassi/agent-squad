@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Ten checks, each independent and each able to fail
+# done") into a gate. Eleven checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -30,6 +30,11 @@
 #  10. description drift: reven.md must keep the mandatory `## Description
 #      drift` section in its output template, with the `none:` form, and
 #      ralph/SKILL.md must apply it through squad-pr-desc.sh
+#  11. safe test tmp root: scripts/test-*.sh must not run `$(mktemp ...)`
+#      outside a `$TMPROOT`/`$TMP`/`$tmp` parent, and must not install a raw
+#      `trap 'rm -rf ...'`; they source scripts/lib/test-tmp.sh instead (an
+#      empty mktemp result otherwise turns the EXIT trap into rm -rf of the
+#      working directory). Escape: `# lint:tmp-ok` on the same line.
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -518,6 +523,31 @@ check_description_drift() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "Reven requires the description-drift section; Ralph applies it via squad-pr-desc.sh"
 }
 
+# ---------------------------------------------------------------------
+# Check 11: test scripts create their scratch root through the safe helper
+# ---------------------------------------------------------------------
+check_safe_test_tmproot() {
+  local before="$VIOLATIONS" f n line
+  section "11. safe test tmp root"
+  if [ ! -f scripts/lib/test-tmp.sh ]; then
+    fail "scripts/lib/test-tmp.sh is missing"
+  fi
+  for f in scripts/test-*.sh; do
+    [ -f "$f" ] || continue
+    while IFS= read -r n; do
+      line="$(sed -n "${n}p" "$f")"
+      case "$line" in *"lint:tmp-ok"*) continue ;; esac
+      fail "$f:$n creates a temp dir outside scripts/lib/test-tmp.sh (use test_tmp_init): $line"
+    done < <(grep -nE '^[^#]*(\$\(|`)[[:space:]]*mktemp([[:space:]]|\))' "$f" | grep -vE 'mktemp[^)]*"\$\{?(TMPROOT|TMP|tmp)\}?/' | cut -d: -f1)
+    while IFS= read -r n; do
+      line="$(sed -n "${n}p" "$f")"
+      case "$line" in *"lint:tmp-ok"*) continue ;; esac
+      fail "$f:$n installs a raw rm -rf trap (use test_tmp_init, whose trap is guarded): $line"
+    done < <(grep -nE "^[^#]*trap '[^']*rm -rf" "$f" | cut -d: -f1)
+  done
+  [ "$VIOLATIONS" -eq "$before" ] && ok "every test script uses the guarded temp root helper"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -528,6 +558,7 @@ check_label_doc_tests
 check_hook_refs_exist
 check_plugin_layout
 check_description_drift
+check_safe_test_tmproot
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then
