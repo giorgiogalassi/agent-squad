@@ -45,6 +45,37 @@ check "recommend usage rc" 2 "$RC"
 run bogus
 check "unknown verb rc" 2 "$RC"
 
+# recommend with explicit values: no file dependency
+rm -rf "$TMPROOT/none"; mkdir -p "$TMPROOT/none"
+run recommend --squad-dir "$TMPROOT/none" --complexity high --change-type code
+check "recommend args, no yaml rc" 0 "$RC"
+check "recommend args high" "/archy -> /chisel" "$(key ROUTE)"
+d="$(mk stale low code)"; run recommend --squad-dir "$d" --complexity high --change-type docs
+check "recommend args win over stale yaml" "/archy -> /chisel" "$(key ROUTE)"
+run recommend --squad-dir "$d" --complexity low --change-type docs
+check "recommend args low/docs" "implement directly (or /chisel for tracking)" "$(key ROUTE)"
+run recommend --squad-dir "$d" --complexity urgent --change-type code
+check "recommend args invalid complexity rc" 10 "$RC"
+run recommend --squad-dir "$d" --complexity low
+check "recommend args need both rc" 2 "$RC"
+run recommend --squad-dir "$d" --change-type code
+check "recommend change-type alone rc" 2 "$RC"
+run recommend --squad-dir "$d" --complexity low --change-type code
+check "recommend emits OUTCOME" "unchanged" "$(key OUTCOME)"
+check "recommend emits CHANGED" "no" "$(key CHANGED)"
+d="$(mk gq high code)"; run gate --squad-dir "$d" --override
+check "gate emits OUTCOME" "unchanged" "$(key OUTCOME)"
+check "gate emits CHANGED" "no" "$(key CHANGED)"
+
+# quoted yaml values
+d="$TMPROOT/quoted"; mkdir -p "$d/forge"
+printf 'complexity: "high"\nchange_type: '"'"'code'"'"'  # note\n' > "$d/forge/output.yaml"
+run recommend --squad-dir "$d"
+check "quoted yaml values rc" 0 "$RC"
+check "quoted yaml high" "/archy -> /chisel" "$(key ROUTE)"
+run gate --squad-dir "$d"
+check "quoted yaml gate high no prd rc" 10 "$RC"
+
 # gate
 d="$(mk g1 high code)"; run gate --squad-dir "$d"
 check "gate high no prd rc" 10 "$RC"

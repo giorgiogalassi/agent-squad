@@ -225,10 +225,14 @@ questions into `open_questions`; leave any unfilled required slot
 explicitly empty with a note under `notes` — never guess a value. (Four
 is provisional; revisit if sessions routinely need more.)
 
-When closing (Tier 1, default-and-announce), state:
+When closing (Tier 1, default-and-announce), first run
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-route.sh recommend --complexity <low|medium|high> --change-type <code|docs|mixed>`
+with the values you classified. Read `ROUTE`. Exit 0 → use it verbatim,
+never reword or substitute. Exit 10 or 2 → fix the values and re-run.
+Then state:
 
   I have enough to produce the analysis. Complexity: [low / medium / high].
-  change_type: [code / docs / mixed]. Recommended path: [ROUTE].
+  change_type: [code / docs / mixed]. Recommended path: <ROUTE>.
   Writing the analysis now. Reply with anything to add or correct first.
 
 Then write the YAML in the same turn — never block waiting for
