@@ -136,5 +136,31 @@ has "non-git: target local" "TARGET=local" "$out"
 check "non-git: mapping" n "$(jq -r '.projects["/w/n"]' "$V/lore-config.local.json")"
 check "non-git: ignore line" 1 "$(grep -cxF 'lore-config.local.json*' "$V/.gitignore")"
 
+# 12. --local on a non-ignored folder, PR-mode vault: the name never reaches a ref,
+# worktree, commit or tracked file; the vault treats the project as local-only.
+V="$TMPROOT/v12"; mkvault "$V"; mkdir -p "$V/projects/zzname"; echo x > "$V/projects/zzname/status.md"
+printf '{"projects":{"/w/zzname":"zzname"},"vault_main":"pr"}\n' > "$V/lore-config.json"
+git -C "$V" commit -qam pr; HEAD0="$(git -C "$V" rev-parse main)"
+err="$(bash "$LM" set --vault "$V" --root /w/zzname --name zzname --local 2>&1 >/dev/null)"
+check "leak: branch names name-free" 0 "$(git -C "$V" for-each-ref --format='%(refname)' | grep -c zzname)"
+check "leak: worktree paths name-free" 0 "$(git -C "$V" worktree list --porcelain | grep -c zzname)"
+check "leak: commit messages name-free" 0 "$(git -C "$V" log --all --not "$HEAD0" --format=%B | grep -c zzname)"
+check "leak: added lines name-free" 0 "$(git -C "$V" log --all --not "$HEAD0" -p | grep '^+[^+]' | grep -c zzname)"
+check "leak: tracked .gitignore name-free" 0 "$(grep -c zzname "$V/.gitignore")"
+git -C "$V" ls-files | grep -q zzname && bad "leak: tracked paths" || ok "leak: tracked paths name-free"
+EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
+check "exclude: entry present" 1 "$(grep -cxF 'projects/zzname/' "$EXC")"
+. "$TMPROOT/hooks/squad-common.sh"
+squad_local_only "$V" zzname && ok "local_only true after --local" || bad "local_only true after --local"
+bash "$LM" set --vault "$V" --root /w/zzname --name zzname --local >/dev/null 2>&1
+check "exclude: entry not duplicated" 1 "$(grep -cxF 'projects/zzname/' "$EXC")"
+
+# 13. Tracked files under projects/<name>/: one notice, files left alone.
+V="$TMPROOT/v13"; mkvault "$V"
+err="$(bash "$LM" set --vault "$V" --root /w/shared --name shared --local 2>&1 >/dev/null)"
+has "tracked notice: printed" "rm -r --cached" "$err"
+check "tracked notice: exactly once" 1 "$(printf '%s\n' "$err" | grep -c 'rm -r --cached')"
+check "tracked notice: files kept" "projects/shared/status.md" "$(git -C "$V" ls-files projects/shared)"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

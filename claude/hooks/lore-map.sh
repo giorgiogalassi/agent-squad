@@ -10,7 +10,9 @@
 #   passed or the vault git-ignores projects/<name>/ (squad_local_only), else to
 #   lore-config.json. A local-only name never reaches the tracked file. The tracked
 #   write is committed through squad_vault_commit; the local file is never
-#   committed and the vault .gitignore is made to list it.
+#   committed and the vault .gitignore is made to list it. On a local target
+#   projects/<name>/ is also added to the untracked .git/info/exclude so every vault
+#   writer sees the project as local-only; tracked files there get a stderr notice.
 # ignore: creates the vault .gitignore listing lore-config.local.json, or appends
 #   the line when missing; committed when the vault is a git repo.
 #
@@ -82,6 +84,18 @@ fi
 
 CHANGED=no
 if [ "$TARGET" = local ]; then
+  # Make the whole vault treat the project as local-only (squad_local_only, #351):
+  # an entry in .git/info/exclude is untracked, so the name is never committed.
+  if is_git_vault && ! squad_local_only "$VAULT" "$NAME"; then
+    EXC="$(git -C "$VAULT" rev-parse --git-path info/exclude 2>/dev/null)"
+    case "$EXC" in /*) ;; *) EXC="$VAULT/$EXC" ;; esac
+    mkdir -p "$(dirname "$EXC")" && printf 'projects/%s/\n' "$NAME" >> "$EXC" \
+      || squad_fail 20 "cannot write $EXC"
+    CHANGED=yes
+  fi
+  if is_git_vault && [ -n "$(git -C "$VAULT" ls-files -- "projects/$NAME" 2>/dev/null | head -1)" ]; then
+    echo "lore-map: projects/$NAME/ already has tracked files in the vault; ignoring does not untrack them. Run: git -C \"$VAULT\" rm -r --cached \"projects/$NAME\" (not done for you)" >&2
+  fi
   # Ignore rule first: the name must never exist in the vault before it is ignored.
   rc=0; ensure_ignore || rc=$?
   [ "$rc" = 20 ] && squad_fail 20 "cannot write $VAULT/.gitignore"
@@ -117,8 +131,8 @@ if [ "$TARGET" = local ]; then
     trap 'rm -f "${TMP:-}" "$TTMP"' EXIT
     jq --arg k "$ROOT" 'del(.projects[$k])' "$TRK" > "$TTMP" || squad_fail 20 "jq failed; lore-config.json was not touched"
     mv "$TTMP" "$TRK" || squad_fail 20 "cannot write $TRK"
-    # Message is name-free on purpose.
-    is_git_vault && squad_vault_commit "$VAULT" "$NAME" "[lore] unmap project from shared config" lore-config.json
+    # Message and project argument are name-free on purpose: no branch, worktree or PR title.
+    is_git_vault && squad_vault_commit "$VAULT" vault "[lore] unmap project from shared config" lore-config.json
     echo "lore-map: the project name is still in the vault git history; history was not rewritten" >&2
     CHANGED=yes
   fi
