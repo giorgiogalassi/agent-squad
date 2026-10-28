@@ -513,8 +513,15 @@ cmd_hook_remove() {
     path="$(worktree_path_for "$name")"
   fi
   # Stdout is not part of the WorktreeRemove contract; keep it quiet.
-  remove_path "$path" >/dev/null
-  exit "$EXIT_OK"
+  # Drop the worktree's port claim and browser lock (#281) once it is gone.
+  # The owner is repo-qualified, so it is computed while the worktree exists.
+  ss="$(dirname "${BASH_SOURCE[0]}")/squad-session.sh"
+  owner="$(bash "$ss" owner --worktree "$path" 2>/dev/null | sed -n 's/^OWNER=//p')"
+  ( remove_path "$path" >/dev/null ); rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -d "$path" ] && [ -n "$owner" ]; then
+    bash "$ss" release --owner "$owner" >/dev/null 2>&1 || true
+  fi
+  exit "$rc"
 }
 
 # --- hooks / env (worktree orientation) ---
