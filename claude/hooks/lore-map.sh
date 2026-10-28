@@ -89,8 +89,15 @@ if [ "$TARGET" = local ]; then
   if is_git_vault && ! squad_local_only "$VAULT" "$NAME"; then
     EXC="$(git -C "$VAULT" rev-parse --git-path info/exclude 2>/dev/null)"
     case "$EXC" in /*) ;; *) EXC="$VAULT/$EXC" ;; esac
-    mkdir -p "$(dirname "$EXC")" && printf 'projects/%s/\n' "$NAME" >> "$EXC" \
-      || squad_fail 20 "cannot write $EXC"
+    mkdir -p "$(dirname "$EXC")" || squad_fail 20 "cannot write $EXC"
+    # A last line without a newline would swallow the entry and it would never match.
+    if [ -s "$EXC" ] && [ -n "$(tail -c 1 "$EXC")" ]; then
+      printf '\n' >> "$EXC" || squad_fail 20 "cannot write $EXC"
+    fi
+    printf 'projects/%s/\n' "$NAME" >> "$EXC" || squad_fail 20 "cannot write $EXC"
+    # --no-index: tracked files under the folder do not count against the rule.
+    git -C "$VAULT" check-ignore -q --no-index "projects/$NAME/status.md" >/dev/null 2>&1 \
+      || squad_fail 20 "projects/$NAME/ is still not ignored after writing $EXC (a negation pattern in .gitignore?)"
     CHANGED=yes
   fi
   if is_git_vault && [ -n "$(git -C "$VAULT" ls-files -- "projects/$NAME" 2>/dev/null | head -1)" ]; then

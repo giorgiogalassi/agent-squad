@@ -162,5 +162,22 @@ has "tracked notice: printed" "rm -r --cached" "$err"
 check "tracked notice: exactly once" 1 "$(printf '%s\n' "$err" | grep -c 'rm -r --cached')"
 check "tracked notice: files kept" "projects/shared/status.md" "$(git -C "$V" ls-files projects/shared)"
 
+# 14. Exclude file without a trailing newline: the entry lands on its own line.
+V="$TMPROOT/v14"; mkvault "$V"
+EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
+mkdir -p "$(dirname "$EXC")"; printf 'abc' > "$EXC"
+bash "$LM" set --vault "$V" --root /w/nl --name nl --local >/dev/null 2>&1; rc=$?
+check "no-newline: exit 0" 0 "$rc"
+check "no-newline: entry on its own line" 1 "$(grep -cxF 'projects/nl/' "$EXC")"
+check "no-newline: old line intact" 1 "$(grep -cxF 'abc' "$EXC")"
+squad_local_only "$V" nl && ok "no-newline: local_only true" || bad "no-newline: local_only true"
+
+# 15. Post-check: a .gitignore negation defeats the exclude entry; exit 20, no success.
+V="$TMPROOT/v15"; mkvault "$V"
+printf '!projects/neg/\n' >> "$V/.gitignore"; git -C "$V" commit -qam neg
+err="$(bash "$LM" set --vault "$V" --root /w/neg --name neg --local 2>&1 >/dev/null)"; rc=$?
+check "post-check: exit 20" 20 "$rc"
+has "post-check: stderr reason" "not ignored" "$err"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

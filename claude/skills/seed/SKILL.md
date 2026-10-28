@@ -48,6 +48,11 @@ You never write code, plan features, or make architectural decisions.
      keeps every other key. Read `OUTCOME` and `TARGET`. Exit 0 = done;
      10 = jq missing or the config is not valid JSON, tell the user and stop
      (never overwrite it); 2 or 20 = report the stderr reason and stop.
+     On a local target the script also adds `projects/<name>/` to the vault's
+     untracked `.git/info/exclude` (exit 20 if that entry does not take
+     effect). If the folder already has tracked files it prints a
+     `git rm -r --cached` command on stderr and does not run it; relay that
+     command to the user.
      Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
