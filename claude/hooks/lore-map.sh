@@ -49,9 +49,10 @@ is_git_vault() { [ "$(git -C "$VAULT" rev-parse --show-toplevel 2>/dev/null)" = 
 # ensure_ignore: 0 changed, 1 already listed; 20 on I/O error.
 ensure_ignore() {
   local gi="$VAULT/.gitignore"
-  if [ -f "$gi" ] && grep -qxF 'lore-config.local.json' "$gi"; then return 1; fi
+  # The pattern also covers lore-config.local.json.tmp.<pid> left by a killed write.
+  if [ -f "$gi" ] && grep -qxF 'lore-config.local.json*' "$gi"; then return 1; fi
   if [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then printf '\n' >> "$gi" || return 20; fi
-  printf 'lore-config.local.json\n' >> "$gi" || return 20
+  printf 'lore-config.local.json*\n' >> "$gi" || return 20
   return 0
 }
 
@@ -79,28 +80,49 @@ else
   SRC=""
 fi
 
-if [ -n "$SRC" ] && [ "$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$SRC")" = "$NAME" ]; then
-  squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit TARGET "$TARGET"
-  exit 0
-fi
-
-TMP="$FILE.tmp.$$"
-trap 'rm -f "$TMP"' EXIT
-if [ -n "$SRC" ]; then
-  jq --arg k "$ROOT" --arg n "$NAME" '.projects[$k] = $n' "$SRC" > "$TMP"
-else
-  echo '{"projects":{}}' | jq --arg k "$ROOT" --arg n "$NAME" '.projects[$k] = $n' > "$TMP"
-fi || squad_fail 20 "jq failed; $(basename "$FILE") was not touched"
-mv "$TMP" "$FILE" || squad_fail 20 "cannot write $FILE"
-
+CHANGED=no
 if [ "$TARGET" = local ]; then
+  # Ignore rule first: the name must never exist in the vault before it is ignored.
   rc=0; ensure_ignore || rc=$?
   [ "$rc" = 20 ] && squad_fail 20 "cannot write $VAULT/.gitignore"
-  if [ "$rc" = 0 ] && is_git_vault; then
-    squad_vault_commit "$VAULT" vault "[lore] ignore local config" .gitignore
+  if [ "$rc" = 0 ]; then
+    CHANGED=yes
+    is_git_vault && squad_vault_commit "$VAULT" vault "[lore] ignore local config" .gitignore
   fi
-else
-  is_git_vault && squad_vault_commit "$VAULT" "$NAME" "[lore] map project $NAME" lore-config.json
 fi
-squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit TARGET "$TARGET"
+
+if [ -n "$SRC" ] && [ "$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$SRC")" = "$NAME" ]; then
+  :
+else
+  TMP="$FILE.tmp.$$"
+  trap 'rm -f "$TMP"' EXIT
+  if [ -n "$SRC" ]; then
+    jq --arg k "$ROOT" --arg n "$NAME" '.projects[$k] = $n' "$SRC" > "$TMP"
+  else
+    echo '{"projects":{}}' | jq --arg k "$ROOT" --arg n "$NAME" '.projects[$k] = $n' > "$TMP"
+  fi || squad_fail 20 "jq failed; $(basename "$FILE") was not touched"
+  mv "$TMP" "$FILE" || squad_fail 20 "cannot write $FILE"
+  CHANGED=yes
+  if [ "$TARGET" = tracked ]; then
+    is_git_vault && squad_vault_commit "$VAULT" "$NAME" "[lore] map project $NAME" lore-config.json
+  fi
+fi
+
+if [ "$TARGET" = local ]; then
+  # A root already in the tracked config is moved out of it; history is not rewritten.
+  TRK="$VAULT/lore-config.json"
+  if [ -s "$TRK" ] && jq empty "$TRK" >/dev/null 2>&1 \
+     && [ -n "$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$TRK")" ]; then
+    TTMP="$TRK.tmp.$$"
+    trap 'rm -f "${TMP:-}" "$TTMP"' EXIT
+    jq --arg k "$ROOT" 'del(.projects[$k])' "$TRK" > "$TTMP" || squad_fail 20 "jq failed; lore-config.json was not touched"
+    mv "$TTMP" "$TRK" || squad_fail 20 "cannot write $TRK"
+    # Message is name-free on purpose.
+    is_git_vault && squad_vault_commit "$VAULT" "$NAME" "[lore] unmap project from shared config" lore-config.json
+    echo "lore-map: the project name is still in the vault git history; history was not rewritten" >&2
+    CHANGED=yes
+  fi
+fi
+if [ "$CHANGED" = yes ]; then squad_emit OUTCOME applied; else squad_emit OUTCOME unchanged; fi
+squad_emit CHANGED "$CHANGED"; squad_emit TARGET "$TARGET"
 exit 0

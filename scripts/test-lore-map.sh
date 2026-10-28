@@ -36,7 +36,7 @@ check "ignored: local file has mapping" "secret" "$(jq -r '.projects["/w/secret"
 cmp -s "$V/lore-config.json" "$TMPROOT/cfg.before" && ok "ignored: tracked config byte-identical" || bad "ignored: tracked config changed"
 check "ignored: local file never tracked" "" "$(git -C "$V" ls-files lore-config.local.json)"
 check "ignored: only .gitignore committed" ".gitignore" "$(git -C "$V" diff --name-only "$HEAD0" HEAD)"
-check "ignored: .gitignore lists local file" 1 "$(grep -cxF lore-config.local.json "$V/.gitignore")"
+check "ignored: .gitignore lists local file" 1 "$(grep -cxF 'lore-config.local.json*' "$V/.gitignore")"
 check "ignored: local file untracked+ignored" "lore-config.local.json" "$(git -C "$V" check-ignore lore-config.local.json)"
 check "ignored: name absent from git history" 0 "$(git -C "$V" log -p | grep -c '/w/secret')"
 
@@ -81,13 +81,60 @@ bash "$LM" bogus >/dev/null 2>&1; check "unknown verb: exit 2" 2 "$?"
 V="$TMPROOT/v6"; mkdir -p "$V"
 out="$(bash "$LM" ignore --vault "$V")"
 has "ignore: created" "OUTCOME=applied" "$out"
-check "ignore: content" "lore-config.local.json" "$(cat "$V/.gitignore")"
+check "ignore: content" "lore-config.local.json*" "$(cat "$V/.gitignore")"
 out="$(bash "$LM" ignore --vault "$V")"
 has "ignore: rerun unchanged" "OUTCOME=unchanged" "$out"
 printf 'a\nb' > "$V/.gitignore"; bash "$LM" ignore --vault "$V" >/dev/null
 check "ignore: append keeps lines" "a
 b
-lore-config.local.json" "$(cat "$V/.gitignore")"
+lore-config.local.json*" "$(cat "$V/.gitignore")"
+
+# 7. Unchanged re-run still adds a missing ignore line.
+V="$TMPROOT/v7"; mkvault "$V"
+bash "$LM" set --vault "$V" --root /w/secret --name secret >/dev/null
+printf 'projects/secret/\n' > "$V/.gitignore"; git -C "$V" commit -qam "drop ignore"
+out="$(bash "$LM" set --vault "$V" --root /w/secret --name secret)"
+has "rerun: ignore re-added reports applied" "OUTCOME=applied" "$out"
+has "rerun: CHANGED yes" "CHANGED=yes" "$out"
+check "rerun: ignore line restored" 1 "$(grep -cxF 'lore-config.local.json*' "$V/.gitignore")"
+out="$(bash "$LM" set --vault "$V" --root /w/secret --name secret)"
+has "rerun again: unchanged" "OUTCOME=unchanged" "$out"
+has "rerun again: CHANGED no" "CHANGED=no" "$out"
+
+# 8. Temp files of a killed write are ignored.
+touch "$V/lore-config.local.json.tmp.1234"
+check "temp pattern ignored" "lore-config.local.json.tmp.1234" "$(git -C "$V" check-ignore lore-config.local.json.tmp.1234)"
+
+# 9. Tracked, then mapped locally: entry leaves the tracked file, commit is name-free.
+V="$TMPROOT/v9"; mkvault "$V"
+bash "$LM" set --vault "$V" --root /w/moved --name movedproj >/dev/null
+check "moved: tracked first" movedproj "$(jq -r '.projects["/w/moved"]' "$V/lore-config.json")"
+err="$(bash "$LM" set --vault "$V" --root /w/moved --name movedproj --local 2>&1 >/dev/null)"
+check "moved: tracked entry removed" null "$(jq -r '.projects["/w/moved"]' "$V/lore-config.json")"
+check "moved: other entry kept" other "$(jq -r '.projects["/other"]' "$V/lore-config.json")"
+check "moved: local entry written" movedproj "$(jq -r '.projects["/w/moved"]' "$V/lore-config.local.json")"
+check "moved: removal committed" "" "$(git -C "$V" status --porcelain)"
+check "moved: commit message name-free" 0 "$(git -C "$V" log -1 --format=%B | grep -c movedproj)"
+has "moved: history notice" "still in the vault git history" "$err"
+check "moved: exactly one notice" 1 "$(printf '%s\n' "$err" | grep -c 'git history')"
+
+# 10. PR-mode vault: tracked write lands on the lore branch, main stays put.
+V="$TMPROOT/v10"; mkvault "$V"
+printf '{"projects":{},"vault_main":"pr"}\n' > "$V/lore-config.json"
+git -C "$V" commit -qam pr
+HEAD0="$(git -C "$V" rev-parse main)"
+bash "$LM" set --vault "$V" --root /w/shared --name shared >/dev/null
+check "pr: main untouched" "$HEAD0" "$(git -C "$V" rev-parse main)"
+B="$(git -C "$V" for-each-ref --format='%(refname:short)' 'refs/heads/lore/*' | head -1)"
+check "pr: mapping on lore branch" shared "$(git -C "$V" show "$B:lore-config.json" | jq -r '.projects["/w/shared"]')"
+
+# 11. Non-git vault: files written, no git needed.
+V="$TMPROOT/v11"; mkdir -p "$V"
+out="$(bash "$LM" set --vault "$V" --root /w/n --name n --local)"; rc=$?
+check "non-git: exit 0" 0 "$rc"
+has "non-git: target local" "TARGET=local" "$out"
+check "non-git: mapping" n "$(jq -r '.projects["/w/n"]' "$V/lore-config.local.json")"
+check "non-git: ignore line" 1 "$(grep -cxF 'lore-config.local.json*' "$V/.gitignore")"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
