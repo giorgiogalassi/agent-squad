@@ -185,5 +185,14 @@ LN9="$(grep -n '^- Q ten' "$Q2/issues/batch-3.md" | cut -d: -f1)"
 bash "$BA" close batch-3.md --line "$LN9" --hash "$HQ9" --as obsolete --vault "$V2" --project demo >/dev/null 2>&1; check "backslash close: exit 0" "0" "$?"
 check "backslash item struck byte-exact" '- ~~Q ten \n and \t end~~ (obsolete)' "$(sed -n "${LN9}p" "$Q2/issues/batch-3.md")"
 
+# --as open: backslash item lands byte-exact under status.md ## Next
+printf '%s\n' '- Q open \n a \t b \\ c' >> "$Q2/issues/batch-3.md"
+HQO="$(printf '%s' 'Q open \n a \t b \\ c' | cksum | cut -d" " -f1)"
+LNO="$(grep -n '^- Q open' "$Q2/issues/batch-3.md" | cut -d: -f1)"
+printf '# Status\n\n## Next\n- existing\n' > "$V2/projects/demo/status.md"
+bash "$BA" close batch-3.md --line "$LNO" --hash "$HQO" --as open --vault "$V2" --project demo >/dev/null 2>&1; check "open backslash close: exit 0" "0" "$?"
+check "open backslash item byte-exact in Next" '- Q open \n a \t b \\ c (from batch-3.md)' "$(grep -n 'Q open' "$V2/projects/demo/status.md" | cut -d: -f2-)"
+check "open backslash item not split" "1" "$(grep -c 'Q open' "$V2/projects/demo/status.md")"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

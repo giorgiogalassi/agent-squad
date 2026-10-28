@@ -197,7 +197,7 @@ if [ "$AS" = open ]; then
   ST="$VAULT/projects/$PROJECT/status.md"
   item="- $text (from $(basename "$F"))"
   if [ -f "$ST" ] && grep -q '^## Next' "$ST"; then
-    awk -v item="$item" '{ print } /^## Next/ && !d { print item; d=1 }' "$ST" > "$ST.tmp.$$" && mv "$ST.tmp.$$" "$ST" || squad_fail 20 "cannot write $ST"
+    BA_ITEM="$item" awk '{ print } /^## Next/ && !d { print ENVIRON["BA_ITEM"]; d=1 }' "$ST" > "$ST.tmp.$$" && mv "$ST.tmp.$$" "$ST" || squad_fail 20 "cannot write $ST"
   elif [ -f "$ST" ]; then
     printf '\n## Next\n%s\n' "$item" >> "$ST" || squad_fail 20 "cannot write $ST"
   else
