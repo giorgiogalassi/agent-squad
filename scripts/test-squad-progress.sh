@@ -129,5 +129,25 @@ check "pr: still level and clean" "" "$(git -C "$V" status --porcelain)"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: again'
 check "pr: no second line after repeat" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -c '^\[#5\] .*PR: #9')"
 
+# Values are data: backslashes stay literal, newlines are refused (exit 2).
+sp "$V" run-row --issue '#6' --set 'State=a\nb\\c'
+check "run-row: backslashes stay literal" '| #6 | 6-b | 5-a | 0 | 0 | - | - | a\nb\\c |' "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep '^| #6 ')"
+sp "$V" run-row --issue '#6' --set "State=x
+y"
+check "run-row: newline value is exit 2" 2 "$RC"
+check "run-row: rows stay one line each" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 ')"
+sp "$V" append --issue '#30' --line 'a\nb\\c'
+check "append: backslashes stay literal" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -cF '[#30] a\nb\\c')"
+sp "$V" log --line 'x\ty\\z'
+check "log: backslashes stay literal" 1 "$(git -C "$V" show "$B:projects/proj/.squad/session.log" | grep -cF 'x\ty\\z')"
+
+# Race: an async writer left an uncommitted line on vault main; both lines must reach the lore branch.
+printf '[#40] hook line\n' >> "$P"
+sp "$V" append --issue '#41' --line 'ralph line'
+LP="$(git -C "$V" show "$B:projects/proj/.squad/progress.txt")"
+check "race: hook line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#40\] hook line$')"
+check "race: ralph line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#41\] ralph line$')"
+check "race: earlier lines not duplicated" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#5\] resolved')"
+
 echo "---"; echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

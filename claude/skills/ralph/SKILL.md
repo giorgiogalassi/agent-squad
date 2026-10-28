@@ -225,10 +225,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-status --value <Status>
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh where --file progress|log|run
 ```
 
-`append` writes `[<ID>] <text>` and skips a `resolved. PR: #N` line already
-present (the SubagentStop hook may have written it), so call it
-unconditionally. `log` adds the `[YYYY-MM-DD HH:MM] [ralph]` prefix.
 `run-write --from` takes the whole file (write it to a `mktemp` file first).
+`--set` values contain no `|` and no newline. Call `append` unconditionally.
 `where` emits `FILE=<path>`: read run state, `progress.txt` and
 `session.log` from that path, never from the vault `.squad/` directory.
 Read `OUTCOME`, `CHANGED` (and `FILE`). Act on the exit code:
@@ -236,6 +234,7 @@ Read `OUTCOME`, `CHANGED` (and `FILE`). Act on the exit code:
 | Exit | Action |
 |------|--------|
 | 0 | Continue (`unchanged` = already recorded). |
+| 2 | Bad call (usage, or a `|` or newline in a `--set` value): fix the call and retry once, else note the stderr reason in the end-of-batch report and continue. |
 | 10 | Note the stderr reason in the end-of-batch report and continue. |
 | 20 | Note the stderr reason in the end-of-batch report and continue. |
 
@@ -304,7 +303,7 @@ three checks below and their classification are unchanged. When
 `STATE=pr`, the hook may already have appended the `[ID] resolved. PR: #N
 (base: …)` line, or still be about to (it is async, so the file can hold a
 previous run's values): record the line with `squad-progress.sh append`
-anyway, it skips an equivalent line.
+anyway.
 
 1. **Commit check:** HEAD's subject carries this issue's ID. Match the
    ID token tolerantly across conventions (`[SQ-26]`, bare `ABC-1234`,
@@ -342,14 +341,14 @@ the issue is `exempt`/`skipped` in Test specs. Then:
 
 - **Committed, PR not opened** (detached non-last issue only —
   connected always opens): connected n/a; detached append
-  `- [ ] (committed on <branch>) <KEY>` to handoff. `progress.txt`:
+  `- [ ] (committed on <branch>) <KEY>` to handoff. `squad-progress.sh append` `progress.txt`:
   `[ID] committed on <branch> (base: <base>). Notes: <summary>`
 - **Committed and PR opened:** connected: nothing further — Cody already
   swapped `in_progress` → `in_review` (from `state_labels`) when it
   opened the PR; do not duplicate. Detached: run
   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh review --issue <KEY> --handoff <handoff path>`
   per issue on the branch (exit 0 continue; 10 and 20 note the stderr
-  reason in `progress.txt` and continue). `progress.txt`:
+  reason with `squad-progress.sh append` and continue). `squad-progress.sh append`:
   `[ID] resolved. PR: #N (base: <base>) (or Branch: <branch> (base: <base>)
   detached). Notes: <summary>` — the `(base: …)` token is what Reven reads
   to diff a stacked branch against its real base.
@@ -368,8 +367,8 @@ loop symptoms (repeated identical tool sequences without file changes).
 
 Tests still red after the retries are an escalation (no PR).
 
-**Not a failure:** pre-existing failures on main (note in
-`progress.txt` and the PR body).
+**Not a failure:** pre-existing failures on main (note via
+`squad-progress.sh append` and in the PR body).
 
 ### 2c. Escalation
 
@@ -467,13 +466,13 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    description.
 3. **Classify the verdict:**
    - `APPROVED`, or `COMMENT` with nothing blocking: done, no Cody run.
-     Count the round, append to `progress.txt`
+     Count the round, `squad-progress.sh append`
      `[ID] review: <verdict> r<N>` (for `COMMENT`, add the observations
      in one line so the human gate sees them), mark `resolved`.
    - `INCOMPLETE` (Reven names what it did not read): not a fix request
      and not yet a round. Re-run Reven once per review round with
      `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
-     `progress.txt` `[ID] review: incomplete`, then the label call of step 5
+     `squad-progress.sh append` `[ID] review: incomplete`, then the label call of step 5
      (state `needs-review` is recorded after it returns).
    - `CHANGES REQUESTED`: counts as a round (`Rounds` + 1). Under the
      cap: step 4. At the cap: step 5.
@@ -491,7 +490,7 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    itself never does. Connected: after a green 2b, push
    the branch with `git -C <wd> push origin <branch>` (Cody does not
    push when `open pr: no`). Detached: no push. Then back to step 1.
-5. **Out of rounds** without approval: `progress.txt`
+5. **Out of rounds** without approval: `squad-progress.sh append`
    `[ID] review: N rounds, last verdict <X>`, then apply the label (also
    after a second `INCOMPLETE`), connected:
    ```bash

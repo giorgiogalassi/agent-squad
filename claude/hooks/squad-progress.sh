@@ -61,9 +61,19 @@ current() {
 }
 # stage <rel>: make the vault path hold the current content, ready to edit.
 stage() {
-  local cur; cur="$(current "$1")"
+  local cur base; cur="$(current "$1")"
   mkdir -p "$(dirname "$V/$1")" || return 1
-  [ "$cur" = "$V/$1" ] || cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1"
+  if [ "$cur" != "$V/$1" ]; then
+    base="$V/$1.base.$$"
+    if [ -f "$V/$1" ] && [ -f "$cur" ] && ! git -C "$V" diff --quiet HEAD -- "$1" 2>/dev/null; then
+      # Vault main holds an uncommitted write (async hook): merge, never overwrite.
+      git -C "$V" show "HEAD:$1" > "$base" 2>/dev/null || : > "$base"
+      git merge-file -p --union "$cur" "$base" "$V/$1" > "$V/$1.m" 2>/dev/null; mv "$V/$1.m" "$V/$1"
+      rm -f "$base"
+    else
+      cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1"
+    fi
+  fi
   [ -f "$V/$1" ] || : > "$V/$1"
 }
 commit() { squad_vault_commit "$V" "$PROJ" "lore: ralph state $(squad_public_name "$V" "$PROJ")" "$1"; }
@@ -130,8 +140,12 @@ case "$VERB" in
     for kv in "${SETS[@]}"; do
       COL="${kv%%=*}"; VAL="${kv#*=}"
       case "$kv" in *=*) ;; *) rm -f "$T"; squad_fail 2 "--set needs Column=value" ;; esac
+      case "$VAL" in *"
+"*) rm -f "$T"; squad_fail 2 "--set value cannot contain a newline" ;; esac
       case "$VAL" in *'|'*) rm -f "$T"; squad_fail 2 "--set value cannot contain '|'" ;; esac
-      awk -v col="$COL" -v val="$VAL" -v id="#$ID" '
+      # ENVIRON, not -v: -v interprets backslash escapes in the value.
+      SQUAD_COL="$COL" SQUAD_VAL="$VAL" SQUAD_ID="#$ID" awk '
+        BEGIN { col = ENVIRON["SQUAD_COL"]; val = ENVIRON["SQUAD_VAL"]; id = ENVIRON["SQUAD_ID"] }
         function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
         /^\|/ {
           n = split($0, c, "|")
