@@ -52,7 +52,7 @@ setup connected
 commit_on 296-x "[#296] add thing"
 FAKE_PR="7 main" run_hook
 grep -q 'PR #7 opened. Branch: 296-x @' "$STATUS" && ok "pr: checkpoint line in status.md" || bad "pr: checkpoint line"
-check "pr: progress line" "[#296] resolved. PR: #7 (base: main). Notes: [#296] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+check "pr: progress line" "[#296] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [#296] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
 check "pr: summary STATE" pr "$(envval STATE)"
 check "pr: summary TREE" clean "$(envval TREE)"
 check "pr: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
@@ -172,6 +172,34 @@ setup connected
 commit_on 296-c "[#296] add thing"
 FAKE_PR="7 main" run_hook
 git -C "$F_VAULT" log --format=%s | grep -qx 'lore: progress fixture' && ok "control: progress commit keeps name" || bad "control: progress commit keeps name"
+
+# 4f. bare numeric ID in the subject ([283]) is normalised to [#283]: one progress line, summary ISSUE=#283
+setup connected
+commit_on 283-x "[283] add thing"
+FAKE_PR="7 main" run_hook
+check "bare ID: progress line normalised" "[#283] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [283] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+check "bare ID: summary ISSUE" "#283" "$(envval ISSUE)"
+# a legacy undated [283] line for the same PR counts as already recorded
+echo "[283] resolved. PR: #7 (base: main). Notes: legacy" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "bare ID: legacy line dedupes" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+
+# 4g. fix-round commit on a branch whose PR is already recorded: no second "opened" line, no second progress line
+setup connected
+commit_on 296-f "[#296] add thing"
+FAKE_PR="7 main" run_hook
+echo r >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#296] address review"
+FAKE_PR="7 main" run_hook
+check "fix round: one 'PR #7 opened' line" 1 "$(grep -c 'PR #7 opened' "$STATUS")"
+grep -q 'PR #7 updated. Branch: 296-f @ .*address review' "$STATUS" && ok "fix round: updated line" || bad "fix round: updated line"
+check "fix round: one progress line" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+check "fix round: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
+
+# 4h. Cody prose: claim is a scripted step before the first edit and again before review; commits use [#N]
+CODY="$REPO_ROOT/claude/agents/cody.md"
+grep -q 'squad-labels.sh claim --issue' "$CODY" && ok "cody.md: claim step" || bad "cody.md: claim step"
+check "cody.md: claim runs before review and again at PR time" 2 "$(grep -c 'squad-labels.sh claim --issue' "$CODY")"
+grep -q 'git commit -m "\[#<issue-number>\]' "$CODY" && ok "cody.md: commit subject uses [#N]" || bad "cody.md: commit subject uses [#N]"
 
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?
