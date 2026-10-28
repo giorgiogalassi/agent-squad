@@ -7,7 +7,9 @@
 #        vault-pr.sh finish
 # `commit` commits the paths Lore wrote (on the lore/<project>-<date> branch in PR
 # mode, see lore-config.json "vault_main"). `finish` pushes that branch and opens
-# or updates its PR (connected mode only; detached never pushes).
+# or updates its PR when the vault is in PR mode and has an origin remote, in either
+# tracker mode; local-only projects never push. Without gh the branch is pushed and
+# a stderr notice names the manual PR step.
 # Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no (commit unchanged: paths left
 # uncommitted; finish unchanged: nothing pushed and no PR created)
 # Exit: 0 ok, 2 usage, 20 resolution, push or PR failure.
@@ -32,7 +34,7 @@ case "$CMD" in
     fi
     ;;
   finish)
-    squad_vault_finish "$V" || exit 20
+    squad_vault_finish "$V" "${DISPLAY_NAME:-}" || exit 20
     if [ "${SQUAD_VAULT_PUSHED:-0}" -gt 0 ]; then
       squad_emit OUTCOME applied; squad_emit CHANGED yes
     else

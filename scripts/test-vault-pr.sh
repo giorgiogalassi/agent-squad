@@ -27,7 +27,7 @@ cat > "$TMPROOT/bin/gh" <<'EOP'
 echo "gh $*" >> "$GH_LOG"
 case "$1 $2" in
   "pr list") case "$*" in *"--state merged"*) printf '%s' "${GH_MERGED_OID:-}" ;; *) printf '%s' "${GH_OPEN:-}" ;; esac ;;
-  "pr create") echo "https://example.invalid/pull/7" ;;
+  "pr create") [ -n "${GH_CREATE_FAIL:-}" ] && exit 1; echo "https://example.invalid/pull/7" ;;
   *) exit 1 ;;
 esac
 EOP
@@ -256,6 +256,46 @@ git -C "$V" branch lore/stray; : > "$GH_LOG"
 finish "$V" FAKE_TRACKER_MODE=detached
 check "direct mode: OUTCOME=unchanged" "OUTCOME=unchanged" "$(grep '^OUTCOME=' "$TMPROOT/fin.out")"
 check "direct mode: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+
+# 12. gh missing: the branch is still pushed, one stderr notice, not a failure (#364).
+mkdir -p "$TMPROOT/nogh"; ln -sf "$(command -v git)" "$TMPROOT/nogh/git"
+mkvault nog '{"vault_main": "pr"}'; V="$TMPROOT/nog"; B="lore/proj-$(date +%Y-%m-%d)"
+decide "$V" "One: first"; : > "$GH_LOG"
+(cd "$TMPROOT" && env PATH="$TMPROOT/nogh:/usr/bin:/bin" FAKE_TRACKER_MODE=detached SECOND_BRAIN_PATH="$V" \
+  "$(command -v bash)" "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2> "$TMPROOT/fin.err"); rc=$?
+check "no gh: exit 0" 0 "$rc"
+check "no gh: OUTCOME=applied" "OUTCOME=applied" "$(grep '^OUTCOME=' "$TMPROOT/fin.out")"
+git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "no gh: branch pushed" 0 $?
+check "no gh: one stderr notice" 1 "$(grep -c 'gh not found' "$TMPROOT/fin.err")"
+check "no gh: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+# gh present but pr create fails: still a failure.
+mkvault ghf '{"vault_main": "pr"}'; V="$TMPROOT/ghf"
+decide "$V" "One: first"
+finish "$V" FAKE_TRACKER_MODE=detached GH_CREATE_FAIL=1; rc=$?
+check "gh present, create fails: exit 20" 20 "$rc"
+# Push failure (origin gone) is still a failure.
+mkvault pf '{"vault_main": "pr"}'; V="$TMPROOT/pf"
+decide "$V" "One: first"; rm -rf "$TMPROOT/pf-origin.git"
+finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
+check "push failure: exit 20" 20 "$rc"
+
+# 13. Local-only project (#351): finish never pushes, stray lore/* branch included.
+mkvault loc '{"vault_main": "pr"}'; V="$TMPROOT/loc"; B="lore/proj-$(date +%Y-%m-%d)"
+printf 'projects/proj/status.md\n' > "$V/.gitignore"; git -C "$V" add .gitignore && git -C "$V" commit -qm ignore && git -C "$V" push -q origin main 2>/dev/null
+decide "$V" "One: first"; : > "$GH_LOG"
+finish "$V"; rc=$?
+check "local-only: exit 0" 0 "$rc"
+check "local-only: CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+check "local-only: no lore branch" "" "$(branches "$V")"
+mkdir -p "$V/.claude/worktrees"
+git -C "$V" worktree add -q -b "$B" "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" 2>/dev/null
+echo x > "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)/projects/proj/x.md"
+git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" add -A && git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" commit -qm stray
+(cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2>/dev/null); rc=$?
+check "local-only stray: exit 0" 0 "$rc"
+check "local-only stray: CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "local-only stray: not pushed" 2 $?
+check "local-only stray: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
 
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]
