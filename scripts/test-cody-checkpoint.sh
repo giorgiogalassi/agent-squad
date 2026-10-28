@@ -150,6 +150,20 @@ mkdir -p "$(dirname "$PROGRESS")"; echo "[#296] 2026-10-24 resolved. PR: #7 (bas
 FAKE_PR="7 main" run_hook
 check "progress dedupe by PR number" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
 
+# 4c2. PR-mode vault: the current progress.txt is the lore worktree's copy; a line already
+#      committed there (vault main lacks it) must not be appended again
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-w "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$_wt/projects/fixture/.squad"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: from lore branch" >> "$_wt/projects/fixture/.squad/progress.txt"
+git -C "$_wt" add -A; $GIT -C "$_wt" commit -q -m "lore: progress"
+FAKE_PR="7 main" run_hook
+check "pr mode: lore worktree line dedupes" 1 "$(grep -c '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt")"
+check "pr mode: vault main copy untouched" 0 "$(cat "$PROGRESS" 2>/dev/null | grep -c '^\[#296\]')"
+
 # 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 setup connected
 commit_on 296-p "[#296] add thing"
