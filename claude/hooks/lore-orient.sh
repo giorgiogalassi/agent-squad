@@ -265,6 +265,11 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
     fi
     if [ -z "$WT_BASE" ]; then WT_BASE="main"; WT_BASE_SRC="default, no PR or progress.txt entry names one"; fi
     OUTPUT="${OUTPUT}Branch: $WT_BRANCH   Base: $WT_BASE ($WT_BASE_SRC)${NL}"
+    # Share the resolved base with worktree-prompt-check.sh (#282), which
+    # fetches and compares heads on every prompt; its notes ask for a round
+    # report that starts with head before -> after and the base head.
+    printf '%s\n' "$WT_BASE" > "$(git rev-parse --absolute-git-dir 2>/dev/null)/squad-base" 2>/dev/null
+    OUTPUT="${OUTPUT}Each prompt a hook fetches origin and fast-forwards when safe; start each round's report with head before -> after and the base head.${NL}"
     case "$WT_BRANCH" in
       main|master|develop|release/*|hotfix/*)
         OUTPUT="${OUTPUT}WARNING: $WT_BRANCH is a shared integration branch; Cody refuses to commit on it.${NL}" ;;
