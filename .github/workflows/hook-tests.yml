@@ -28,6 +28,8 @@ on:
       - "scripts/test-squad-pr-desc.sh"
       - "scripts/test-squad-route.sh"
       - "claude/hooks/squad-route.sh"
+      - "scripts/test-squad-progress.sh"
+      - "claude/hooks/squad-progress.sh"
       - "claude/hooks/squad-pr-desc.sh"
       - "claude/hooks/squad-labels.sh"
       - "scripts/test-squad-branch.sh"
@@ -42,6 +44,8 @@ on:
       - "scripts/test-lore-incidents.sh"
       - "scripts/test-lore-checkpoint.sh"
       - "scripts/test-decisions-lint.sh"
+      - "scripts/test-batch-audit.sh"
+      - "claude/hooks/batch-audit.sh"
       - "scripts/test-vault-check.sh"
       - "claude/hooks/vault-check.sh"
       - "scripts/test-lore-index.sh"
@@ -105,6 +109,9 @@ jobs:
       - name: Run scripts/test-squad-route.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-route.sh; else bash scripts/test-squad-route.sh; fi
+      - name: Run scripts/test-squad-progress.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-progress.sh; else bash scripts/test-squad-progress.sh; fi
 
       - name: Run scripts/test-squad-branch.sh (bash 3.2 on macOS)
         run: |
@@ -129,6 +136,10 @@ jobs:
       - name: Run scripts/test-lore-checkpoint.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-checkpoint.sh; else bash scripts/test-lore-checkpoint.sh; fi
+
+      - name: Run scripts/test-batch-audit.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-batch-audit.sh; else bash scripts/test-batch-audit.sh; fi
 
       - name: Run scripts/test-decisions-lint.sh (bash 3.2 on macOS)
         run: |

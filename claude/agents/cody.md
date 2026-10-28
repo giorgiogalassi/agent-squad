@@ -56,6 +56,8 @@ if you were invoked, the blocker is resolved).
 
 ### 0. Claim the issue (connected mode only)
 
+This is your first tool call, before any read or edit.
+
 Issue number missing from the prompt → extract from the description
 (`#30`-style). Then:
 
@@ -246,7 +248,7 @@ Always commit:
 
 ```bash
 git add <path> <path> ...        # the files you created or modified
-git commit -m "[ISSUE-ID] brief description"
+git commit -m "[#<issue-number>] brief description"   # GitHub issues: [#341], never [341]
 git rev-parse HEAD
 ```
 
@@ -278,7 +280,19 @@ Then act on `open pr` (default `yes` when invoked directly):
   checklists, plus notes for Reven. Always pass `--base` so a stacked
   branch never targets main by accident. If `gh` is unavailable, push
   and print manual instructions. Immediately after the PR is created,
-  for every covered issue `<n>`:
+  for every covered issue `<n>`, first re-run the idempotent claim:
+  ```bash
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh claim --issue <n>
+  ```
+  Read `OUTCOME` and `CHANGED`. Act on the exit code:
+
+  | Exit | Action |
+  |------|--------|
+  | 0 | Continue with `review`. |
+  | 10 | Issue already in review: continue with `review`. |
+  | 20 | Note the stderr reason in the PR body and continue with `review`. |
+
+  Then:
   ```bash
   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh review --issue <n>
   ```

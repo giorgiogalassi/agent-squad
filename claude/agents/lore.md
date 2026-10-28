@@ -37,16 +37,22 @@ update INDEX;
 `lore prefer "<x>"` = record a preference, global or project-only;
 `lore decide "<title>: <body>" [--supersedes "<date> <title>"] [--rule]` = record a project decision;
 `lore supersede "<title>"...` = retire decisions.md entries;
-`lore audit [project]` = list entries the checkout no longer bears out.
+`lore audit [project]` = list entries the checkout no longer bears out, and batch items of merged issues.
 
 **Vault location:** `SECOND_BRAIN_PATH` if set and non-empty, else
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
 missing on first invocation → ask
 `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
+Creating it includes a `.gitignore` listing `lore-config.local.json`.
 
 **lore-config.json** (at the vault root): `{"projects": {"/abs/cwd/path":
 "display-name"}}` — absolute CWD paths → display names, nothing else. No
-file yet → empty map, created on first write.
+file yet → empty map, created on first write. An untracked
+`lore-config.local.json` (same schema, read first by `path-resolve.sh`)
+holds the mappings of local-only projects; a new vault's `.gitignore`
+lists it. A local-only project (`git -C <vault> check-ignore -q
+projects/<n>/status.md` succeeds) or `lore start --local` writes its
+mapping there; never into `lore-config.json`.
 
 **Paths.** `.squad/` below always means
 `<vault>/projects/<project-name>/.squad/` — never a directory inside the
@@ -60,7 +66,7 @@ when explicitly requested or named by a context ref.
 
 ---
 
-## `lore start`
+## `lore start [--local]`
 
 > The SessionStart hook (`lore-orient.sh`, registered by the plugin's `hooks/hooks.json`)
 > injects read-only orientation automatically; it never writes.
@@ -84,7 +90,9 @@ when explicitly requested or named by a context ref.
 3. Resolve the display name via `lore-config.json`:
    - `projects[cwd_path]` exists → use it silently, skip to step 6.
    - No entry, no `<vault>/projects/<candidate>/` conflict → create the
-     directory, record the mapping, use `candidate`; no prompt.
+     directory, record the mapping (in `lore-config.local.json` for a
+     local-only project or with `--local`, else `lore-config.json`), use
+     `candidate`; no prompt.
    - Conflict → prompt once: "A vault project named `<candidate>`
      already exists. Display name for this project [`<candidate>-2`]:";
      use the answer (default `<candidate>-2`), create, record. Later
@@ -282,8 +290,29 @@ missing → say so and stop).
    `lore supersede "<title>"` line.
 
 Never supersede automatically and write nothing: the user confirms, then
-runs `lore supersede`. `lore start` ends with one line offering
-`lore audit` when the project has active decisions.
+runs `lore supersede`.
+
+### Batch items of merged issues
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh list
+```
+
+Read the `AUDIT_ITEM=<batch>|<line>|<key>|<question|criterion>|<hash>|<text>` lines
+(`AUDIT_COUNT`, `AUDIT_BATCHES`); none = say so. Show one line per item with
+batch and issue key. For each, ask the user: **answered**, **still open** or
+**obsolete**; edit nothing without the answer. Then:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh close <batch> --line <n> --hash <hash> --as answered|open|obsolete [--decision "<YYYY-MM-DD> <title>"]
+```
+
+Read `OUTCOME`, `CHANGED`. Exit 0 = done; 10 = missing decision entry (record
+it with `lore decide`, then re-run) or bad or stale line (the batch changed since
+list: re-run `list`), report it; 2/20 report and stop.
+`answered` strikes the item and points to the `decisions.md` entry, `open`
+carries it to `status.md` Next, `obsolete` strikes it. Pass `<line>` and `<hash>` from the item's own AUDIT_ITEM line as is; the `<text>` is escaped for display, so never recompute the hash from it.
+An item can be listed while its PR is still open (`resolved` is not `merged`); "still open" is the right answer then.
 
 ## `lore check [--fix] [--all]`
 
@@ -292,7 +321,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-check.sh check [--fix] [--all]
 ```
 
 Read the finding lines (`VAULT_SCOPE`, `DECISIONS_*`, `STATUS_*`, `INDEX_*`,
-`SESSION_UNCLOSED`, `JOURNAL_POINTER_MISSING`, `VAULT_*`, `FIXED_*`); empty
+`SESSION_UNCLOSED`, `JOURNAL_POINTER_MISSING`, `VAULT_*` (including
+`VAULT_PROJECT_UNMAPPED`: a `projects/` folder that no config maps), `FIXED_*`); empty
 stdout = clean, say so. Pipe the lines to `vault-check.sh render` and show the
 text. Exit 0 = done; 2 = usage or no project resolved, report it and stop.
 

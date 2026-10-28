@@ -10,13 +10,13 @@
 # Evidence, in the working directory (same checks as Ralph 2b):
 #   branch, HEAD sha + subject, `status --porcelain`, and in connected mode an
 #   open PR for the branch (`gh pr list --head`).
-# The issue ID is taken from HEAD's subject ([#N] or [KEY-N]); no ID, a shared
+# The issue ID is taken from HEAD's subject ([#N], [KEY-N]; a bare [N] becomes [#N]); no ID, a shared
 # integration branch, or HEAD already on another branch means Cody committed nothing: no write.
 #
 # STATE: pr (open PR) | committed (connected, commit but no PR) |
 #        detached (detached mode, commit ready for manual push).
 # Writes: one `lore-checkpoint.sh --note` line; for STATE=pr also one
-# progress.txt line `[ID] resolved. PR: #N (base: B). Notes: <subject>`
+# progress.txt line `[#N] YYYY-MM-DD resolved. PR: #N (base: B). Notes: <subject>`
 # (the `(base: ...)` token is what Reven reads). Both idempotent per sha / PR.
 # Summary for Ralph 2b: <vault>/projects/<name>/.squad/cody-checkpoint.env
 # (KEY=value, overwritten each run, never committed). Log: .cody-checkpoint.log in the project dir.
@@ -55,8 +55,11 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null)"
 SUBJECT="$(git log -1 --format=%s 2>/dev/null)"
 [ -n "$BRANCH" ] && [ -n "$SHA" ] || skip "no branch or commit in $CWD"
 case "$BRANCH" in main|master|develop|release/*|hotfix/*) skip "shared branch $BRANCH, nothing to record" ;; esac
-ISSUE="$(printf '%s' "$SUBJECT" | sed -n 's/^\[\([^]]*\)\].*/\1/p')"
+ISSUE="$(printf '%s' "$SUBJECT" | sed -n -e 's/^\[\(#\{0,1\}[0-9][0-9]*\)\].*/\1/p' -e 's/^\[\([A-Za-z][A-Za-z0-9]*-[0-9][0-9]*\)\].*/\1/p')"
 [ -n "$ISSUE" ] || skip "HEAD $SHA carries no issue ID, nothing to record"
+# GitHub issues are always [#N]: a bare numeric [283] is normalised so progress.txt has one form.
+ISSUE_BARE="$ISSUE"
+case "$ISSUE" in [0-9]*) ISSUE="#$ISSUE" ;; "#"*) ISSUE_BARE="${ISSUE#\#}" ;; esac
 DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 TREE=clean; [ "${DIRTY:-0}" -gt 0 ] && TREE=dirty
 
@@ -85,8 +88,11 @@ else
 fi
 
 NOW="$(date "+%Y-%m-%d %H:%M")"
+# A later commit on a branch whose PR is already recorded (fix round) is an update, not a new PR.
+VERB_PR=opened
+if [ "$STATE" = pr ] && [ -f "$PROJ/status.md" ] && grep -qF "PR #$PR opened. Branch: $BRANCH @" "$PROJ/status.md"; then VERB_PR=updated; fi
 case "$STATE" in
-  pr) LINE="[$NOW] [claude-code] PR #$PR opened. Branch: $BRANCH @ $SHA. $SUBJECT" ;;
+  pr) LINE="[$NOW] [claude-code] PR #$PR $VERB_PR. Branch: $BRANCH @ $SHA. $SUBJECT" ;;
   detached) LINE="[$NOW] [claude-code] Branch $BRANCH ready for manual push @ $SHA. $SUBJECT" ;;
   *) LINE="[$NOW] [claude-code] Branch $BRANCH committed @ $SHA, no PR yet. $SUBJECT" ;;
 esac
@@ -97,8 +103,23 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
 fi
 
 PROGRESS="$PROJ/.squad/progress.txt"
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -F "[$ISSUE] " "$PROGRESS" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
-  printf '[%s] resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
+# PR-mode vault: the current progress.txt may be a session worktree's copy (vault main is
+# reset after each scripted commit), so the dedupe also reads any already existing worktree
+# copy, read-only (squad_vault_wt_existing never creates one). A line in either copy counts.
+_seen() {  # _seen <file>: is this issue's PR line in the file
+  grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$1" 2>/dev/null | grep -qE "PR: #$PR( |$)"
+}
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ]; then
+  _present=0
+  _seen "$PROGRESS" && _present=1
+  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
+    while IFS= read -r _wt; do
+      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/.squad/progress.txt" && _present=1
+    done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
+  fi
+fi
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && [ "$_present" = 0 ]; then
+  printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
   squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
 fi
 

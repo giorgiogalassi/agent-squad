@@ -42,6 +42,7 @@
 # top-level `context` map keyed by project root, like `projects`:
 # `"context": {"/abs/root": "repo"}`. `repo` -> <PROJECT_ROOT>/.squad;
 # anything else or absent -> <vault>/projects/<name>/.squad (default).
+# lore-config.local.json (untracked, same schema) is read first for both maps.
 # status.md, decisions.md, preferences/, session.log, chisel-config.json,
 # progress.txt and issues/ always stay in the vault regardless.
 # SQUAD_DIR is a path only; callers check that it exists.
@@ -82,17 +83,32 @@ if [ -z "$ROOT" ]; then
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 fi
 
+# lore-config.local.json (#355) is an optional, untracked file with the same
+# `projects`/`context` schema, for projects whose name must stay out of the
+# vault remote. It wins over lore-config.json per key; an unreadable local
+# file is ignored.
 DISPLAY=""
 CONFIG="$VAULT/lore-config.json"
-if [ -n "$ROOT" ] && [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  DISPLAY="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$CONFIG" 2>/dev/null)"
+LOCAL_CONFIG="$VAULT/lore-config.local.json"
+# cfg_get <map> <root>: first non-empty value from the local, then the tracked config.
+cfg_get() {
+  local f v
+  for f in "$LOCAL_CONFIG" "$CONFIG"; do
+    [ -f "$f" ] || continue
+    v="$(jq -r --arg k "$2" ".$1[\$k] // empty" "$f" 2>/dev/null)"
+    if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
+  done
+  return 0
+}
+if [ -n "$ROOT" ] && command -v jq >/dev/null 2>&1; then
+  DISPLAY="$(cfg_get projects "$ROOT")"
 fi
 
 CONTEXT=""
-if [ -n "$ROOT" ] && [ -f "$CONFIG" ]; then
+if [ -n "$ROOT" ] && { [ -f "$CONFIG" ] || [ -f "$LOCAL_CONFIG" ]; }; then
   if command -v jq >/dev/null 2>&1; then
-    CONTEXT="$(jq -r --arg k "$ROOT" '.context[$k] // empty' "$CONFIG" 2>/dev/null)"
-  elif grep -q '"context"' "$CONFIG" 2>/dev/null; then
+    CONTEXT="$(cfg_get context "$ROOT")"
+  elif grep -q '"context"' "$CONFIG" "$LOCAL_CONFIG" 2>/dev/null; then
     # Config declares per-project context but jq is missing: we cannot
     # read it, so say so instead of silently resolving to the vault.
     echo "path-resolve: jq not found; 'context' in $CONFIG ignored, SQUAD_DIR defaults to the vault" >&2

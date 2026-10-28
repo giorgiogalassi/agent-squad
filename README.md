@@ -476,6 +476,8 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `export SECOND_BRAIN_PATH=/path/to/your/vault`
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
+- `lore-config.local.json` (same schema, untracked, listed in the vault
+  `.gitignore`) maps local-only projects; it is read before `lore-config.json`.
 - Per-project `.squad/` state lives inside the vault at
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
 - Optional per-project `context` in `lore-config.json`
@@ -489,9 +491,10 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `refs/heads/main`): Lore commits its vault writes on `lore/<project>-<date>`,
   in a worktree under `<vault>/.claude/worktrees/lore-<project>-<date>`, one
   branch per project and day. The main checkout ends level with `origin/main`.
-  At SessionEnd (connected mode) `lore-checkpoint.sh` pushes the branch and
-  opens the PR, or updates the open one (`vault-pr.sh finish`). Detached
-  mode commits to the branch and never pushes. An explicit `"vault_main"`
+  At SessionEnd, in PR mode and with an `origin` remote (either tracker
+  mode), `lore-checkpoint.sh` pushes the branch and opens the PR, or updates
+  the open one (`vault-pr.sh finish`). Without `gh` the branch is still pushed
+  and one stderr notice names the manual PR step. Local-only projects never push. An explicit `"vault_main"`
   setting skips detection entirely; without one, the hook runs once per day
   (result cached in the vault's `.git/lore-pr-mode`) and a detected PR mode is
   announced on stderr with a hint to set the value. A branch whose PR was
