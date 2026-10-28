@@ -5,37 +5,40 @@
 #
 # Usage:
 #   batch-audit.sh list  [--vault <dir>] [--project <name>]
-#   batch-audit.sh close <batch-file> --line <n> --as answered|open|obsolete
+#   batch-audit.sh close <batch-file> --line <n> --hash <hash> --as answered|open|obsolete
 #                        [--decision "<YYYY-MM-DD> <title>"] [--vault <dir>] [--project <name>]
 #
 # list is read-only and makes no tracker call. An issue counts as resolved when
-# progress.txt has `[KEY] ... resolved` or a `[MERGE] ... closes KEY` line (KEY
+# progress.txt has `[KEY] (YYYY-MM-DD)? resolved` or a `[MERGE] ... closes KEY[, KEY]` line (KEY
 # is the local ID or the tracker key from the batch Key mapping, `#` ignored);
-# a batch with Status done|resolved|merged|closed|complete resolves them all.
+# a batch with Status done|resolved|merged|closed|complete|executed resolves them all.
 # Listed items: bullets under `Open questions` (batch or issue level) and under
 # `### Acceptance criteria` of resolved issues, not already struck (`~~`).
 # Batch-level questions are listed only when every issue of the batch is resolved.
-#   AUDIT_ITEM=<batch>|<line>|<key>|<question|criterion>|<text>   (one per item)
-#   AUDIT_COUNT=<n>  AUDIT_BATCHES=<n>
+#   AUDIT_ITEM=<batch>|<line>|<key>|<question|criterion>|<hash>|<text>   (one per item;
+#     hash = cksum of the text, backslashes in text escaped)
+#   AUDIT_COUNT=<n>  AUDIT_BATCHES=<n>  OUTCOME=unchanged  CHANGED=no
 # close edits exactly one item, only on the user's answer:
 #   answered  strike + pointer to a decisions.md entry (must exist, else exit 10:
 #             record it with `lore decide` first)
 #   obsolete  strike
 #   open      strike and carry the text to status.md `## Next`
 # and commits through squad_vault_commit. Emits OUTCOME= CHANGED= ITEM_LINE=.
-# Exit: 0 ok, 2 usage, 10 precondition (bad line, missing decision), 20 I/O.
+# close refuses (exit 10) when the line no longer holds the listed item (hash).
+# Exit: 0 ok, 2 usage, 10 precondition (bad or stale line, missing decision), 20 I/O.
 set -u
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=squad-common.sh
 . "$HOOK_DIR/squad-common.sh"
 
 VERB="${1:-}"; [ $# -gt 0 ] && shift
-VAULT=""; PROJECT=""; BATCH=""; LINE=""; AS=""; DECISION=""
+VAULT=""; PROJECT=""; BATCH=""; LINE=""; HASH=""; AS=""; DECISION=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault) [ $# -ge 2 ] || squad_fail 2 "--vault needs a value"; VAULT="$2"; shift 2 ;;
     --project) [ $# -ge 2 ] || squad_fail 2 "--project needs a value"; PROJECT="$2"; shift 2 ;;
     --line) [ $# -ge 2 ] || squad_fail 2 "--line needs a value"; LINE="$2"; shift 2 ;;
+    --hash) [ $# -ge 2 ] || squad_fail 2 "--hash needs a value"; HASH="$2"; shift 2 ;;
     --as) [ $# -ge 2 ] || squad_fail 2 "--as needs a value"; AS="$2"; shift 2 ;;
     --decision) [ $# -ge 2 ] || squad_fail 2 "--decision needs a value"; DECISION="$2"; shift 2 ;;
     -*) squad_fail 2 "unknown argument: $1" ;;
@@ -58,13 +61,26 @@ PROGRESS="$SQ/progress.txt"
 resolved_keys() {
   [ -f "$PROGRESS" ] || return 0
   awk '
+    function iskey(t) { return (t ~ /^#?[0-9]+$/ || t ~ /^[A-Za-z][A-Za-z0-9]*-[0-9]+$/) }
     /^\[MERGE\]/ { s=$0
-      while (match(s, /[Cc]loses [#A-Za-z0-9_-]+/)) {
-        k=substr(s, RSTART+7, RLENGTH-7); sub(/^#/, "", k); print k; s=substr(s, RSTART+RLENGTH) }
+      while (match(s, /(^|[^A-Za-z])[Cc]loses[ \t]+/)) {
+        s=substr(s, RSTART+RLENGTH)
+        while (match(s, /^#?[A-Za-z0-9_-]+/)) {
+          k=substr(s, 1, RLENGTH)
+          if (!iskey(k)) break
+          sub(/^#/, "", k); print k
+          s=substr(s, RLENGTH+1)
+          if (!match(s, /^[ \t]*(,|&|and)[ \t]*/)) break
+          s=substr(s, RLENGTH+1)
+        } }
       next }
-    /^\[[^]]+\].* resolved/ { k=$0; sub(/^\[/, "", k); sub(/\].*/, "", k); sub(/^#/, "", k); print k }
+    /^\[(#?[0-9]+|[A-Za-z][A-Za-z0-9]*-[0-9]+)\]( [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])? resolved([ .,]|$)/ {
+      k=$0; sub(/^\[/, "", k); sub(/\].*/, "", k); sub(/^#/, "", k); print k }
   ' "$PROGRESS"
 }
+
+# item_hash <text>: short checksum that ties a close to the item listed.
+item_hash() { printf '%s' "$1" | cksum | cut -d' ' -f1; }
 
 # audit_one <batch-file> <keys-file>: emit AUDIT_ITEM lines for one batch.
 audit_one() {
@@ -85,7 +101,7 @@ audit_one() {
           if (a != "" && a !~ /^-+$/ && a != "Local" && b != "" && b != "—" && b != "-") tr[a]=strip(b)
         }
       }
-      alldone = (st ~ /^(done|resolved|merged|closed|complete)/)
+      alldone = (st ~ /^(done|resolved|merged|closed|complete|executed)/)
       key=""; sect=""; nissue=0; unres=0; nitems=0
       for (i=1;i<=n;i++) {
         l=lines[i]
@@ -127,17 +143,19 @@ if [ "$VERB" = list ]; then
   COUNT=0; NB=0
   for f in "$ISSUES"/batch-*.md; do
     [ -f "$f" ] || continue
-    out="$(audit_one "$f" "$KF")"
+    out="$(audit_one "$f" "$KF" | while IFS='|' read -r b l k kind text; do
+      printf 'AUDIT_ITEM=%s|%s|%s|%s|%s|%s\n' "${b#AUDIT_ITEM=}" "$l" "$k" "$kind" "$(item_hash "$text")" "$(printf '%s' "$text" | sed 's/\\/\\\\/g')"
+    done)"
     [ -n "$out" ] || continue
     NB=$((NB+1)); COUNT=$((COUNT + $(printf '%s\n' "$out" | wc -l)))
     printf '%s\n' "$out"
   done
-  echo "AUDIT_COUNT=$COUNT"; echo "AUDIT_BATCHES=$NB"
+  echo "AUDIT_COUNT=$COUNT"; echo "AUDIT_BATCHES=$NB"; echo "OUTCOME=unchanged"; echo "CHANGED=no"
   exit 0
 fi
 
 # ---- close
-[ -n "$BATCH" ] && [ -n "$LINE" ] && [ -n "$AS" ] || squad_fail 2 "usage: batch-audit.sh close <batch-file> --line <n> --as answered|open|obsolete [--decision ...]"
+[ -n "$BATCH" ] && [ -n "$LINE" ] && [ -n "$HASH" ] && [ -n "$AS" ] || squad_fail 2 "usage: batch-audit.sh close <batch-file> --line <n> --hash <hash> --as answered|open|obsolete [--decision ...]"
 case "$LINE" in ''|*[!0-9]*) squad_fail 2 "--line must be a number" ;; esac
 case "$AS" in answered|open|obsolete) ;; *) squad_fail 2 "--as must be answered, open or obsolete" ;; esac
 case "$BATCH$DECISION" in *$'\n'*) squad_fail 2 "newlines are not allowed in arguments" ;; esac
@@ -151,6 +169,9 @@ case "$cur" in
   [[:space:]]*"- "*|"- "*|[[:space:]]*"* "*|"* "*) ;;
   *) squad_fail 10 "line $LINE is not a list item" ;;
 esac
+
+want="$(printf '%s' "$cur" | sed -E 's/^[[:space:]]*[-*] +(\[[ xX]\] +)?//')"
+[ "$(item_hash "$want")" = "$HASH" ] || squad_fail 10 "line $LINE changed since list; re-run list"
 
 PTR=""
 case "$AS" in

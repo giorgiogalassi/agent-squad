@@ -68,8 +68,10 @@ printf '# Decisions\n\n## [2026-10-07] Backend allows state-only usage\nBody.\n'
 git -C "$V" add -A; git -C "$V" commit -qm init
 
 out="$(bash "$BA" list --vault "$V" --project demo)"
-has "list names the open question" "AUDIT_ITEM=batch-1.md|23|SQ-2/50|question|Confirm the backend also refuses state-only usage" "$out"
-has "list names the acceptance criterion" "|SQ-2/50|criterion|Block state-only usage" "$out"
+H1="$(printf '%s' "Confirm the backend also refuses state-only usage" | cksum | cut -d" " -f1)"
+H2="$(printf '%s' "Block state-only usage" | cksum | cut -d" " -f1)"
+has "list names the open question" "AUDIT_ITEM=batch-1.md|23|SQ-2/50|question|$H1|Confirm the backend also refuses state-only usage" "$out"
+has "list names the acceptance criterion" "|SQ-2/50|criterion|$H2|Block state-only usage" "$out"
 lacks "struck item not listed" "Already struck" "$out"
 lacks "unresolved issue not listed" "cache warm" "$out"
 lacks "unresolved batch not listed" "batch-2.md" "$out"
@@ -79,11 +81,11 @@ check "batches" "AUDIT_BATCHES=1" "$(printf '%s\n' "$out" | grep AUDIT_BATCHES)"
 check "list writes nothing" "" "$(git -C "$V" status --porcelain)"
 
 # answered without a decision entry
-bash "$BA" close batch-1.md --line 23 --as answered --vault "$V" --project demo >/dev/null 2>&1; check "answered w/o decision: exit 2/10" "10" "$?"
-bash "$BA" close batch-1.md --line 23 --as answered --decision "2026-10-07 Nope" --vault "$V" --project demo >/dev/null 2>&1; check "answered with unknown decision: exit 10" "10" "$?"
+bash "$BA" close batch-1.md --line 23 --hash "$H1" --as answered --vault "$V" --project demo >/dev/null 2>&1; check "answered w/o decision: exit 2/10" "10" "$?"
+bash "$BA" close batch-1.md --line 23 --hash "$H1" --as answered --decision "2026-10-07 Nope" --vault "$V" --project demo >/dev/null 2>&1; check "answered with unknown decision: exit 10" "10" "$?"
 check "batch untouched on refusal" "" "$(git -C "$V" status --porcelain)"
 
-r="$(bash "$BA" close batch-1.md --line 23 --as answered --decision "2026-10-07 Backend allows state-only usage" --vault "$V" --project demo)"
+r="$(bash "$BA" close batch-1.md --line 23 --hash "$H1" --as answered --decision "2026-10-07 Backend allows state-only usage" --vault "$V" --project demo)"
 has "answered applied" "OUTCOME=applied" "$r"
 check "answered: struck with pointer" "- ~~Confirm the backend also refuses state-only usage~~ (answered: decisions.md [2026-10-07] Backend allows state-only usage)" "$(sed -n 23p "$SQ/issues/batch-1.md")"
 check "answered: committed" "" "$(git -C "$V" status --porcelain)"
@@ -91,20 +93,90 @@ out="$(bash "$BA" list --vault "$V" --project demo)"
 lacks "answered item gone from list" "Confirm the backend" "$out"
 
 # obsolete and open
-bash "$BA" close batch-1.md --line 19 --as obsolete --vault "$V" --project demo >/dev/null
+bash "$BA" close batch-1.md --line 19 --hash "$H2" --as obsolete --vault "$V" --project demo >/dev/null
 check "obsolete: struck" "- ~~Block state-only usage~~ (obsolete)" "$(sed -n 19p "$SQ/issues/batch-1.md")"
 sed -i.bak 's/^- ~~Block.*/- Block it/' "$SQ/issues/batch-1.md"; rm -f "$SQ/issues/batch-1.md.bak"; git -C "$V" commit -qam reset
 printf '## Next\n- existing\n' > "$P/status.md"; git -C "$V" add -A; git -C "$V" commit -qm st
-bash "$BA" close batch-1.md --line 19 --as open --vault "$V" --project demo >/dev/null
+H3="$(printf '%s' "Block it" | cksum | cut -d" " -f1)"
+bash "$BA" close batch-1.md --line 19 --hash "$H3" --as open --vault "$V" --project demo >/dev/null
 has "open: carried to status Next" "- Block it (from batch-1.md)" "$(cat "$P/status.md")"
 has "open: struck in batch" "~~Block it~~" "$(sed -n 19p "$SQ/issues/batch-1.md")"
-bash "$BA" close batch-1.md --line 2 --as obsolete --vault "$V" --project demo >/dev/null 2>&1; check "non-item line refused" "10" "$?"
-bash "$BA" close batch-1.md --line 19 --as bogus --vault "$V" --project demo >/dev/null 2>&1; check "bad --as: exit 2" "2" "$?"
+bash "$BA" close batch-1.md --line 2 --hash 1 --as obsolete --vault "$V" --project demo >/dev/null 2>&1; check "non-item line refused" "10" "$?"
+bash "$BA" close batch-1.md --line 19 --hash "$H3" --as bogus --vault "$V" --project demo >/dev/null 2>&1; check "bad --as: exit 2" "2" "$?"
 
 # batch Status done resolves everything, batch-level included
 sed -i.bak 's/^Status: pending/Status: done/' "$SQ/issues/batch-2.md"; rm -f "$SQ/issues/batch-2.md.bak"
 out="$(bash "$BA" list --vault "$V" --project demo)"
 has "Status done lists batch-2" "batch-2.md|" "$out"
+
+# ---- round 2: stale line, false positives, multi-closes, executed, list contract
+check "list OUTCOME" "OUTCOME=unchanged" "$(bash "$BA" list --vault "$V" --project demo | grep '^OUTCOME=')"
+check "list CHANGED" "CHANGED=no" "$(bash "$BA" list --vault "$V" --project demo | grep '^CHANGED=')"
+
+mkdir -p "$TMPROOT/v2/projects/demo/.squad/issues"; V2="$TMPROOT/v2"; Q2="$V2/projects/demo/.squad"
+git -C "$V2" init -q
+cat > "$Q2/issues/batch-3.md" <<'B'
+# Batch 3
+Status: pending
+
+## SQ-5: Five
+
+### Open questions
+- Q five a\b
+
+## SQ-6: Six
+
+### Open questions
+- Q six
+
+## SQ-8: Eight
+
+### Open questions
+- Q eight
+
+## SQ-9: Nine
+
+### Open questions
+- Q nine
+B
+cat > "$Q2/issues/batch-4.md" <<'B'
+# Batch 4
+Status: executed
+
+## SQ-20: Twenty
+
+### Open questions
+- Q twenty
+B
+cat > "$Q2/progress.txt" <<'B'
+[SQ-5] 2026-01-01 not resolved yet
+[ralph] 2026-01-01 resolved something
+[SQ-6] 2026-01-01 unblocked until resolved
+[MERGE] 2026-10-06 #9 merged (closes SQ-8, SQ-9).
+[MERGE] 2026-10-06 #10 encloses SQ-5
+B
+git -C "$V2" add -A; git -C "$V2" commit -qm init
+out="$(bash "$BA" list --vault "$V2" --project demo)"
+lacks "not resolved is not resolved" "|SQ-5|" "$out"
+lacks "non-issue tag ignored" "|SQ-6|" "$out"
+has "multi-key closes: first" "|SQ-8|question|" "$out"
+has "multi-key closes: second" "|SQ-9|question|" "$out"
+has "Status executed resolves batch" "batch-4.md|" "$out"
+printf '[SQ-5] 2026-01-01 resolved. PR: #1\n' >> "$Q2/progress.txt"
+printf '[SQ-6] resolved, no-op. Notes: x\n' >> "$Q2/progress.txt"
+out="$(bash "$BA" list --vault "$V2" --project demo)"
+has "dated resolved line matches" "|SQ-5|question|" "$out"
+has "undated resolved, line matches" "|SQ-6|question|" "$out"
+has "backslash escaped in AUDIT_ITEM" "Q five a\\\\b" "$out"
+
+# stale line: batch changes between list and close
+HQ6="$(printf '%s' "Q six" | cksum | cut -d" " -f1)"
+LN="$(grep -n '^- Q six' "$Q2/issues/batch-3.md" | cut -d: -f1)"
+sed -i.bak '/^- Q five/d' "$Q2/issues/batch-3.md"; rm -f "$Q2/issues/batch-3.md.bak"
+bash "$BA" close batch-3.md --line "$LN" --hash "$HQ6" --as obsolete --vault "$V2" --project demo >/dev/null 2>&1; rc=$?
+check "stale line refused: exit 10" "10" "$rc"
+has "stale line: item untouched" "- Q eight" "$(cat "$Q2/issues/batch-3.md")"
+bash "$BA" close batch-3.md --line "$LN" --as obsolete --vault "$V2" --project demo >/dev/null 2>&1; check "close without --hash: exit 2" "2" "$?"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
