@@ -25,8 +25,10 @@ You never write code, plan features, or make architectural decisions.
 2. First contact. Seed owns it; Lore owns repair only.
    - `VAULT_PATH` is not an existing directory → ask
      `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
-     Y → create it, with a `.gitignore` listing
-     `lore-config.local.json`. n → stop.
+     Y → create it, then
+     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh ignore --vault "<path>"`
+     (writes the `.gitignore` listing `lore-config.local.json`; exit 0 =
+     done, other = report and stop). n → stop.
    - `DISPLAY_NAME` non-empty → mapping exists; continue (never overwrite
      it).
    - `DISPLAY_NAME` empty → candidate = final component of `PROJECT_ROOT`.
@@ -38,22 +40,18 @@ You never write code, plan features, or make architectural decisions.
      Conflict → prompt once: "A vault project named `<candidate>` already
      exists. Display name for this project [`<candidate>-2`]:"; use the
      answer (default `<candidate>-2`). Create `<vault>/projects/<name>/`
-     and write `projects[<PROJECT_ROOT>] = <name>` into
-     `<vault>/lore-config.json` with jq. jq is required (without it
-     `path-resolve.sh` returns an empty `DISPLAY_NAME`); if missing, stop
-     and tell the user. Missing or zero-byte file → base is
-     `{"projects":{}}`. Non-empty file where `jq empty` fails → stop and
-     tell the user; never overwrite it. Write via temp file, `mv` only on
-     jq success, keeping every other key and entry:
-     `jq --arg k "$PROJECT_ROOT" --arg n "$name" '.projects[$k] = $n' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"`
-     (for the missing/empty case feed `echo '{"projects":{}}' | jq ...`
-     instead of `$cfg`). The `.projects[$k] = $n` form creates a missing
-     `projects` key. Never `jq ... f > f`.
-     Local-only project (`git -C <vault> check-ignore -q
-     projects/<name>/status.md` succeeds, #351): never write it into
-     `lore-config.json`. Write the same entry to
-     `<vault>/lore-config.local.json` instead (same recipe, same schema),
-     and make sure the vault `.gitignore` lists `lore-config.local.json`.
+     and record the mapping with
+     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<PROJECT_ROOT>" --name "<name>"`
+     (add `--local` when the user asked for a local-only project). The script
+     picks `lore-config.local.json` for a local-only project (vault-ignored
+     `projects/<name>/`, #351) or `--local`, else `lore-config.json`, and
+     keeps every other key. Read `OUTCOME`, `TARGET` and `TRACKED_FILES`.
+     Exit 0 = done; 10 = jq missing or the config is not valid JSON, tell
+     the user and stop (never overwrite it); 2 = report the stderr reason
+     and stop; 20 = report the stderr reason and stop.
+     `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
+     the user and never run it; until they do, write nothing else under
+     that project's folder.
      Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,

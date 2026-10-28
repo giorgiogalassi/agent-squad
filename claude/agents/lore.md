@@ -43,7 +43,9 @@ update INDEX;
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
 missing on first invocation → ask
 `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
-Creating it includes a `.gitignore` listing `lore-config.local.json`.
+Creating it includes
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh ignore --vault "<path>"`, which
+writes a `.gitignore` listing `lore-config.local.json` (exit 0 = done).
 
 **lore-config.json** (at the vault root): `{"projects": {"/abs/cwd/path":
 "display-name"}}` — absolute CWD paths → display names, nothing else. No
@@ -52,7 +54,8 @@ file yet → empty map, created on first write. An untracked
 holds the mappings of local-only projects; a new vault's `.gitignore`
 lists it. A local-only project (`git -C <vault> check-ignore -q
 projects/<n>/status.md` succeeds) or `lore start --local` writes its
-mapping there; never into `lore-config.json`.
+mapping there; never into `lore-config.json` (`lore-map.sh set` enforces it).
+Exit codes and `TRACKED_FILES` handling: see `lore start` step 3.
 
 **Paths.** `.squad/` below always means
 `<vault>/projects/<project-name>/.squad/` — never a directory inside the
@@ -90,12 +93,20 @@ when explicitly requested or named by a context ref.
 3. Resolve the display name via `lore-config.json`:
    - `projects[cwd_path]` exists → use it silently, skip to step 6.
    - No entry, no `<vault>/projects/<candidate>/` conflict → create the
-     directory, record the mapping (in `lore-config.local.json` for a
-     local-only project or with `--local`, else `lore-config.json`), use
-     `candidate`; no prompt.
+     directory, record the mapping with
+     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<cwd_path>" --name "<name>" [--local]`
+     (it picks `lore-config.local.json` for a local-only project or `--local`,
+     else `lore-config.json`; read `OUTCOME`, `TARGET`, `TRACKED_FILES`;
+     exit 0 = done, 10 = jq missing or config not valid JSON, stop and tell
+     the user, 2 = report the stderr reason and stop, 20 = report the stderr
+     reason and stop; `TRACKED_FILES=yes`: relay the printed
+     `git rm -r --cached` command to the user and never run it; until they
+     do, write nothing else under that project's folder), use `candidate`;
+     no prompt.
    - Conflict → prompt once: "A vault project named `<candidate>`
      already exists. Display name for this project [`<candidate>-2`]:";
-     use the answer (default `<candidate>-2`), create, record. Later
+     use the answer (default `<candidate>-2`), create, record (same
+     `lore-map.sh set` call). Later
      starts from the same path never prompt again.
 4. Open the session log: append
    `[YYYY-MM-DD HH:MM] [lore] start — session opened (<branch>)` to
@@ -322,7 +333,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-check.sh check [--fix] [--all]
 
 Read the finding lines (`VAULT_SCOPE`, `DECISIONS_*`, `STATUS_*`, `INDEX_*`,
 `SESSION_UNCLOSED`, `JOURNAL_POINTER_MISSING`, `VAULT_*` (including
-`VAULT_PROJECT_UNMAPPED`: a `projects/` folder that no config maps), `FIXED_*`); empty
+`VAULT_PROJECT_UNMAPPED`: a `projects/` folder that no config maps, and
+`VAULT_CONFIG_INVALID`: a config file that is not valid JSON), `FIXED_*`); empty
 stdout = clean, say so. Pipe the lines to `vault-check.sh render` and show the
 text. Exit 0 = done; 2 = usage or no project resolved, report it and stop.
 

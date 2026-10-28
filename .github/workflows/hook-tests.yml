@@ -68,6 +68,8 @@ on:
       - "scripts/test-plugin-version-bump.sh"
       - "scripts/plugin-version-guard.sh"
       - "scripts/test-plugin-version-guard.sh"
+      - "scripts/test-lore-map.sh"
+      - "claude/hooks/lore-map.sh"
       - ".github/workflows/hook-tests.yml"
 
 permissions:
@@ -183,3 +185,7 @@ jobs:
       - name: Run scripts/test-vault-pr.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-vault-pr.sh; else bash scripts/test-vault-pr.sh; fi
+
+      - name: Run scripts/test-lore-map.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-map.sh; else bash scripts/test-lore-map.sh; fi
