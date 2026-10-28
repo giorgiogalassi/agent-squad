@@ -270,7 +270,7 @@ sync_index() {
   fi
 }
 # Session end (#350): push the vault's lore/* branches and open or update their PR.
-trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_finish "$VAULT" "$DISPLAY" >/dev/null 2>&1' EXIT
+trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_finish "$VAULT" >/dev/null 2>&1' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended

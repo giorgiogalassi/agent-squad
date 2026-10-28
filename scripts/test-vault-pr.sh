@@ -14,6 +14,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
 
 export SQUAD_INCIDENTS=off GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+TODAY="$(date +%Y-%m-%d)"
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/bin"
 cp "$REPO_ROOT"/claude/hooks/{lore-decide.sh,vault-pr.sh,decisions-lint.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 cat > "$TMPROOT/hooks/path-resolve.sh" <<'EOP'
@@ -56,7 +57,7 @@ branches() { git -C "$1" for-each-ref --format='%(refname:short)' 'refs/heads/lo
 mkvault on '{"vault_main": "pr"}'; V="$TMPROOT/on"
 decide "$V" "One: first"; decide "$V" "Two: second"; decide "$V" "Three: third"
 check "pr: main clean and level with origin" level "$(level "$V")"
-B="lore/proj-$(date +%Y-%m-%d)"
+B="lore/proj-$TODAY"
 check "pr: one lore branch for three writes" "$B " "$(branches "$V")"
 check "pr: three commits on the branch" 3 "$(git -C "$V" rev-list --count origin/main.."$B")"
 n="$(git -C "$V" show "$B:projects/proj/decisions.md" | grep -c '^## \[')"
@@ -123,7 +124,7 @@ land() {  # land <vault> <origin-name> <branch>: squash-merge simulation, files 
 
 # 6. Squash-merged branch: tree equals main; cleaned, not re-pushed, no PR created.
 mkvault sq '{"vault_main": "pr"}'; V="$TMPROOT/sq"
-decide "$V" "One: first"; B="lore/proj-$(date +%Y-%m-%d)"
+decide "$V" "One: first"; B="lore/proj-$TODAY"
 land "$V" sq "$B"
 : > "$GH_LOG"; finish "$V"; rc=$?
 check "squash: finish exit 0" 0 "$rc"
@@ -137,11 +138,11 @@ check "squash: nothing to do reports CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=
 mkvault mg '{"vault_main": "pr"}'; V="$TMPROOT/mg"
 decide "$V" "One: first"
 tip="$(git -C "$V" rev-parse "$B")"
-: > "$GH_LOG"; printf 'x\n' >> "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)/projects/proj/decisions.md"
+: > "$GH_LOG"; printf 'x\n' >> "$V/.claude/worktrees/lore-proj-$TODAY/projects/proj/decisions.md"
 finish "$V" GH_MERGED_OID="$tip"; rc=$?
 check "merged dirty: exit 20" 20 "$rc"
 check "merged dirty: branch kept" "$B " "$(branches "$V")"
-git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" checkout -q -- projects/proj/decisions.md
+git -C "$V/.claude/worktrees/lore-proj-$TODAY" checkout -q -- projects/proj/decisions.md
 finish "$V" GH_MERGED_OID="$tip"; rc=$?
 check "merged clean: exit 0" 0 "$rc"
 check "merged clean: branch removed" "" "$(branches "$V")"
@@ -187,7 +188,7 @@ check "explicit: hook never ran" 0 "$(wc -l < "$TMPROOT/hook.count" | tr -d ' ')
 mkvault ahead '{"vault_main": "pr"}'; V="$TMPROOT/ahead"
 echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
 decide "$V" "One: first"
-B="lore/proj-$(date +%Y-%m-%d)"
+B="lore/proj-$TODAY"
 check "ahead: main level with origin" level "$(level "$V")"
 check "ahead: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
 check "ahead: two commits on the branch" 2 "$(git -C "$V" rev-list --count origin/main.."$B")"
@@ -207,7 +208,7 @@ check "ahead retry: main level" level "$(level "$V")"
 # Existing session branch, worktree gone, main ahead.
 mkvault aheadw '{"vault_main": "pr"}'; V="$TMPROOT/aheadw"
 decide "$V" "One: first"
-git -C "$V" worktree remove --force "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)"
+git -C "$V" worktree remove --force "$V/.claude/worktrees/lore-proj-$TODAY"
 echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
 decide "$V" "Two: second"
 check "ahead no-worktree: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
@@ -225,7 +226,7 @@ check "ahead later: main level" level "$(level "$V")"
 mkvault aheadc '{"vault_main": "pr"}'; V="$TMPROOT/aheadc"
 echo base > "$V/c.md"; git -C "$V" add c.md; git -C "$V" commit -qm c; git -C "$V" push -q origin main
 decide "$V" "One: first"
-W="$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)"
+W="$V/.claude/worktrees/lore-proj-$TODAY"
 echo branchside > "$W/c.md"; git -C "$W" commit -qam "branch c"
 echo mainside > "$V/c.md"; git -C "$V" commit -qam "main c"
 decide "$V" "Two: second"
@@ -243,7 +244,7 @@ check "diverged: main untouched" "$L" "$(git -C "$V" rev-parse main)"
 check "diverged: branch lacks local commit" 0 "$(git -C "$V" show "$B:l.md" 2>/dev/null | grep -c l)"
 
 # 11. Detached project, vault in PR mode: the session branch is pushed and its PR opened (#364).
-mkvault det '{"vault_main": "pr"}'; V="$TMPROOT/det"; B="lore/proj-$(date +%Y-%m-%d)"
+mkvault det '{"vault_main": "pr"}'; V="$TMPROOT/det"; B="lore/proj-$TODAY"
 decide "$V" "One: first"; : > "$GH_LOG"
 finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
 check "detached pr mode: exit 0" 0 "$rc"
@@ -258,16 +259,24 @@ check "direct mode: OUTCOME=unchanged" "OUTCOME=unchanged" "$(grep '^OUTCOME=' "
 check "direct mode: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
 
 # 12. gh missing: the branch is still pushed, one stderr notice, not a failure (#364).
-mkdir -p "$TMPROOT/nogh"; ln -sf "$(command -v git)" "$TMPROOT/nogh/git"
-mkvault nog '{"vault_main": "pr"}'; V="$TMPROOT/nog"; B="lore/proj-$(date +%Y-%m-%d)"
+# PATH holds symlinks to the needed tools only, so a real gh in /usr/bin cannot leak in.
+mkdir -p "$TMPROOT/nogh"
+for t in git bash sh sed grep date tr cat rm mkdir cmp cp mv dirname basename head wc env uname mktemp sort; do
+  tp="$(command -v "$t" 2>/dev/null)"; [ -n "$tp" ] && [ "${tp#/}" != "$tp" ] && ln -sf "$tp" "$TMPROOT/nogh/$t"
+done
+if [ -n "$(PATH="$TMPROOT/nogh" command -v gh 2>/dev/null)" ]; then
+  echo "skip - no-gh tests (gh still resolvable on the restricted PATH)"
+else
+mkvault nog '{"vault_main": "pr"}'; V="$TMPROOT/nog"; B="lore/proj-$TODAY"
 decide "$V" "One: first"; : > "$GH_LOG"
-(cd "$TMPROOT" && env PATH="$TMPROOT/nogh:/usr/bin:/bin" FAKE_TRACKER_MODE=detached SECOND_BRAIN_PATH="$V" \
-  "$(command -v bash)" "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2> "$TMPROOT/fin.err"); rc=$?
+(cd "$TMPROOT" && env PATH="$TMPROOT/nogh" FAKE_TRACKER_MODE=detached SECOND_BRAIN_PATH="$V" \
+  "$TMPROOT/nogh/bash" "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2> "$TMPROOT/fin.err"); rc=$?
 check "no gh: exit 0" 0 "$rc"
 check "no gh: OUTCOME=applied" "OUTCOME=applied" "$(grep '^OUTCOME=' "$TMPROOT/fin.out")"
 git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "no gh: branch pushed" 0 $?
 check "no gh: one stderr notice" 1 "$(grep -c 'gh not found' "$TMPROOT/fin.err")"
 check "no gh: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+fi
 # gh present but pr create fails: still a failure.
 mkvault ghf '{"vault_main": "pr"}'; V="$TMPROOT/ghf"
 decide "$V" "One: first"
@@ -280,7 +289,7 @@ finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
 check "push failure: exit 20" 20 "$rc"
 
 # 13. Local-only project (#351): finish never pushes, stray lore/* branch included.
-mkvault loc '{"vault_main": "pr"}'; V="$TMPROOT/loc"; B="lore/proj-$(date +%Y-%m-%d)"
+mkvault loc '{"vault_main": "pr"}'; V="$TMPROOT/loc"; B="lore/proj-$TODAY"
 printf 'projects/proj/status.md\n' > "$V/.gitignore"; git -C "$V" add .gitignore && git -C "$V" commit -qm ignore && git -C "$V" push -q origin main 2>/dev/null
 decide "$V" "One: first"; : > "$GH_LOG"
 finish "$V"; rc=$?
@@ -288,14 +297,47 @@ check "local-only: exit 0" 0 "$rc"
 check "local-only: CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
 check "local-only: no lore branch" "" "$(branches "$V")"
 mkdir -p "$V/.claude/worktrees"
-git -C "$V" worktree add -q -b "$B" "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" 2>/dev/null
-echo x > "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)/projects/proj/x.md"
-git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" add -A && git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" commit -qm stray
+git -C "$V" worktree add -q -b "$B" "$V/.claude/worktrees/lore-proj-$TODAY" 2>/dev/null
+echo x > "$V/.claude/worktrees/lore-proj-$TODAY/projects/proj/x.md"
+git -C "$V/.claude/worktrees/lore-proj-$TODAY" add -A && git -C "$V/.claude/worktrees/lore-proj-$TODAY" commit -qm stray
 (cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2>/dev/null); rc=$?
 check "local-only stray: exit 0" 0 "$rc"
 check "local-only stray: CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
 git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "local-only stray: not pushed" 2 $?
 check "local-only stray: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+
+# 14. The local-only guard is per branch, not per call (#364 review).
+mkstray() {  # mkstray <vault> <project>: lore/<project>-<today> branch with one commit ahead of main
+  mkdir -p "$1/.claude/worktrees"
+  git -C "$1" worktree add -q -b "lore/$2-$TODAY" "$1/.claude/worktrees/lore-$2-$TODAY" 2>/dev/null
+  mkdir -p "$1/.claude/worktrees/lore-$2-$TODAY/projects/$2"; echo x > "$1/.claude/worktrees/lore-$2-$TODAY/projects/$2/x.md"
+  git -C "$1/.claude/worktrees/lore-$2-$TODAY" add -A && git -C "$1/.claude/worktrees/lore-$2-$TODAY" commit -qm stray
+}
+pushed() { git -C "$1" ls-remote --exit-code origin "refs/heads/$2" >/dev/null 2>&1 && echo yes || echo no; }
+# (a) Session of a local-only project (proj) still pushes another project's branch.
+mkvault pa '{"vault_main": "pr"}'; V="$TMPROOT/pa"
+printf 'projects/proj/status.md\n' > "$V/.gitignore"; git -C "$V" add .gitignore && git -C "$V" commit -qm ignore && git -C "$V" push -q origin main 2>/dev/null
+mkstray "$V" other
+finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
+check "per-branch (a): exit 0" 0 "$rc"
+check "per-branch (a): other project's branch pushed" yes "$(pushed "$V" "lore/other-$TODAY")"
+# (b) Session of a shared project (proj) does not push a local-only project's branch.
+mkvault pb '{"vault_main": "pr"}'; V="$TMPROOT/pb"
+printf 'projects/secret/status.md\n' > "$V/.gitignore"; git -C "$V" add .gitignore && git -C "$V" commit -qm ignore && git -C "$V" push -q origin main 2>/dev/null
+mkstray "$V" secret; mkstray "$V" other
+: > "$GH_LOG"; finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
+check "per-branch (b): exit 0" 0 "$rc"
+check "per-branch (b): local-only branch not pushed" no "$(pushed "$V" "lore/secret-$TODAY")"
+check "per-branch (b): shared branch pushed" yes "$(pushed "$V" "lore/other-$TODAY")"
+# Same-day suffix and dashed project names resolve to their project.
+mkvault pc '{"vault_main": "pr"}'; V="$TMPROOT/pc"
+printf 'projects/my-app/status.md\n' > "$V/.gitignore"; git -C "$V" add .gitignore && git -C "$V" commit -qm ignore && git -C "$V" push -q origin main 2>/dev/null
+mkstray "$V" "my-app"
+git -C "$V" worktree add -q -b "lore/my-app-$TODAY-2" "$V/.claude/worktrees/lore-my-app-$TODAY-2" 2>/dev/null
+echo y > "$V/.claude/worktrees/lore-my-app-$TODAY-2/y.md"; git -C "$V/.claude/worktrees/lore-my-app-$TODAY-2" add -A; git -C "$V/.claude/worktrees/lore-my-app-$TODAY-2" commit -qm s2
+finish "$V" FAKE_TRACKER_MODE=detached
+check "per-branch (c): dashed name, base branch not pushed" no "$(pushed "$V" "lore/my-app-$TODAY")"
+check "per-branch (c): -2 suffix branch not pushed" no "$(pushed "$V" "lore/my-app-$TODAY-2")"
 
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

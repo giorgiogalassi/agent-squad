@@ -34,7 +34,7 @@ case "$CMD" in
     fi
     ;;
   finish)
-    squad_vault_finish "$V" "${DISPLAY_NAME:-}" || exit 20
+    squad_vault_finish "$V" || exit 20
     if [ "${SQUAD_VAULT_PUSHED:-0}" -gt 0 ]; then
       squad_emit OUTCOME applied; squad_emit CHANGED yes
     else
