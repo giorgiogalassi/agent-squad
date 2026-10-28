@@ -252,7 +252,7 @@ remove_path() {
   fi
 
   # Refuse on any uncommitted change to a tracked file. Untracked
-  # generated trees (node_modules, *.wt-tmp) are handled below and
+  # generated trees (node_modules, *.wt-tmp, legacy *.sidecar-tmp) are handled below and
   # do not block removal.
   dirty="$(git -C "$target" status --porcelain --untracked-files=no 2>/dev/null)"
   if [ -n "$dirty" ]; then
@@ -265,7 +265,7 @@ remove_path() {
   cleaned=""
   # Only ever delete generated trees this script can name by path.
   # Never a blanket force over the worktree's untracked content.
-  find_output="$(find "$target" -mindepth 1 \( -name node_modules -o -name '*.wt-tmp' \) -type d 2>/dev/null)"
+  find_output="$(find "$target" -mindepth 1 \( -name node_modules -o -name '*.wt-tmp' -o -name '*.sidecar-tmp' \) -type d 2>/dev/null)"
   if [ -n "$find_output" ]; then
     old_ifs="$IFS"
     IFS='

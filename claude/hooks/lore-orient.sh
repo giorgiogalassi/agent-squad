@@ -33,7 +33,30 @@ if [ -n "$HOOK_INPUT" ]; then
 fi
 # The session's own directory (a worktree session starts inside the worktree).
 [ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null
+# record_start_head <proj-dir>: first write wins, so a compact or clear in the
+# same session (same session_id) never moves the starting HEAD that SessionEnd
+# counts commits from. Consumed by lore-checkpoint.sh at SessionEnd.
+record_start_head() {
+  [ -n "$HOOK_SESSION" ] || return 0
+  [ -f "$1/.squad/sessions/$HOOK_SESSION" ] && return 0
+  mkdir -p "$1/.squad/sessions" 2>/dev/null \
+    && git rev-parse HEAD > "$1/.squad/sessions/$HOOK_SESSION" 2>/dev/null
+}
 if [ "$HOOK_SOURCE" = "resume" ]; then
+  # No orientation, but a resumed worktree session (`claude -w <b> --resume`)
+  # still needs a starting HEAD: SessionEnd deletes the previous record.
+  _rv="$HOME/second-brain"; [ -n "${SECOND_BRAIN_PATH:-}" ] && _rv="$SECOND_BRAIN_PATH"
+  _rd=""; _rr=""
+  if [ -x "$(dirname "${BASH_SOURCE[0]:-$0}")/path-resolve.sh" ]; then
+    while IFS='=' read -r _k _v; do
+      case "$_k" in VAULT_PATH) _rv="$_v" ;; PROJECT_ROOT) _rr="$_v" ;; DISPLAY_NAME) _rd="$_v" ;; esac
+    done < <("$(dirname "${BASH_SOURCE[0]:-$0}")/path-resolve.sh" 2>/dev/null)
+  fi
+  [ -z "$_rd" ] && [ -n "$_rr" ] && [ -d "$_rv/projects/${_rr##*/}" ] && _rd="${_rr##*/}"
+  _rt="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$_rd" ] && [ -n "$_rr" ] && [ -n "$_rt" ] && [ "$_rt" != "$_rr" ] && [ -f "$_rt/.git" ]; then
+    record_start_head "$_rv/projects/$_rd"
+  fi
   echo "{}"
   exit 0
 fi
@@ -280,8 +303,7 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
     fi
     # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
     if [ -n "$HOOK_SESSION" ]; then
-      mkdir -p "$PROJ/.squad/sessions" 2>/dev/null \
-        && git rev-parse HEAD > "$PROJ/.squad/sessions/$HOOK_SESSION" 2>/dev/null
+      record_start_head "$PROJ"
       find "$PROJ/.squad/sessions" -type f -mtime +14 -delete 2>/dev/null
     fi
   else

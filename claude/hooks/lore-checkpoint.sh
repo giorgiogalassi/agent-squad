@@ -146,7 +146,10 @@ done < <("$HOOK_DIR/path-resolve.sh")
 
 [ -d "${VAULT:-}" ] || bail "no vault, skipped"
 [ -n "${ROOT:-}" ] || bail "not a git project, skipped"
-[ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
+# Same fallback as lore-orient.sh: an unmapped checkout uses projects/<basename>
+# only when that folder exists; otherwise there is nowhere to write.
+if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then DISPLAY="$(basename "$ROOT")"; fi
+[ -n "${DISPLAY:-}" ] || bail "no vault mapping for this project, skipped"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
 [ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
