@@ -273,6 +273,19 @@ squad_vault_wt() {
   printf '%s' "$wt"
 }
 
+# squad_vault_wt_existing <vault> <project>: read-only. Print each already existing
+# session worktree for today (lore-<name>-<date>, -2, -3, ...), one per line. Never
+# fetches, creates a branch or worktree, or levels main. Exit 1 when there is none.
+squad_vault_wt_existing() {
+  local v="$1" pub d wt found=1
+  pub="$(squad_public_name "$v" "${2:-vault}" | tr -c 'A-Za-z0-9._-' '-')"
+  d="$(date +%Y-%m-%d)"
+  for wt in "$v/.claude/worktrees/lore-$pub-$d" "$v/.claude/worktrees/lore-$pub-$d"-[0-9]*; do
+    [ -d "$wt" ] && { printf '%s\n' "$wt"; found=0; }
+  done
+  return $found
+}
+
 # squad_vault_commit <vault> <project> <message> <path>...: commit vault-relative
 # paths by pathspec. Direct mode commits in the vault. PR mode moves the written
 # files onto the session branch (3-way merged with that branch's earlier commits),
