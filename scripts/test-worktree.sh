@@ -51,6 +51,7 @@ test_tmp_init test-worktree
 # resolves worktree paths through it, so raw mktemp output and git's
 # reported paths would otherwise disagree on every comparison.
 TMPROOT="$(cd "$TMPROOT" && pwd -P)"
+export SQUAD_SESSION_DIR="$TMPROOT/session-state"
 cleanup() {
   test_tmp_cleanup
 }
@@ -541,6 +542,42 @@ test_hook_remove_refuses_on_dirty_tracked() {
   esac
 }
 
+# #281: a removed worktree releases its port claim; a refused removal keeps it.
+test_hook_remove_releases_claims() {
+  repo="$(fresh hook-rm-claims)"
+  hook_create "$repo" feat-claim
+  path="$HOOK_OUT"
+  SS="$(dirname "$WT")/squad-session.sh"
+  OWN="$(bash "$SS" owner --worktree "$path" | sed -n 's/^OWNER=//p')"
+  bash "$SS" port --owner "$OWN" >/dev/null
+  bash "$SS" browser-lock acquire --owner "$OWN" >/dev/null
+  echo changed >>"$path/README.md"
+  hook_remove "$repo" "$path"
+  if [ -f "$SQUAD_SESSION_DIR/ports/3100" ]; then pass "HOOK-8-refused-remove-keeps-claim"; else fail "HOOK-8-refused-remove-keeps-claim" "claim gone"; fi
+  git -C "$path" checkout -q -- README.md
+  hook_remove "$repo" "$path"
+  if [ "$HOOK_RC" = "0" ] && [ ! -e "$SQUAD_SESSION_DIR/ports/3100" ] && [ ! -e "$SQUAD_SESSION_DIR/browser.lock" ]; then pass "HOOK-8-remove-releases-port-and-lock"; else fail "HOOK-8-remove-releases-port-and-lock" "rc=$HOOK_RC $(ls "$SQUAD_SESSION_DIR" "$SQUAD_SESSION_DIR/ports" 2>&1)"; fi
+}
+
+# #281: same worktree name in two repos -> separate claims; prune and remove stay in their repo.
+test_claims_are_repo_scoped() {
+  ra="$(fresh scope-a)"; rb="$(fresh scope-b)"
+  hook_create "$ra" same-name; pa="$HOOK_OUT"
+  hook_create "$rb" same-name; pb="$HOOK_OUT"
+  SS="$(dirname "$WT")/squad-session.sh"
+  oa="$(bash "$SS" owner --worktree "$pa" | sed -n 's/^OWNER=//p')"
+  ob="$(bash "$SS" owner --worktree "$pb" | sed -n 's/^OWNER=//p')"
+  if [ -n "$oa" ] && [ "$oa" != "$ob" ]; then pass "SCOPE-1-owners-differ-across-repos"; else fail "SCOPE-1-owners-differ-across-repos" "a=[$oa] b=[$ob]"; fi
+  porta="$(bash "$SS" port --owner "$oa" --worktrees "$(dirname "$pa")" | sed -n 's/^PORT=//p')"
+  portb="$(bash "$SS" port --owner "$ob" --worktrees "$(dirname "$pb")" | sed -n 's/^PORT=//p')"
+  if [ -n "$porta" ] && [ "$porta" != "$portb" ]; then pass "SCOPE-2-distinct-ports"; else fail "SCOPE-2-distinct-ports" "$porta/$portb"; fi
+  # B's worktree dir does not exist under A's worktrees root, yet A's prune must keep B's claim.
+  bash "$SS" port --owner "$oa" --worktrees "$(dirname "$pa")" >/dev/null
+  if [ "$(cut -f1 "$SQUAD_SESSION_DIR/ports/$portb")" = "$ob" ]; then pass "SCOPE-3-prune-from-A-keeps-B-claim"; else fail "SCOPE-3-prune-from-A-keeps-B-claim" "gone"; fi
+  hook_remove "$ra" "$pa"
+  if [ ! -e "$SQUAD_SESSION_DIR/ports/$porta" ] && [ -e "$SQUAD_SESSION_DIR/ports/$portb" ]; then pass "SCOPE-4-remove-in-A-keeps-B-claim"; else fail "SCOPE-4-remove-in-A-keeps-B-claim" "$(ls "$SQUAD_SESSION_DIR/ports")"; fi
+}
+
 # ---------------------------------------------------------------------
 # hooks / env / session (#278)
 # ---------------------------------------------------------------------
@@ -639,6 +676,8 @@ test_hooks_ok_and_unset
 test_hooks_prepare_not_run_config_untouched
 test_env_override
 test_hook_create_stores_hooks_line
+test_hook_remove_releases_claims
+test_claims_are_repo_scoped
 
 echo "---"
 echo "$PASS_COUNT passed, $FAIL_COUNT failed (against $WT)"

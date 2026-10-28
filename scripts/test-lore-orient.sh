@@ -15,7 +15,8 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 
 # Hooks dir copy with path-resolve.sh alongside, as installed.
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/nojq"
-cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/worktree.sh" "$TMPROOT/hooks/"
+cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/worktree.sh" "$REPO_ROOT/claude/hooks/squad-session.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks/"
+export SQUAD_SESSION_DIR="$TMPROOT/session-state"
 # PATH without jq: symlink the tools the hook needs, minus jq.
 for t in bash git cat sed awk grep dirname basename tr wc head tail sort date stat ls mkdir cut find; do
   p="$(command -v "$t" 2>/dev/null)" && [ -x "$p" ] && ln -sf "$p" "$TMPROOT/nojq/$t"
@@ -127,9 +128,22 @@ grep -q "^export NX_WORKSPACE_ROOT_PATH='.*clean-wt'$" "$ENVF" && ok "worktree: 
 o="$(cd "$F_PROJECT" && printf '{"source":"startup","cwd":"%s","session_id":"sess-env2"}' "$TMPROOT/clean-wt" | NX_WORKSPACE_ROOT_PATH="$F_PROJECT" SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
 printf '%s\n' "$(ctx "$o")" | grep -q 'Env override: WARNING.*Run: export NX_WORKSPACE_ROOT_PATH' && ok "worktree: no env file, manual line" || bad "worktree: manual line"
 [ "$(cat "$F_VAULT/projects/fixture/.squad/sessions/sess-wt1" 2>/dev/null)" = "$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)" ] && ok "worktree: starting HEAD recorded" || bad "worktree: starting HEAD record"
+# Per-session resources (#281): owner = worktree name, idempotent across resume.
+PORT1="$(printf '%s\n' "$c" | sed -n 's/^Port: \([0-9]*\).*/\1/p')"
+[ -n "$PORT1" ] && ok "worktree: Port line" || bad "worktree: Port line: $c"
+printf '%s\n' "$c" | grep -q 'Browser profile dir: .*playwright-profile' && ok "worktree: browser profile dir" || bad "worktree: profile dir"
+printf '%s\n' "$c" | grep -q 'browser-lock acquire' && printf '%s\n' "$c" | grep -q 'Remote test data:' && ok "worktree: browser + test-data rules" || bad "worktree: rules"
+ENVF="$TMPROOT/envfile"; : > "$ENVF"
+c2="$(ctx "$(CLAUDE_ENV_FILE="$ENVF" wt_orient "$TMPROOT/clean-wt" sess-wt2)")"
+[ "$(printf '%s\n' "$c2" | sed -n 's/^Port: \([0-9]*\).*/\1/p')" = "$PORT1" ] && ok "worktree: port stable on resume (new session id)" || bad "worktree: port changed: $c2"
+[ "$(cat "$ENVF")" = "export SQUAD_PORT=$PORT1" ] && ok "worktree: SQUAD_PORT exported via CLAUDE_ENV_FILE" || bad "worktree: env file: $(cat "$ENVF")"
+c3="$(ctx "$(wt_orient "$TMPROOT/dirty-wt" sess-wt3)")"
+PORT3="$(printf '%s\n' "$c3" | sed -n 's/^Port: \([0-9]*\).*/\1/p')"
+[ -n "$PORT3" ] && [ "$PORT3" != "$PORT1" ] && ok "worktree: second worktree gets a distinct port" || bad "worktree: distinct port ($PORT1/$PORT3)"
 o="$(wt_orient "$F_PROJECT" sess-main)"
 printf '%s' "$o" | "$JQ" -e '.hookSpecificOutput | has("sessionTitle") | not' >/dev/null 2>&1 && ok "main checkout: no sessionTitle" || bad "main checkout: sessionTitle present: $o"
 printf '%s\n' "$(ctx "$o")" | grep -q '### Worktree session' && bad "main checkout: worktree block" || ok "main checkout: no worktree block"
+[ -d "$SQUAD_SESSION_DIR/ports" ] && [ "$(ls "$SQUAD_SESSION_DIR/ports" | wc -l | tr -d ' ')" = 2 ] && ok "main checkout: no port claimed" || bad "main checkout: port claimed"
 [ -e "$F_VAULT/projects/fixture/.squad/sessions/sess-main" ] && bad "main checkout: session record written" || ok "main checkout: no session record"
 
 # First write wins (compact/clear reuse the session_id) and resume records too (#295).

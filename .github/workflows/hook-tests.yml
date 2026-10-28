@@ -27,6 +27,8 @@ on:
       - "scripts/test-squad-labels.sh"
       - "scripts/test-squad-pr-desc.sh"
       - "scripts/test-squad-route.sh"
+      - "scripts/test-squad-session.sh"
+      - "claude/hooks/squad-session.sh"
       - "claude/hooks/squad-route.sh"
       - "scripts/test-squad-progress.sh"
       - "claude/hooks/squad-progress.sh"
@@ -114,6 +116,9 @@ jobs:
       - name: Run scripts/test-squad-route.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-route.sh; else bash scripts/test-squad-route.sh; fi
+      - name: Run scripts/test-squad-session.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-session.sh; else bash scripts/test-squad-session.sh; fi
       - name: Run scripts/test-squad-progress.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-progress.sh; else bash scripts/test-squad-progress.sh; fi

@@ -326,6 +326,24 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
         fi
       done < <(cd "$WT_TOP" && "$HOOK_DIR/worktree.sh" env "$WT_TOP" 2>/dev/null)
     fi
+    # Per-session resources (#281). Owner = worktree name: stable across
+    # resume and compaction (session ids change), so the claim is idempotent;
+    # released by worktree.sh hook-remove, never at SessionEnd (resume).
+    _wtn="$(bash "$HOOK_DIR/squad-session.sh" owner --worktree "$WT_TOP" 2>/dev/null | sed -n 's/^OWNER=//p')"
+    [ -n "$_wtn" ] || _wtn="$(basename "$WT_TOP")"
+    _ss="$HOOK_DIR/squad-session.sh"
+    _port="$(bash "$_ss" port --owner "$_wtn" --worktrees "$(dirname "$WT_TOP")" 2>/dev/null | sed -n 's/^PORT=//p')"
+    _prof="$(bash "$_ss" profile --owner "$_wtn" --scratch "$(git rev-parse --absolute-git-dir 2>/dev/null)" 2>/dev/null | sed -n 's/^PROFILE_DIR=//p')"
+    if [ -n "$_port" ]; then
+      OUTPUT="${OUTPUT}Port: $_port (serve your dev server on it; also exported as SQUAD_PORT)${NL}"
+      if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qx "export SQUAD_PORT=$_port" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+        printf 'export SQUAD_PORT=%s\n' "$_port" >> "$CLAUDE_ENV_FILE" 2>/dev/null
+      fi
+    else
+      OUTPUT="${OUTPUT}Port: none free in 3100..3149; pick a free port yourself and say which.${NL}"
+    fi
+    [ -n "$_prof" ] && OUTPUT="${OUTPUT}Browser profile dir: $_prof${NL}Browser rule: use a headless Playwright context with that profile by default. Use the shared MCP browser only after \`bash ${_ss} browser-lock acquire --owner $_wtn\` succeeds (re-acquire before each browser pass, release when done); exit 10 means held, fall back to your own context, never wait.${NL}"
+    OUTPUT="${OUTPUT}Remote test data: name every remote entity you create or mutate in your report and restore it afterwards; do not touch entities another session may be using.${NL}"
     # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
     if [ -n "$HOOK_SESSION" ]; then
       record_start_head "$PROJ"
