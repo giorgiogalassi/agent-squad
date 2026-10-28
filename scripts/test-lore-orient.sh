@@ -178,5 +178,25 @@ c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
 printf '%s' "$c" | grep -q 'JOURNAL.md (tail' && bad "journal: absent file prints a header" || ok "journal: absent file prints nothing"
 cp "$TMPROOT/lore-config.orig" "$JQ_CFG"
 
+# Local-only mapping (#355): mapped only in lore-config.local.json
+LV="$TMPROOT/lvault"; LP="$TMPROOT/lproj"
+mkdir -p "$LV/projects/clientx" "$LP"; git init -q "$LP"; LP="$(cd "$LP" && pwd -P)"
+printf '# Status\nLOCALMARK-clientx\n' > "$LV/projects/clientx/status.md"
+printf '{"projects":{}}\n' > "$LV/lore-config.json"
+printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "local-only mapping orients with status.md" ;; *) bad "local-only mapping: $o" ;; esac
+case "$(ctx "$o")" in *"run /seed"*) bad "local-only mapping asks for /seed" ;; *) ok "local-only mapping does not ask for /seed" ;; esac
+# No mapping anywhere, but projects/<basename>/ exists: orient from it with a hint.
+rm -f "$LV/lore-config.local.json"
+mkdir -p "$LV/projects/${LP##*/}"; printf '# Status\nBASENAMEMARK\n' > "$LV/projects/${LP##*/}/status.md"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *BASENAMEMARK*) ok "unmapped but folder exists: orients from basename" ;; *) bad "basename fallback: $o" ;; esac
+case "$(ctx "$o")" in *"lore-config.local.json"*) ok "basename fallback prints a one-line hint" ;; *) bad "basename hint: $o" ;; esac
+# Truly unknown project still asks for /seed.
+rm -rf "$LV/projects/${LP##*/}"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$o" in *"run /seed"*) ok "no mapping, no folder: still asks for /seed" ;; *) bad "unknown project: $o" ;; esac
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -103,6 +103,12 @@ if [ -z "$ROOT" ]; then
   echo "{}"
   exit 0
 fi
+UNMAPPED_HINT=""
+if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
+  # No mapping, but the folder exists (local-only setups, #355): orient from it.
+  DISPLAY="${ROOT##*/}"
+  UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run /seed."
+fi
 if [ -z "$DISPLAY" ]; then
   emit_json "Lore: No vault mapping for this project — run /seed." msg-only
   exit 0
@@ -119,6 +125,7 @@ NL=$'\n'
 # Accumulate all text output into a variable, raw and unescaped — emit_json
 # is the single place escaping happens, so content is never escaped twice.
 OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
+[ -n "$UNMAPPED_HINT" ] && OUTPUT="${OUTPUT}${UNMAPPED_HINT}${NL}${NL}"
 
 if [ -f "$STATUS" ]; then
   OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS")${NL}"

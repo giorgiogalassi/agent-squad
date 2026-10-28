@@ -23,6 +23,7 @@ VC="$TMPROOT/hooks/vault-check.sh"
 mkvault() {
   local v="$1"
   mkdir -p "$v/projects/clean/.squad"
+  printf '{"projects":{"/clean":"clean"}}\n' > "$v/lore-config.json"
   cat > "$v/INDEX.md" <<'IDX'
 # Index
 
@@ -44,7 +45,7 @@ IDX
   printf '# Status\nLast updated: 2026-10-25 21:58 by claude-code\n\n## Goal\nx\n\n## Last checkpoint\n[2026-10-25 21:00] ok\n' > "$v/projects/clean/status.md"
   printf -- '---\ntitle: d\n---\n\n## [2026-10-20] First\nbody\n' > "$v/projects/clean/decisions.md"
   printf '[2026-10-25 10:00] [ralph] start — batch: [#1]\n[2026-10-25 10:30] [ralph] end — resolved: 1\n' > "$v/projects/clean/.squad/session.log"
-  printf 'x\n' > "$v/CLAUDE.md"; printf 'x\n' > "$v/lore-config.json"
+  printf 'x\n' > "$v/CLAUDE.md"
 }
 
 # ---- clean project: nothing at all
@@ -248,6 +249,18 @@ printf '[2026-10-21 11:55] [sidecar] start — A\n' > "$V9/projects/clean/.squad
 s=$(now_ms); (cd "$PROJ9" && SECOND_BRAIN_PATH="$V9" bash "$TMPROOT/hooks/lore-orient.sh" </dev/null >/dev/null 2>&1); e=$(now_ms)
 ms=$((e - s))
 if [ "$ms" -lt 200 ]; then ok "400-file full orientation under 200 ms (${ms} ms)"; else bad "400-file full orientation took ${ms} ms"; fi
+
+# ---- unmapped project folders (#355)
+V5="$TMPROOT/v5"; mkvault "$V5"
+for n in mapped-main mapped-local ghost; do mkdir -p "$V5/projects/$n"; printf '# Status\n' > "$V5/projects/$n/status.md"; done
+printf '{"projects":{"/a":"clean","/b":"mapped-main"}}\n' > "$V5/lore-config.json"
+printf '{"projects":{"/c":"mapped-local"}}\n' > "$V5/lore-config.local.json"
+out="$(bash "$VC" check --vault "$V5" --all)"
+has "--all reports a folder mapped nowhere" "VAULT_PROJECT_UNMAPPED=ghost" "$out"
+lacks "--all: tracked mapping counts" "VAULT_PROJECT_UNMAPPED=mapped-main" "$out"
+lacks "--all: local mapping counts" "VAULT_PROJECT_UNMAPPED=mapped-local" "$out"
+lacks "--all: lore-config.local.json is not a stray root file" "VAULT_STRAY_ROOT=lore-config.local.json" "$out"
+has "render explains unmapped" "ghost" "$(printf '%s\n' "VAULT_SCOPE=vault" "VAULT_PROJECT_UNMAPPED=ghost" | bash "$VC" render)"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

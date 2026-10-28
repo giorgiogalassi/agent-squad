@@ -35,6 +35,8 @@
 # Vault scope (preceded by VAULT_SCOPE=vault):
 #   VAULT_STRAY_ROOT=<file>
 #   VAULT_PROJECT_NO_INDEX=<project>
+#   VAULT_PROJECT_UNMAPPED=<project>   folder in projects/ named by no entry in
+#                                      lore-config.json or lore-config.local.json
 # Fix results: FIXED_INDEX_ROW_DATE, FIXED_INDEX_ROW_ADDED,
 #   FIXED_SESSION_CLOSED=<n> <tag>, DECISIONS_APPLIED_INVERSE.
 set -u
@@ -42,7 +44,7 @@ set -u
 . "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/squad-common.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-KNOWN_ROOT_FILES=" CLAUDE.md INDEX.md lore-config.json squad-incidents.tsv "
+KNOWN_ROOT_FILES=" CLAUDE.md INDEX.md lore-config.json lore-config.local.json squad-incidents.tsv "
 STATUS_WORDS_MAX=300
 
 die() { echo "$1" >&2; exit "${2:-2}"; }
@@ -314,6 +316,15 @@ check_vault() {
 $(printf '%s' "$miss" | squad_shared_projects "$vault")
 EOF
   fi
+  if command -v jq >/dev/null 2>&1; then
+    local mapped d
+    mapped="$(cat "$vault/lore-config.json" "$vault/lore-config.local.json" 2>/dev/null | jq -r '.projects[]? // empty' 2>/dev/null)"
+    for d in "$vault"/projects/*/; do
+      [ -d "$d" ] || continue
+      n="${d%/}"; n="${n##*/}"
+      printf '%s\n' "$mapped" | grep -qxF -- "$n" || out="${out}VAULT_PROJECT_UNMAPPED=$n${NL}"
+    done
+  fi
   if [ -n "$out" ]; then emit VAULT_SCOPE vault; printf '%s' "$out"; fi
 }
 
@@ -334,6 +345,7 @@ render() {
       SESSION_UNCLOSED) echo "session.log: ${v%% oldest *} start(s) without end (oldest ${v##* oldest })" ;;
       JOURNAL_POINTER_MISSING) echo "decisions.md: context is repo and $v has no JOURNAL pointer (#330)" ;;
       VAULT_STRAY_ROOT) echo "vault root: stray file $v" ;;
+      VAULT_PROJECT_UNMAPPED) echo "projects/$v exists but no lore-config.json or lore-config.local.json entry maps a checkout to it (run /seed, or map it in lore-config.local.json for a local-only project)" ;;
       VAULT_PROJECT_NO_INDEX) echo "INDEX.md: project $v has a status.md and no row" ;;
       FIXED_INDEX_ROW_DATE) echo "fixed: INDEX row date for $v" ;;
       FIXED_INDEX_ROW_ADDED) echo "fixed: INDEX row added for $v" ;;

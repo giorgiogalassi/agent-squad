@@ -107,6 +107,11 @@ SQUAD_DIR=<where project knowledge lives>
 TRACKER_MODE=<connected|detached>
 ```
 
+`DISPLAY_NAME` and the `context` map are read from `<vault>/lore-config.local.json`
+first, then `<vault>/lore-config.json` (#355). The local file is optional, untracked
+and has the same schema; it maps projects whose name must stay out of the vault
+remote. An entry there wins per key, and an unreadable local file is ignored.
+
 `TRACKER_MODE` is resolved by the script, never passed by the model:
 detached mode is a safety property (privacy, user-owned tickets). It is
 read from `chisel.mode` in

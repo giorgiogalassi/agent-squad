@@ -25,7 +25,8 @@ You never write code, plan features, or make architectural decisions.
 2. First contact. Seed owns it; Lore owns repair only.
    - `VAULT_PATH` is not an existing directory → ask
      `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
-     Y → create it. n → stop.
+     Y → create it, with a `.gitignore` listing
+     `lore-config.local.json`. n → stop.
    - `DISPLAY_NAME` non-empty → mapping exists; continue (never overwrite
      it).
    - `DISPLAY_NAME` empty → candidate = final component of `PROJECT_ROOT`.
@@ -48,6 +49,11 @@ You never write code, plan features, or make architectural decisions.
      (for the missing/empty case feed `echo '{"projects":{}}' | jq ...`
      instead of `$cfg`). The `.projects[$k] = $n` form creates a missing
      `projects` key. Never `jq ... f > f`.
+     Local-only project (`git -C <vault> check-ignore -q
+     projects/<name>/status.md` succeeds, #351): never write it into
+     `lore-config.json`. Write the same entry to
+     `<vault>/lore-config.local.json` instead (same recipe, same schema),
+     and make sure the vault `.gitignore` lists `lore-config.local.json`.
      Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
