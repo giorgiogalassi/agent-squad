@@ -55,7 +55,7 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null)"
 SUBJECT="$(git log -1 --format=%s 2>/dev/null)"
 [ -n "$BRANCH" ] && [ -n "$SHA" ] || skip "no branch or commit in $CWD"
 case "$BRANCH" in main|master|develop|release/*|hotfix/*) skip "shared branch $BRANCH, nothing to record" ;; esac
-ISSUE="$(printf '%s' "$SUBJECT" | sed -n 's/^\[\([^]]*\)\].*/\1/p')"
+ISSUE="$(printf '%s' "$SUBJECT" | sed -n -e 's/^\[\(#\{0,1\}[0-9][0-9]*\)\].*/\1/p' -e 's/^\[\([A-Za-z][A-Za-z0-9]*-[0-9][0-9]*\)\].*/\1/p')"
 [ -n "$ISSUE" ] || skip "HEAD $SHA carries no issue ID, nothing to record"
 # GitHub issues are always [#N]: a bare numeric [283] is normalised so progress.txt has one form.
 ISSUE_BARE="$ISSUE"
@@ -103,7 +103,7 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
 fi
 
 PROGRESS="$PROJ/.squad/progress.txt"
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -F -e "[$ISSUE] " -e "[$ISSUE_BARE] " "$PROGRESS" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$PROGRESS" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
   printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
   squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
 fi

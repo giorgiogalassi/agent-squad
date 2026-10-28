@@ -195,10 +195,28 @@ grep -q 'PR #7 updated. Branch: 296-f @ .*address review' "$STATUS" && ok "fix r
 check "fix round: one progress line" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
 check "fix round: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
 
+# 4i. only issue-key shapes count as an ID: [WIP] records nothing, [ABC-12] is a key, [#N] dedupe is anchored to line start
+setup connected
+BEFORE="$(cat "$STATUS")"
+commit_on 296-w "[WIP] add thing"
+FAKE_PR="7 main" run_hook
+check "non-key bracket: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+[ -s "$PROGRESS" ] && bad "non-key bracket: no progress line" || ok "non-key bracket: no progress line"
+setup connected
+commit_on 12-k "[ABC-12] add thing"
+FAKE_PR="7 main" run_hook
+check "letters-digits key: progress line" "[ABC-12] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [ABC-12] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+setup connected
+commit_on 296-a "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"; echo "[#111] 2026-10-24 resolved. PR: #7 (base: main). Notes: [#296] mentioned only" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "dedupe anchored: ID inside Notes does not count" 2 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+
 # 4h. Cody prose: claim is a scripted step before the first edit and again before review; commits use [#N]
 CODY="$REPO_ROOT/claude/agents/cody.md"
 grep -q 'squad-labels.sh claim --issue' "$CODY" && ok "cody.md: claim step" || bad "cody.md: claim step"
 check "cody.md: claim runs before review and again at PR time" 2 "$(grep -c 'squad-labels.sh claim --issue' "$CODY")"
+check "cody.md: re-claim and review each handle exit 20" 2 "$(awk '/claim --issue <n>/{f=1} f&&/^ *\| 20 \|/{c++} END{print c+0}' "$CODY")"
 grep -q 'git commit -m "\[#<issue-number>\]' "$CODY" && ok "cody.md: commit subject uses [#N]" || bad "cody.md: commit subject uses [#N]"
 
 # 5. exits 0 on garbage input
