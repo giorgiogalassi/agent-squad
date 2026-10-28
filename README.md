@@ -353,6 +353,9 @@ agent prose only calls them (the rule is in `CLAUDE.md`):
   Reven's mandatory `## Description drift` block to the PR body (exact
   whole-line replacements and appended bullets); detached it records
   checklist lines instead. The block never affects the verdict.
+- `squad-route.sh` (recommend, gate) reads `forge/output.yaml`: Forge relays
+  its `ROUTE` (`high` goes `/archy -> /chisel`), Chisel stops on a high
+  YAML with no PRD (exit 10). No `gh` calls.
 - `squad-branch.sh` (create, continue) handles branches, with no `gh`
   calls, worktree-safe, never `-f`, stash or reset. It resolves
   `origin/<base>`, then local `<base>`, and emits `BASE_REF`; detached mode
