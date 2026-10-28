@@ -273,7 +273,7 @@ three checks below and their classification are unchanged. When
 line to `progress.txt`; do not append a second one.
 
 1. **Commit check:** HEAD's subject carries this issue's ID. Match the
-   ID token tolerantly across conventions (`[SQ-26]`, bare `IISP-14501`,
+   ID token tolerantly across conventions (`[SQ-26]`, bare `ABC-1234`,
    `[#44]`). If the project's history shows no ID convention at all,
    degrade to: HEAD changed since baseline.
 2. **Clean-tree check:** `status --porcelain` matches its baseline
