@@ -75,8 +75,8 @@ check "finish: base is main" 1 "$(grep -c -- '--base main' "$GH_LOG")"
 check "finish again: open PR is updated, not re-created" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
 check "finish again: still level" level "$(level "$V")"
 : > "$GH_LOG"
-(cd "$TMPROOT" && FAKE_TRACKER_MODE=detached SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/vault-pr.sh" finish >/dev/null 2>&1)
-check "finish detached: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+(cd "$TMPROOT" && GH_OPEN=7 FAKE_TRACKER_MODE=detached SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/vault-pr.sh" finish >/dev/null 2>&1)
+check "finish detached: already pushed, no pr create" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
 
 # 3. Setting off: today's behaviour, commit on main, no branch.
 mkvault off; V="$TMPROOT/off"
@@ -147,7 +147,7 @@ check "merged clean: exit 0" 0 "$rc"
 check "merged clean: branch removed" "" "$(branches "$V")"
 check "merged clean: no pr create" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
 : > "$GH_LOG"; FAKE_TRACKER_MODE=detached; export FAKE_TRACKER_MODE; finish "$V"; unset FAKE_TRACKER_MODE
-check "detached finish: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+check "detached finish: merged branch, no pr create" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
 
 # 8. Same-day write after a merge starts a fresh branch.
 mkvault fr '{"vault_main": "pr"}'; V="$TMPROOT/fr"
@@ -241,6 +241,21 @@ L="$(git -C "$V" rev-parse main)"
 decide "$V" "One: first"
 check "diverged: main untouched" "$L" "$(git -C "$V" rev-parse main)"
 check "diverged: branch lacks local commit" 0 "$(git -C "$V" show "$B:l.md" 2>/dev/null | grep -c l)"
+
+# 11. Detached project, vault in PR mode: the session branch is pushed and its PR opened (#364).
+mkvault det '{"vault_main": "pr"}'; V="$TMPROOT/det"; B="lore/proj-$(date +%Y-%m-%d)"
+decide "$V" "One: first"; : > "$GH_LOG"
+finish "$V" FAKE_TRACKER_MODE=detached; rc=$?
+check "detached pr mode: exit 0" 0 "$rc"
+check "detached pr mode: OUTCOME=applied" "OUTCOME=applied" "$(grep '^OUTCOME=' "$TMPROOT/fin.out")"
+git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "detached pr mode: branch pushed" 0 $?
+check "detached pr mode: one pr create" 1 "$(grep -c '^gh pr create' "$GH_LOG")"
+# Vault not in PR mode: nothing changes, no push, no gh call.
+mkvault dir '{"vault_main": "direct"}'; V="$TMPROOT/dir"
+git -C "$V" branch lore/stray; : > "$GH_LOG"
+finish "$V" FAKE_TRACKER_MODE=detached
+check "direct mode: OUTCOME=unchanged" "OUTCOME=unchanged" "$(grep '^OUTCOME=' "$TMPROOT/fin.out")"
+check "direct mode: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
 
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

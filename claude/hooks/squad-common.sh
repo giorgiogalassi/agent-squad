@@ -182,7 +182,7 @@ squad_vault_landed() {
   if [ "${n:-0}" -eq 0 ]; then
     [ "$tip" != "$(git -C "$v" rev-parse "$base")" ]; return
   fi
-  if [ "${3:-}" = gh ] && [ "${TRACKER_MODE:-}" = "connected" ]; then
+  if [ "${3:-}" = gh ]; then
     oid="$(cd "$v" && gh pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)"
     case "
 $oid
@@ -318,13 +318,14 @@ squad_vault_commit() {
 
 # squad_vault_finish <vault>: push each lore/* session branch that is ahead of main
 # and open its PR (an open one is updated by the push). Branches whose work already
-# landed are dropped (worktree and local branch) instead of pushed. Connected mode
-# only. Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
+# landed are dropped (worktree and local branch) instead of pushed. Gated on the
+# vault's PR mode and an origin remote, not on TRACKER_MODE: the vault is the user's
+# own repo, so pushing to it is not a tracker write (hence plain gh, not squad_gh_write). Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
 # Returns 0 done or nothing to do, 20 on push/PR failure.
 squad_vault_finish() {
   local v="$1" wt b br0 base n open tip rtip rc=0
   SQUAD_VAULT_PUSHED=0
-  [ "${TRACKER_MODE:-}" = "connected" ] || return 0
+  squad_vault_pr_mode "$v" || return 0
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
   br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 0
   git -C "$v" fetch -q --prune origin >/dev/null 2>&1
@@ -344,8 +345,8 @@ squad_vault_finish() {
     fi
     open="$(cd "$v" && gh pr list --head "$b" --state open --json number --jq '.[0].number // empty' 2>/dev/null)"
     case "$open" in ''|*[!0-9]*) ;; *) continue ;; esac
-    ( cd "$v" && squad_gh_write pr create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
-        --body "Vault changes written by Lore during one session ($n commit(s))." ) \
+    ( cd "$v" && gh pr create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
+        --body "Vault changes written by Lore during one session ($n commit(s))." >&2 ) \
       && SQUAD_VAULT_PUSHED=$((SQUAD_VAULT_PUSHED+1)) || rc=20
   done
   return "$rc"
