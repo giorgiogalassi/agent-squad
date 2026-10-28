@@ -182,7 +182,7 @@ squad_vault_landed() {
   if [ "${n:-0}" -eq 0 ]; then
     [ "$tip" != "$(git -C "$v" rev-parse "$base")" ]; return
   fi
-  if [ "${3:-}" = gh ] && [ "${TRACKER_MODE:-}" = "connected" ]; then
+  if [ "${3:-}" = gh ]; then
     oid="$(cd "$v" && gh pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)"
     case "
 $oid
@@ -318,13 +318,18 @@ squad_vault_commit() {
 
 # squad_vault_finish <vault>: push each lore/* session branch that is ahead of main
 # and open its PR (an open one is updated by the push). Branches whose work already
-# landed are dropped (worktree and local branch) instead of pushed. Connected mode
-# only. Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
-# Returns 0 done or nothing to do, 20 on push/PR failure.
+# landed are dropped (worktree and local branch) instead of pushed. Gated on the
+# vault's PR mode and an origin remote, not on TRACKER_MODE: the vault is the user's
+# own repo, so pushing to it is not a tracker write (hence plain gh, not squad_gh_write). Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
+# A branch of a local-only project (#351) is never pushed; the project is read from each
+# branch name (lore/<project>-<YYYY-MM-DD>[-N]), not from the caller. Without gh on PATH the
+# branch is still pushed and one stderr notice names the manual step: not a failure.
+# Returns 0 done or nothing to do, 20 on push failure or a failure of a present gh.
 squad_vault_finish() {
-  local v="$1" wt b br0 base n open tip rtip rc=0
+  local v="$1" wt b bproj br0 base n open tip rtip rc=0 hasgh=1 url
   SQUAD_VAULT_PUSHED=0
-  [ "${TRACKER_MODE:-}" = "connected" ] || return 0
+  command -v gh >/dev/null 2>&1 || hasgh=0
+  squad_vault_pr_mode "$v" || return 0
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
   br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 0
   git -C "$v" fetch -q --prune origin >/dev/null 2>&1
@@ -333,7 +338,9 @@ squad_vault_finish() {
     [ -d "$wt" ] || continue
     b="$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)"
     case "$b" in lore/*) ;; *) continue ;; esac
-    if squad_vault_landed "$v" "$b" gh; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
+    bproj="$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')"
+    squad_local_only "$v" "$bproj" && continue
+    if squad_vault_landed "$v" "$b" "$([ "$hasgh" = 1 ] && echo gh)"; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
     n="$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)"
     [ "${n:-0}" -gt 0 ] || continue
     tip="$(git -C "$v" rev-parse "refs/heads/$b")"
@@ -342,10 +349,15 @@ squad_vault_finish() {
       git -C "$wt" push -q -u origin "$b" >&2 || { echo "squad: push of $b failed" >&2; rc=20; continue; }
       SQUAD_VAULT_PUSHED=$((SQUAD_VAULT_PUSHED+1))
     fi
+    if [ "$hasgh" = 0 ]; then
+      url="$(git -C "$v" remote get-url origin | sed -n 's|^git@github.com:\(.*\)$|https://github.com/\1|p; s|^\(https://github.com/.*\)$|\1|p' | sed 's|\.git$||')"
+      echo "squad: gh not found; $b pushed, open its PR manually${url:+: $url/compare/$br0...$b}" >&2
+      continue
+    fi
     open="$(cd "$v" && gh pr list --head "$b" --state open --json number --jq '.[0].number // empty' 2>/dev/null)"
     case "$open" in ''|*[!0-9]*) ;; *) continue ;; esac
-    ( cd "$v" && squad_gh_write pr create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
-        --body "Vault changes written by Lore during one session ($n commit(s))." ) \
+    ( cd "$v" && gh pr create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
+        --body "Vault changes written by Lore during one session ($n commit(s))." >&2 ) \
       && SQUAD_VAULT_PUSHED=$((SQUAD_VAULT_PUSHED+1)) || rc=20
   done
   return "$rc"

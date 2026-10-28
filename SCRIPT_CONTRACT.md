@@ -30,6 +30,9 @@ requested state; `CHANGED=no`.
 | 10 | Precondition failed |
 | 20 | Error: gh, git or network failure, or a refused write in detached mode |
 
+Degraded success: exit 0 with a stderr notice when an optional tool is missing
+(`vault-pr.sh finish` without `gh` pushes the branch and names the manual PR step).
+
 gh and git exit codes are never passed through (gh's own 4 means auth
 required; it surfaces as 20). Stderr carries one human-readable reason
 line.
