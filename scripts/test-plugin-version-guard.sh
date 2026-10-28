@@ -3,7 +3,8 @@
 set -u
 SUT="${1:-$(cd "$(dirname "$0")" && pwd)/plugin-version-guard.sh}"
 fail=0; n=0
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-plugin-version-guard tmp
 M=claude/.claude-plugin/plugin.json
 
 setver() { # version (empty = no version key)

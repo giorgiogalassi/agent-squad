@@ -6,9 +6,8 @@ set -u
 export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PR="$REPO_ROOT/claude/hooks/path-resolve.sh"
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-path-resolve.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
-trap 'rm -rf "$TMPROOT"' EXIT
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-path-resolve
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }

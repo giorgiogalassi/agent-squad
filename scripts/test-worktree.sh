@@ -44,13 +44,14 @@ if [ ! -f "$WT_DIR/path-resolve.sh" ]; then
   exit 2
 fi
 
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-worktree.XXXXXX")"
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-worktree
 # Canonicalize: on macOS /tmp is a symlink into /private/var, and git
 # resolves worktree paths through it, so raw mktemp output and git's
 # reported paths would otherwise disagree on every comparison.
 TMPROOT="$(cd "$TMPROOT" && pwd -P)"
 cleanup() {
-  rm -rf "$TMPROOT"
+  test_tmp_cleanup
 }
 trap cleanup EXIT INT TERM
 

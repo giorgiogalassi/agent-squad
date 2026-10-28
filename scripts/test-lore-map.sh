@@ -2,9 +2,8 @@
 # Tests claude/hooks/lore-map.sh (#372). Plain bash 3.2; fixture vaults only.
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-lore-map.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
-trap 'rm -rf "$TMPROOT"' EXIT
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-lore-map
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

@@ -8,10 +8,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM_DIR="$REPO_ROOT/scripts/gh-shim"
 MK="$REPO_ROOT/scripts/fixtures/make-fixture.sh"
 PR="$REPO_ROOT/claude/hooks/path-resolve.sh"
-TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-gh-shim.XXXXXX")"
-TMPROOT="$(cd "$TMPROOT" && pwd -P)"
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-gh-shim
 FIXROOTS=""
-trap 'rm -rf "$TMPROOT" $FIXROOTS' EXIT
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }

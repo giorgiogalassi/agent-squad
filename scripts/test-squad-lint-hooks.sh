@@ -4,8 +4,8 @@ set -u
 # Never write the real vault incident store.
 export SQUAD_INCIDENTS=off
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-squad-lint-hooks.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-squad-lint-hooks TMP
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
@@ -14,6 +14,7 @@ fixture() {  # fixture <dir>
   mkdir -p "$1/scripts"
   cp -R "$REPO_ROOT/claude" "$1/claude"
   cp "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$REPO_ROOT/scripts/test-squad-labels.sh" "$1/scripts/"
+  cp -R "$REPO_ROOT/scripts/lib" "$1/scripts/lib"
   cp "$REPO_ROOT"/*.md "$1/" 2>/dev/null
   return 0
 }
