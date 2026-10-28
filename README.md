@@ -473,6 +473,8 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `export SECOND_BRAIN_PATH=/path/to/your/vault`
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
+- `lore-config.local.json` (same schema, untracked, listed in the vault
+  `.gitignore`) maps local-only projects; it is read before `lore-config.json`.
 - Per-project `.squad/` state lives inside the vault at
   `<vault>/projects/<project-name>/.squad/`, not in the host project directory.
 - Optional per-project `context` in `lore-config.json`

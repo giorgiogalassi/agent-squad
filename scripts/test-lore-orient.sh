@@ -178,5 +178,51 @@ c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
 printf '%s' "$c" | grep -q 'JOURNAL.md (tail' && bad "journal: absent file prints a header" || ok "journal: absent file prints nothing"
 cp "$TMPROOT/lore-config.orig" "$JQ_CFG"
 
+# Local-only mapping (#355): mapped only in lore-config.local.json
+LV="$TMPROOT/lvault"; LP="$TMPROOT/lproj"
+mkdir -p "$LV/projects/clientx" "$LP"; git init -q "$LP"; LP="$(cd "$LP" && pwd -P)"
+printf '# Status\nLOCALMARK-clientx\n' > "$LV/projects/clientx/status.md"
+printf '{"projects":{}}\n' > "$LV/lore-config.json"
+printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "local-only mapping orients with status.md" ;; *) bad "local-only mapping: $o" ;; esac
+case "$(ctx "$o")" in *"run /seed"*) bad "local-only mapping asks for /seed" ;; *) ok "local-only mapping does not ask for /seed" ;; esac
+# No mapping anywhere, but projects/<basename>/ exists: orient from it with a hint.
+rm -f "$LV/lore-config.local.json"
+mkdir -p "$LV/projects/${LP##*/}"; printf '# Status\nBASENAMEMARK\n' > "$LV/projects/${LP##*/}/status.md"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *BASENAMEMARK*) ok "unmapped but folder exists: orients from basename" ;; *) bad "basename fallback: $o" ;; esac
+case "$(ctx "$o")" in *"lore-config.local.json"*) ok "basename fallback prints a one-line hint" ;; *) bad "basename hint: $o" ;; esac
+# Truly unknown project still asks for /seed.
+rm -rf "$LV/projects/${LP##*/}"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$o" in *"run /seed"*) ok "no mapping, no folder: still asks for /seed" ;; *) bad "unknown project: $o" ;; esac
+
+# Basename fallback must not borrow another checkout's project (tracked or local config).
+OP="$TMPROOT/other/app"; XP="$TMPROOT/x/app"
+mkdir -p "$OP" "$XP" "$LV/projects/app"; git init -q "$OP"; git init -q "$XP"; XP="$(cd "$XP" && pwd -P)"; OP="$(cd "$OP" && pwd -P)"
+printf '# Status\nOTHERMARK\n' > "$LV/projects/app/status.md"
+printf '{"projects":{"%s":"app"}}\n' "$OP" > "$LV/lore-config.json"
+o="$(cd "$XP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *OTHERMARK*) bad "fallback borrowed a tracked-mapped project: $o" ;; *) ok "fallback skips a name mapped in lore-config.json" ;; esac
+case "$o" in *"run /seed"*"another checkout"*) ok "owned-name message says another checkout" ;; *) bad "owned-name message: $o" ;; esac
+printf '{"projects":{}}\n' > "$LV/lore-config.json"
+printf '{"projects":{"%s":"app"}}\n' "$OP" > "$LV/lore-config.local.json"
+o="$(cd "$XP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *OTHERMARK*) bad "fallback borrowed a local-mapped project: $o" ;; *) ok "fallback skips a name mapped in lore-config.local.json" ;; esac
+rm -f "$LV/lore-config.local.json"
+
+# Inline fallback (no path-resolve.sh alongside) reads the local config first.
+mkdir -p "$TMPROOT/hooks-inline"; cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$TMPROOT/hooks-inline/"
+printf '{"projects":{"%s":"app"}}\n' "$LP" > "$LV/lore-config.json"
+printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks-inline/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "inline fallback: local config wins" ;; *) bad "inline fallback local: $o" ;; esac
+rm -f "$LV/lore-config.local.json"
+printf '{"projects":{}}\n' > "$LV/lore-config.json"
+printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks-inline/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "inline fallback: local-only mapping" ;; *) bad "inline fallback local-only: $o" ;; esac
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
