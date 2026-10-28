@@ -263,6 +263,7 @@ agent-squad/
       lore-checkpoint.sh
       decisions-lint.sh   decisions.md checks (KEY=value per finding), shared by the hook, lore decide and lore check
       lore-decide.sh      single write path for a project decision (lore decide)
+      vault-pr.sh        vault commit and session-end PR when the vault's main takes PRs only (#350)
       vault-check.sh     vault health checks (KEY=value per finding), shared by the SessionStart block and lore check [--fix] [--all]
                        SessionEnd status.md refresh
       chisel-config-validate.py
@@ -480,6 +481,14 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `<project>/.squad/` so it is versioned with the code. `path-resolve.sh`
   reports the choice as `SQUAD_DIR`. Status, decisions, preferences and
   session log stay in the vault. Never both; keep client repos on `vault`.
+- Optional `"vault_main": "pr"` in `lore-config.json` (`"direct"` forces
+  today's behaviour; absent = detected from a `pre-push` hook that rejects
+  `refs/heads/main`): Lore commits its vault writes on `lore/<project>-<date>`,
+  in a worktree under `<vault>/.claude/worktrees/lore-<project>-<date>`, one
+  branch per project and day. The main checkout ends level with `origin/main`.
+  At SessionEnd (connected mode) `lore-checkpoint.sh` pushes the branch and
+  opens the PR, or updates the open one (`vault-pr.sh finish`). Detached
+  mode commits to the branch and never pushes.
 - Optional decision nudge, off by default: set `"lore": {"nudge": true}` in
   `lore-config.json` and a `Stop` hook (`lore-nudge.sh`) asks a small model
   (`claude -p --model haiku`) at the end of each turn whether the turn settled

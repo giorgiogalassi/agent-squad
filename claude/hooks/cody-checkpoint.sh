@@ -99,15 +99,7 @@ fi
 PROGRESS="$PROJ/.squad/progress.txt"
 if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -F "[$ISSUE] " "$PROGRESS" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
   printf '[%s] resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
-  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$VAULT" add "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1
-    # Fall back to a fixed identity only when none is configured (fresh CI runner).
-    _id=""
-    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-    # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/.squad/progress.txt" >/dev/null 2>&1 || true
-  fi
+  squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
 fi
 
 if [ -d "$PROJ/.squad" ]; then

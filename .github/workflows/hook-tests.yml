@@ -162,3 +162,7 @@ jobs:
       - name: Run scripts/test-chisel-config-validate.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-chisel-config-validate.sh; else bash scripts/test-chisel-config-validate.sh; fi
+
+      - name: Run scripts/test-vault-pr.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-vault-pr.sh; else bash scripts/test-vault-pr.sh; fi
