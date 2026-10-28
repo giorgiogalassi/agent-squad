@@ -53,6 +53,11 @@ n="$(grep -c '^export SQUAD_' "$E")"
 [ "$n" = 5 ] && ok "clear/compact: still exactly 5 SQUAD_ lines" || bad "clear/compact: $n SQUAD_ lines"
 grep -q '^export OTHER=keepme$' "$E" && ok "clear/compact: foreign lines kept" || bad "clear/compact: foreign line lost"
 
+# Resume: the hook input says source=resume; the values are written the same.
+R="$TMPROOT/envr"; : > "$R"
+(cd "$TMPROOT" && printf '{"cwd":"%s","source":"resume"}' "$PROJ" | SECOND_BRAIN_PATH="$VAULT" CLAUDE_ENV_FILE="$R" bash "$H")
+[ "$(val "$R" SQUAD_DISPLAY_NAME)" = proj ] && ok "resume: values written" || bad "resume: display name '$(val "$R" SQUAD_DISPLAY_NAME)'"
+
 # Linked worktree resolves to the main project.
 W="$TMPROOT/env2"; : > "$W"
 run "$TMPROOT/wt" "$W" >/dev/null

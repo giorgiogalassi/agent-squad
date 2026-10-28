@@ -1391,7 +1391,7 @@ reads independent of `chisel.mode`).
 > that says whether the reviewer works has to read where the verdict
 > actually is.
 
-### Iteration 35: Path resolution exported once per session
+### Iteration 38: Path resolution exported once per session
 
 **Problem:** 14 skills and agents opened with the same "Path resolution
 protocol": run `path-resolve.sh`, read five `KEY=value` lines, never use
@@ -1407,7 +1407,11 @@ and a skill that forgot the step silently worked on the wrong vault project.
   single-quoted `export` lines (paths with spaces or quotes round-trip,
   nothing is eval'd). Idempotent: earlier `SQUAD_*` lines are dropped before
   the new ones are appended, so `clear` and `compact` leave no duplicates.
-  `lore-orient.sh` reuses the exported values when present.
+  Its matcher includes `resume`, in its own entry (a resumed
+  session likely gets a fresh env file; lore-orient early-exits on resume,
+  so the entries stay separate). `lore-orient.sh` reuses `SQUAD_*` only if
+  they are in its own environment (env-file exports probably do not reach
+  hook processes); otherwise it resolves itself.
 - Skills and agents replace the block with one fallback line; the fallback
   covers sessions without the hook (`claude -p`, evals). `squad-lint.sh`
   forbids the full block and requires the fallback.
@@ -1421,8 +1425,6 @@ exports reach subagents' Bash, so Ralph does not pass the values in prompts.
 > **Key decision:** keep one algorithm in a script, and move only its
 > transport into the session environment; the prose that used to restate
 > the call is now a one-line fallback the linter can check.
-
----
 
 ---
 

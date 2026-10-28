@@ -7,7 +7,9 @@
 # single source of the algorithm (PATH_RESOLUTION.md); this hook only transports
 # its output.
 #
-# Registered by hooks/hooks.json (SessionStart, matcher startup|clear|compact).
+# Registered by hooks/hooks.json (SessionStart), matcher startup|clear|compact|resume,
+# in its own entry: lore-orient early-exits on resume, so it cannot share one.
+# A resumed session likely gets a fresh env file, hence resume is included.
 # CwdChanged is deliberately not registered: path-resolve.sh resolves a linked
 # worktree to its main project, so the values do not change when the session
 # works inside a `claude -w` worktree, and a Bash `cd` never changes the project.

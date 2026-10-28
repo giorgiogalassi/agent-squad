@@ -26,7 +26,7 @@ variables and fall back to running the script when they are unset.
 
 ## The bug
 
-Every skill's path resolution protocol used to start from `git rev-parse
+Every skill's path resolution used to start from `git rev-parse
 --show-toplevel` to find the project root, then look that path up in
 `<vault>/lore-config.json`'s `projects` map (keyed by absolute CWD path),
 or take its basename as a fallback project name.
@@ -149,8 +149,8 @@ It reports facts, not policy. What a caller does with an empty
 basename of `PROJECT_ROOT` and continue; Lore handles repair (re-mapping,
 migration), so it reads `PROJECT_ROOT` and proceeds to its own naming
 flow regardless. The script doesn't decide any of that —
-every skill's own protocol still states its own policy inline, exactly
-as before. Only the mechanical resolution step moved into the script.
+every skill's own text (next to its fallback line) still states its own
+policy inline, exactly as before. Only the mechanical resolution step moved into the script.
 
 Every skill and agent now carries one fallback line instead of a
 protocol block: use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`,
