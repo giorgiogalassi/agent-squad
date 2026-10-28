@@ -290,6 +290,9 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
               already-present) OUTPUT="${OUTPUT}Dependencies: $_rel already present${NL}" ;;
               failed) OUTPUT="${OUTPUT}Dependencies: clone of $_rel failed; run your install command in $WT_TOP/$(dirname "$_rel") before testing.${NL}" ;;
             esac ;;
+          HOOKS=missing\|*)
+            IFS='|' read -r _ _hp _hc <<< "${_l#HOOKS=}"
+            OUTPUT="${OUTPUT}Git hooks: core.hooksPath points at $_hp, which is missing in this worktree.${_hc:+ Run \`$_hc\` in $WT_TOP to create it.}${NL}" ;;
           STALE=*)
             IFS='|' read -r _rel _kind <<< "${_l#STALE=}"
             case "$_kind" in
@@ -300,6 +303,23 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
         esac
       done < "$_deps"
       case "$OUTPUT" in *"Dependencies check: WARNING"*) OUTPUT="${OUTPUT}If a build or test fails, it may be the dependency mismatch, not the code change.${NL}" ;; esac
+    fi
+    # Env override (#278): variables whose value is a path inside the source
+    # checkout would make tools act on it, not on this worktree. Scanned here
+    # (SessionStart) because this hook sees the session environment and can
+    # write CLAUDE_ENV_FILE, which reaches the session's and subagents' Bash.
+    # Nothing is written to the source checkout or shared git config.
+    if [ -x "$HOOK_DIR/worktree.sh" ]; then
+      while IFS= read -r _l; do
+        case "$_l" in ENV=*) ;; *) continue ;; esac
+        IFS='|' read -r _en _es _ew <<< "${_l#ENV=}"
+        if [ "$_es" = "$ROOT" ]; then _ex="export $_en=\"\$PWD\""; else _ex="export $_en=\"$_ew\""; fi
+        if [ -n "${CLAUDE_ENV_FILE:-}" ] && printf "export %s='%s'\n" "$_en" "$(printf '%s' "$_ew" | sed "s/'/'\\\\''/g")" >> "$CLAUDE_ENV_FILE" 2>/dev/null; then
+          OUTPUT="${OUTPUT}Env override: $_en pointed at the source checkout ($_es); set to $_ew for this session's Bash and subagents (applied via CLAUDE_ENV_FILE). Manual equivalent: $_ex${NL}"
+        else
+          OUTPUT="${OUTPUT}Env override: WARNING - $_en points at the source checkout ($_es), so tools may act on it instead of this worktree. Run: $_ex${NL}"
+        fi
+      done < <(cd "$WT_TOP" && "$HOOK_DIR/worktree.sh" env "$WT_TOP" 2>/dev/null)
     fi
     # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
     if [ -n "$HOOK_SESSION" ]; then

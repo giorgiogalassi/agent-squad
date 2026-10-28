@@ -81,7 +81,7 @@ fresh() {
   git -C "$d" config commit.gpgsign false
   echo "fixture" >"$d/README.md"
   git -C "$d" add README.md >/dev/null 2>&1
-  git -C "$d" commit -q -m init >/dev/null 2>&1
+  git -C "$d" -c user.name=T -c user.email=t@example.com commit -q -m init >/dev/null 2>&1
   printf '%s\n' "$d"
 }
 
@@ -474,7 +474,7 @@ test_hook_attach_origin_only() {
   git -C "$repo" checkout -q -b feat-remote
   echo remote >"$repo/remote.txt"
   git -C "$repo" add remote.txt
-  git -C "$repo" commit -q -m "remote work"
+  git -C "$repo" -c user.name=T -c user.email=t@example.com commit -q -m "remote work"
   tip="$(git -C "$repo" rev-parse HEAD)"
   git -C "$repo" push -q origin feat-remote >/dev/null 2>&1
   git -C "$repo" checkout -q main
@@ -542,6 +542,74 @@ test_hook_remove_refuses_on_dirty_tracked() {
 }
 
 # ---------------------------------------------------------------------
+# hooks / env / session (#278)
+# ---------------------------------------------------------------------
+
+test_hooks_missing_no_prepare() {
+  repo="$(fresh hooks-missing)"
+  git -C "$repo" config core.hooksPath .husky/_
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=missing|$target/.husky/_" ]; then pass "HOOKS-1-missing-reported"; else fail "HOOKS-1-missing-reported" "out=[$out]"; fi
+  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-2-shared-config-untouched"; else fail "HOOKS-2-shared-config-untouched" "changed"; fi
+}
+
+test_hooks_ok_and_unset() {
+  repo="$(fresh hooks-ok)"
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ -z "$out" ]; then pass "HOOKS-3-unset-silent"; else fail "HOOKS-3-unset-silent" "out=[$out]"; fi
+  git -C "$repo" config core.hooksPath .husky/_
+  mkdir -p "$target/.husky/_"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=ok|$target/.husky/_" ]; then pass "HOOKS-4-ok"; else fail "HOOKS-4-ok" "out=[$out]"; fi
+}
+
+test_hooks_prepare_not_run_config_untouched() {
+  repo="$(fresh hooks-prepare)"
+  git -C "$repo" config core.hooksPath .husky/_
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  # Fake runner would create the folder and rewrite the shared config if run.
+  printf '{"scripts":{"prepare":"x"}}\n' >"$target/package.json"
+  bindir="$TMPROOT/fakebin-prepare"
+  mkdir -p "$bindir"
+  cat >"$bindir/npm" <<'FAKE'
+#!/bin/sh
+mkdir -p .husky/_
+git config core.hooksPath changed-by-prepare
+FAKE
+  chmod +x "$bindir/npm"
+  before="$(cksum <"$repo/.git/config")"
+  out="$(PATH="$bindir:$PATH" run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=missing|$target/.husky/_|npm run prepare" ]; then pass "HOOKS-5-missing-names-command"; else fail "HOOKS-5-missing-names-command" "out=[$out]"; fi
+  if [ "$(cksum <"$repo/.git/config")" = "$before" ]; then pass "HOOKS-6-git-config-byte-identical"; else fail "HOOKS-6-git-config-byte-identical" "changed"; fi
+  if [ ! -d "$target/.husky" ]; then pass "HOOKS-7-prepare-not-run"; else fail "HOOKS-7-prepare-not-run" "ran"; fi
+}
+
+test_env_override() {
+  repo="$(fresh env-scan)"
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(cd "$repo" && NX_WORKSPACE_ROOT_PATH="$repo/app" OTHER_WT="$repo/.claude/worktrees/x" UNRELATED=/elsewhere CLAUDE_PROJECT_DIR="$repo" "$WT" env "$target" 2>/dev/null | grep -v '^ENV=\(PWD\|OLDPWD\)|')"
+  if [ "$out" = "ENV=NX_WORKSPACE_ROOT_PATH|$repo/app|$target/app" ]; then pass "ENV-1-override-reported"; else fail "ENV-1-override-reported" "out=[$out]"; fi
+  out="$(cd "$repo" && PATH="$repo/node_modules/.bin:/usr/bin" "$WT" env "$target" 2>/dev/null | grep '^ENV=PATH|')"
+  if [ -z "$out" ]; then pass "ENV-3-colon-list-skipped"; else fail "ENV-3-colon-list-skipped" "out=[$out]"; fi
+  if [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then pass "ENV-2-source-untouched"; else fail "ENV-2-source-untouched" "dirty"; fi
+}
+
+test_hook_create_stores_hooks_line() {
+  repo="$(fresh hook-hooksline)"
+  git -C "$repo" config core.hooksPath .husky/_
+  hook_create "$repo" feat-hooks
+  gd="$(git -C "$HOOK_OUT" rev-parse --absolute-git-dir)"
+  if grep -qx "HOOKS=missing|$HOOK_OUT/.husky/_" "$gd/squad-deps" 2>/dev/null; then pass "HOOKS-8-hook-create-stores-line"; else fail "HOOKS-8-hook-create-stores-line" "squad-deps=[$(cat "$gd/squad-deps" 2>/dev/null)]"; fi
+  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-9-shared-config-untouched"; else fail "HOOKS-9-shared-config-untouched" "changed"; fi
+}
+
+# ---------------------------------------------------------------------
 # run everything
 # ---------------------------------------------------------------------
 
@@ -566,6 +634,11 @@ test_hook_create_failure_stderr
 test_hook_deps_and_include
 test_hook_remove_clean
 test_hook_remove_refuses_on_dirty_tracked
+test_hooks_missing_no_prepare
+test_hooks_ok_and_unset
+test_hooks_prepare_not_run_config_untouched
+test_env_override
+test_hook_create_stores_hooks_line
 
 echo "---"
 echo "$PASS_COUNT passed, $FAIL_COUNT failed (against $WT)"

@@ -63,6 +63,22 @@
 #                      (worktree_path, else name + cwd) and runs `remove`
 #                      on that path. Exit 1 (uncommitted tracked work) names
 #                      the manual command on stderr.
+#   hooks <worktree-path>
+#                      Resolve core.hooksPath as seen from the worktree.
+#                      Unset -> nothing printed. Names an existing folder
+#                      -> HOOKS=ok|<path>. Names a missing folder ->
+#                      HOOKS=missing|<path>, plus |<cmd> (the package.json
+#                      "prepare" runner) when one is declared. Never runs
+#                      prepare: husky-style scripts write the shared
+#                      core.hooksPath. hook-create stores this line in
+#                      <worktree git dir>/squad-deps.
+#   env <worktree-path>
+#                      Scan the environment for variables whose value is
+#                      a single path inside the source checkout (excluding
+#                      its worktrees, CLAUDE_*/PWD/OLDPWD, colon lists).
+#                      Prints ENV=<name>|<source value>|<worktree value>.
+#                      Called by the SessionStart hook, which sees the
+#                      session environment.
 #
 # Depends only on git and POSIX shell utilities. No jq.
 #
@@ -76,7 +92,7 @@ EXIT_REFUSAL=1
 EXIT_ERROR=2
 
 usage() {
-  echo "usage: worktree.sh create|path|remove <branch> | deps <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
+  echo "usage: worktree.sh create|path|remove <branch> | deps|hooks|env <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
 }
 
 # --- hook JSON input (hook-create / hook-remove only) ---
@@ -480,7 +496,8 @@ cmd_hook_create() {
   # Dependencies and staleness: failures here never block the session.
   gd="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)"
   deps_out="$(cmd_deps "$path" 2>/dev/null)" || true
-  [ -n "$gd" ] && printf '%s\n' "$deps_out" > "$gd/squad-deps" 2>/dev/null
+  hooks_out="$(cmd_hooks "$path" 2>/dev/null)" || true
+  [ -n "$gd" ] && printf '%s\n%s\n' "$deps_out" "$hooks_out" > "$gd/squad-deps" 2>/dev/null
   echo "$path"
   exit "$EXIT_OK"
 }
@@ -497,6 +514,76 @@ cmd_hook_remove() {
   fi
   # Stdout is not part of the WorktreeRemove contract; keep it quiet.
   remove_path "$path" >/dev/null
+  exit "$EXIT_OK"
+}
+
+# --- hooks / env (worktree orientation) ---
+
+cmd_hooks() {
+  wt="$1"
+  if [ ! -d "$wt" ]; then
+    echo "error: worktree path does not exist: $wt" >&2
+    exit "$EXIT_ERROR"
+  fi
+
+  hp="$(git -C "$wt" config --get core.hooksPath 2>/dev/null)"
+  [ -n "$hp" ] || exit "$EXIT_OK"
+
+  case "$hp" in
+    /*) abs="$hp" ;;
+    *)  abs="$wt/$hp" ;;
+  esac
+
+  if [ -d "$abs" ]; then
+    echo "HOOKS=ok|$abs"
+    exit "$EXIT_OK"
+  fi
+
+  # Never run package.json `prepare` here: husky-style prepare scripts run
+  # `git config core.hooksPath`, which writes the shared .git/config seen by
+  # every worktree. Report the folder as missing and, when a prepare script
+  # is declared, name the command for the caller to run deliberately.
+  pkg="$wt/package.json"
+  if [ -f "$pkg" ] && grep -q '"prepare"[[:space:]]*:' "$pkg" 2>/dev/null; then
+    runner="npm"
+    [ -f "$wt/pnpm-lock.yaml" ] && runner="pnpm"
+    [ -f "$wt/yarn.lock" ] && runner="yarn"
+    if [ -f "$wt/bun.lock" ] || [ -f "$wt/bun.lockb" ]; then runner="bun"; fi
+    echo "HOOKS=missing|$abs|$runner run prepare"
+    exit "$EXIT_OK"
+  fi
+
+  echo "HOOKS=missing|$abs"
+  exit "$EXIT_OK"
+}
+
+cmd_env() {
+  wt="$1"
+  if [ ! -d "$wt" ]; then
+    echo "error: worktree path does not exist: $wt" >&2
+    exit "$EXIT_ERROR"
+  fi
+
+  env | while IFS= read -r line; do
+    case "$line" in
+      [A-Za-z_]*=*) ;;
+      *) continue ;;
+    esac
+    name="${line%%=*}"
+    val="${line#*=}"
+    case "$name" in
+      PWD|OLDPWD|_|CLAUDE_*) continue ;;
+    esac
+    case "$val" in
+      *:*) continue ;; # colon-separated lists (PATH-style) are not single paths
+    esac
+    case "$val" in
+      "$ROOT"/.claude/worktrees|"$ROOT"/.claude/worktrees/*|"$ROOT"/.codex/worktrees|"$ROOT"/.codex/worktrees/*) continue ;;
+      "$ROOT") echo "ENV=$name|$val|$wt" ;;
+      "$ROOT"/*) echo "ENV=$name|$val|$wt${val#"$ROOT"}" ;;
+    esac
+  done
+  exit "$EXIT_OK"
 }
 
 # --- dispatch ---
@@ -524,6 +611,8 @@ case "$sub" in
   path)   cmd_path "$arg" ;;
   remove) cmd_remove "$arg" ;;
   deps)   cmd_deps "$arg" ;;
+  hooks)  cmd_hooks "$arg" ;;
+  env)    cmd_env "$arg" ;;
   *)
     usage
     exit "$EXIT_ERROR"
