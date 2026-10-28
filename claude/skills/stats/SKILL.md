@@ -20,8 +20,7 @@ keys or from the report file it writes.
 
 ## On start
 
-**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
-`VAULT_PATH`. The stats store is `<VAULT_PATH>/squad-stats/`. Never
+**Path resolution.** Use `$SQUAD_VAULT_PATH` (exported by the SessionStart hook; read it with Bash, e.g. `echo "$SQUAD_VAULT_PATH"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `VAULT_PATH` line. The stats store is `<vault>/squad-stats/`. Never
 derive the project root from `git rev-parse --show-toplevel` (breaks in
 worktrees; see PATH_RESOLUTION.md). Run every command below from the
 current working directory.

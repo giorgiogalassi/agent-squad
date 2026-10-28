@@ -22,16 +22,12 @@ the branch against its base (see below).
 
 ## On start
 
-**Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
-`~/second-brain/`. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read
-`PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
-basename of `PROJECT_ROOT`). Never derive the project root from
+**Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix). Never derive the project root from
 `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Git and source files use CWD.
 
 **Context files** (each if it exists; continue without missing ones):
-`<SQUAD_DIR>/architecture.md`, `<SQUAD_DIR>/scout-cache.md` (`SQUAD_DIR`
-from the `path-resolve.sh` output; if it does not exist, say so and
+`<SQUAD_DIR>/architecture.md`, `<SQUAD_DIR>/scout-cache.md` (if it does not exist, say so and
 continue without — never fall back to the vault). Also read
 `<vault>/preferences/development.md` (full, ≤100 lines) and
 `<vault>/projects/<display-name>/decisions.md`, each if present, and review against them (every active `[rule]` is checked in the rule pass below). Decisions window: every active `[rule]` entry (heading `## [YYYY-MM-DD] [rule] <title>`; cap 15, over it the newest 15 load and one line `decisions.md: N active [rule] entries, cap 15 - oldest M not loaded` is printed) plus the last 20 active untagged entries; active = no `Superseded by:` line, superseded entries never load.

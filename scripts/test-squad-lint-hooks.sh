@@ -49,5 +49,17 @@ fixture "$TMP/f"
 mv "$TMP/f/cody.new" "$TMP/f/claude/agents/cody.md"
 c9 "$TMP/f" | grep -q "permissionMode" && ok "ignored agent frontmatter key is reported" || bad "ignored agent frontmatter key is reported"
 
+# Check 1: full protocol block forbidden, env fallback line required.
+c1() { bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$1" 2>&1 | sed -n '/== 1\./,/== 2\./p'; }
+c1 "$TMP/a" | grep -q '\[FAIL\]' && bad "pristine copy passes check 1" || ok "pristine copy passes check 1"
+
+fixture "$TMP/g"
+printf '\nRun `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read\n`VAULT_PATH`, `PROJECT_ROOT`.\n' >> "$TMP/g/claude/skills/forge/SKILL.md"
+c1 "$TMP/g" | grep -q 'full path-resolution protocol block' && ok "full protocol block is reported" || bad "full protocol block is reported"
+
+fixture "$TMP/h"
+sed -i.bak 's/SQUAD_PROJECT_ROOT/SQUAD_GONE/g' "$TMP/h/claude/skills/forge/SKILL.md"
+c1 "$TMP/h" | grep -q 'fallback line is missing' && ok "missing env fallback is reported" || bad "missing env fallback is reported"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

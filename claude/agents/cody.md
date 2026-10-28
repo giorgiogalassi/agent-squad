@@ -22,10 +22,7 @@ where Ralph left off.
 
 ## On start
 
-**Path resolution.** Vault path: `SECOND_BRAIN_PATH` if set, else
-`~/second-brain/`. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read
-`PROJECT_ROOT`, `DISPLAY_NAME` and `SQUAD_DIR` from its output (empty `DISPLAY_NAME` →
-basename of `PROJECT_ROOT`). Never derive the project root from
+**Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix). Never derive the project root from
 `git rev-parse --show-toplevel` — it breaks inside worktrees (see
 PATH_RESOLUTION.md). Source files and git operations use CWD.
 
@@ -36,8 +33,7 @@ never pushes or opens PRs (steps 0 and 6).
 
 **Context:** if your prompt already contains `architecture.md` and
 `scout-cache.md` (Ralph injects them), do not re-read. Otherwise read
-`architecture.md` and `scout-cache.md` from `SQUAD_DIR` (read it from the
-`path-resolve.sh` output; vault by default, `<PROJECT_ROOT>/.squad` for
+`architecture.md` and `scout-cache.md` from `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` for
 `context: repo`) and `progress.txt` from
 `<vault>/projects/<display-name>/.squad/` — each if present; continue
 without missing ones. Never fall back to the vault for the first two when

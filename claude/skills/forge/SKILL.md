@@ -16,12 +16,10 @@ YAML at the end.
 
 ## On start
 
-**Path resolution.** Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; read
-`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME` (empty → basename of
-`PROJECT_ROOT`). Also read `SQUAD_DIR`.
-All `.squad/` paths below mean `<VAULT_PATH>/projects/<display-name>/.squad/`,
+**Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix).
+All `.squad/` paths below mean `<SQUAD_VAULT_PATH>/projects/<display-name>/.squad/`,
 except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
-under `SQUAD_DIR` (vault by default, `<PROJECT_ROOT>/.squad` when the
+under `SQUAD_DIR` (vault by default, `<SQUAD_PROJECT_ROOT>/.squad` when the
 project is `context: repo`). If `SQUAD_DIR` does not exist, print
 `SQUAD_DIR <path> not found — run /seed first` and stop; never fall back
 to the vault. Never derive the project
