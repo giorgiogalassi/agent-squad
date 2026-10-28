@@ -521,12 +521,6 @@ cmd_hook_remove() {
 
 # --- hooks / env / session (worktree orientation) ---
 
-# Shared-config core.hooksPath (the value every worktree sees unless a
-# per-worktree config overrides it). Empty when unset.
-shared_hooks_path() {
-  git -C "$ROOT" config --local --get core.hooksPath 2>/dev/null
-}
-
 cmd_hooks() {
   wt="$1"
   if [ ! -d "$wt" ]; then
@@ -547,30 +541,18 @@ cmd_hooks() {
     exit "$EXIT_OK"
   fi
 
+  # Never run package.json `prepare` here: husky-style prepare scripts run
+  # `git config core.hooksPath`, which writes the shared .git/config seen by
+  # every worktree. Report the folder as missing and, when a prepare script
+  # is declared, name the command for the caller to run deliberately.
   pkg="$wt/package.json"
   if [ -f "$pkg" ] && grep -q '"prepare"[[:space:]]*:' "$pkg" 2>/dev/null; then
     runner="npm"
     [ -f "$wt/pnpm-lock.yaml" ] && runner="pnpm"
     [ -f "$wt/yarn.lock" ] && runner="yarn"
     if [ -f "$wt/bun.lock" ] || [ -f "$wt/bun.lockb" ]; then runner="bun"; fi
-
-    before="$(shared_hooks_path)"
-    (cd "$wt" && "$runner" run prepare >/dev/null 2>&1) || true
-    # Husky-style prepare scripts run `git config core.hooksPath`, which
-    # lands in the shared .git/config. Put the shared value back.
-    after="$(shared_hooks_path)"
-    if [ "$after" != "$before" ]; then
-      if [ -n "$before" ]; then
-        git -C "$ROOT" config --local core.hooksPath "$before"
-      else
-        git -C "$ROOT" config --local --unset core.hooksPath
-      fi
-    fi
-
-    if [ -d "$abs" ]; then
-      echo "HOOKS=installed|$abs"
-      exit "$EXIT_OK"
-    fi
+    echo "HOOKS=missing|$abs|$runner run prepare"
+    exit "$EXIT_OK"
   fi
 
   echo "HOOKS=missing|$abs"
@@ -595,6 +577,9 @@ cmd_env() {
       PWD|OLDPWD|_|CLAUDE_*) continue ;;
     esac
     case "$val" in
+      *:*) continue ;; # colon-separated lists (PATH-style) are not single paths
+    esac
+    case "$val" in
       "$ROOT"/.claude/worktrees|"$ROOT"/.claude/worktrees/*|"$ROOT"/.codex/worktrees|"$ROOT"/.codex/worktrees/*) continue ;;
       "$ROOT") echo "ENV=$name|$val|$wt" ;;
       "$ROOT"/*) echo "ENV=$name|$val|$wt${val#"$ROOT"}" ;;
@@ -604,11 +589,20 @@ cmd_env() {
 }
 
 cmd_session() {
-  settings="$ROOT/.claude/settings.json"
+  wt="$1"
+  settings="$wt/.claude/settings.json"
+  [ -f "$settings" ] || settings="$ROOT/.claude/settings.json"
   [ -f "$settings" ] || exit "$EXIT_OK"
   events=""
   for ev in SessionStart CwdChanged; do
-    if grep -q "\"$ev\"" "$settings" 2>/dev/null; then
+    if command -v jq >/dev/null 2>&1; then
+      jq -e --arg ev "$ev" '.hooks | type == "object" and has($ev)' "$settings" >/dev/null 2>&1 && present=1 || present=0
+    elif grep -q "\"$ev\"[[:space:]]*:" "$settings" 2>/dev/null; then
+      present=1
+    else
+      present=0
+    fi
+    if [ "$present" = 1 ]; then
       events="${events:+$events,}$ev"
     fi
   done

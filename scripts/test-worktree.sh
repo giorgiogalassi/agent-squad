@@ -567,13 +567,12 @@ test_hooks_ok_and_unset() {
   if [ "$out" = "HOOKS=ok|$target/.husky/_" ]; then pass "HOOKS-4-ok"; else fail "HOOKS-4-ok" "out=[$out]"; fi
 }
 
-test_hooks_prepare_runs_and_restores_config() {
+test_hooks_prepare_not_run_config_untouched() {
   repo="$(fresh hooks-prepare)"
   git -C "$repo" config core.hooksPath .husky/_
   target="$repo/.claude/worktrees/wt"
   mkdir -p "$target"
-  # Fake runner: prepare creates the hooks folder and, like husky, also
-  # rewrites the shared core.hooksPath. The hook must put it back.
+  # Fake runner would create the folder and rewrite the shared config if run.
   printf '{"scripts":{"prepare":"x"}}\n' >"$target/package.json"
   bindir="$TMPROOT/fakebin-prepare"
   mkdir -p "$bindir"
@@ -583,9 +582,11 @@ mkdir -p .husky/_
 git config core.hooksPath changed-by-prepare
 FAKE
   chmod +x "$bindir/npm"
+  before="$(cksum <"$repo/.git/config")"
   out="$(PATH="$bindir:$PATH" run_hook "$repo" hooks "$target" 2>/dev/null)"
-  if [ "$out" = "HOOKS=installed|$target/.husky/_" ]; then pass "HOOKS-5-installed"; else fail "HOOKS-5-installed" "out=[$out]"; fi
-  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-6-shared-config-restored"; else fail "HOOKS-6-shared-config-restored" "got [$(git -C "$repo" config --local core.hooksPath)]"; fi
+  if [ "$out" = "HOOKS=missing|$target/.husky/_|npm run prepare" ]; then pass "HOOKS-5-missing-names-command"; else fail "HOOKS-5-missing-names-command" "out=[$out]"; fi
+  if [ "$(cksum <"$repo/.git/config")" = "$before" ]; then pass "HOOKS-6-git-config-byte-identical"; else fail "HOOKS-6-git-config-byte-identical" "changed"; fi
+  if [ ! -d "$target/.husky" ]; then pass "HOOKS-7-prepare-not-run"; else fail "HOOKS-7-prepare-not-run" "ran"; fi
 }
 
 test_env_override() {
@@ -594,6 +595,8 @@ test_env_override() {
   mkdir -p "$target"
   out="$(cd "$repo" && NX_WORKSPACE_ROOT_PATH="$repo/app" OTHER_WT="$repo/.claude/worktrees/x" UNRELATED=/elsewhere CLAUDE_PROJECT_DIR="$repo" "$WT" env "$target" 2>/dev/null | grep -v '^ENV=\(PWD\|OLDPWD\)|')"
   if [ "$out" = "ENV=NX_WORKSPACE_ROOT_PATH|$repo/app|$target/app" ]; then pass "ENV-1-override-reported"; else fail "ENV-1-override-reported" "out=[$out]"; fi
+  out="$(cd "$repo" && PATH="$repo/node_modules/.bin:/usr/bin" "$WT" env "$target" 2>/dev/null | grep '^ENV=PATH|')"
+  if [ -z "$out" ]; then pass "ENV-3-colon-list-skipped"; else fail "ENV-3-colon-list-skipped" "out=[$out]"; fi
   if [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then pass "ENV-2-source-untouched"; else fail "ENV-2-source-untouched" "dirty"; fi
 }
 
@@ -636,7 +639,7 @@ test_hook_remove_clean
 test_hook_remove_refuses_on_dirty_tracked
 test_hooks_missing_no_prepare
 test_hooks_ok_and_unset
-test_hooks_prepare_runs_and_restores_config
+test_hooks_prepare_not_run_config_untouched
 test_env_override
 test_session_hooks
 
