@@ -713,8 +713,9 @@ PATH="$PWD/scripts/gh-shim:$PATH" claude plugin eval claude/ \
 any imperfect score). The suite is advisory: it never gates a PR. CI runs it
 from `.github/workflows/plugin-eval.yml` on `workflow_dispatch`, or on a
 same-repository pull request labeled `eval` (never on forks); it uploads
-`results.json` and `report.html`, and is red only on exit code 1 (cases failed
-to load). Do not commit the results directory the CLI creates under the eval dir
+`results.json` and `report.html`, and is red on exit code 1 (cases failed
+to load), on an empty `ANTHROPIC_API_KEY`, and when `scripts/plugin-eval-check.sh`
+finds no scored case in `results.json` (every case errored, or `costUsd` 0). Do not commit the results directory the CLI creates under the eval dir
 (`claude/evals/.gitignore` ignores it).
 
 On macOS with only the stock `/usr/bin/git` shim, `detached-claim` and

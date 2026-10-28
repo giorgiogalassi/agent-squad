@@ -69,6 +69,8 @@ on:
       - "scripts/plugin-version-guard.sh"
       - "scripts/test-plugin-version-guard.sh"
       - "scripts/test-safe-tmproot.sh"
+      - "scripts/plugin-eval-check.sh"
+      - "scripts/test-plugin-eval-check.sh"
       - "scripts/lib/**"
       - "scripts/squad-lint.sh"
       - "scripts/test-lore-map.sh"
@@ -184,6 +186,10 @@ jobs:
       - name: Run scripts/test-chisel-config-validate.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-chisel-config-validate.sh; else bash scripts/test-chisel-config-validate.sh; fi
+
+      - name: Run scripts/test-plugin-eval-check.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-plugin-eval-check.sh; else bash scripts/test-plugin-eval-check.sh; fi
 
       - name: Run scripts/test-vault-pr.sh (bash 3.2 on macOS)
         run: |

@@ -47,6 +47,22 @@ jobs:
             exit 1
           fi
 
+      - name: Check ANTHROPIC_API_KEY is set
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY is empty: add the repository secret."
+            exit 1
+          fi
+
+      - name: Install sandbox dependencies
+        run: |
+          # claude plugin eval sandboxes shell tools; without these every case
+          # errors before starting (#323).
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap socat
+
       - name: Run plugin eval
         id: eval
         env:
@@ -85,7 +101,20 @@ jobs:
         run: |
           rc="${{ steps.eval.outputs.rc }}"
           case "$rc" in
-            0) echo "All graders passed." ;;
+            0) echo "CLI exit 0." ;;
             2) echo "::notice::Advisory: eval hit the cost ceiling or ended partial (exit 2)." ;;
             *) echo "::error::Eval failed to load or run (exit ${rc:-unknown})."; exit 1 ;;
           esac
+
+      - name: Require at least one scored case (red when every case errored or cost is 0)
+        run: |
+          set +e
+          out="$(bash scripts/plugin-eval-check.sh results.json)"
+          rc=$?
+          set -e
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            reason="$(printf '%s\n' "$out" | sed -n 's/^REASON=//p')"
+            echo "::error::No usable eval score: ${reason:-plugin-eval-check.sh exited $rc}"
+            exit 1
+          fi
