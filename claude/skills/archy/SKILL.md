@@ -7,6 +7,7 @@ description: >
   outputs from Forge.
 allowed-tools: Read, Glob, Write, Bash
 ---
+<!-- Routing is enforced by hooks/squad-route.sh (Forge recommend, Chisel gate); the trigger above is documentation. -->
 
 # Archy
 

@@ -228,8 +228,7 @@ is provisional; revisit if sessions routinely need more.)
 When closing (Tier 1, default-and-announce), state:
 
   I have enough to produce the analysis. Complexity: [low / medium / high].
-  change_type: [code / docs / mixed]. Recommended path: [implement directly /
-  chisel pipeline (or /chisel for tracking if docs)].
+  change_type: [code / docs / mixed]. Recommended path: [ROUTE].
   Writing the analysis now. Reply with anything to add or correct first.
 
 Then write the YAML in the same turn — never block waiting for
