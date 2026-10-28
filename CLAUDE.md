@@ -5,13 +5,18 @@ loading another skill's text into context has no return-value semantics
 and is a soft, easily-skipped dependency, which is exactly what got
 removed in Iteration 19. Path resolution is the one deliberate exception,
 and it resolves the tension by being a *script*, not a shared skill or
-doc: every skill and agent's "Path resolution protocol" runs the plugin's
-`hooks/path-resolve.sh` (`${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` in
-skill and agent prose) via Bash as its first step and reads
-five output lines (`VAULT_PATH`/`PROJECT_ROOT`/`DISPLAY_NAME`/`SQUAD_DIR`/`TRACKER_MODE`;
-`TRACKER_MODE` is `detached` unless `chisel.mode` is provably `connected`) — an
-ordinary, unambiguous shell call each skill already makes dozens of per
-session, not a new category of soft dependency. `PATH_RESOLUTION.md` at
+doc: the SessionStart hook `hooks/squad-env.sh` runs the plugin's
+`hooks/path-resolve.sh` once and exports five values to `$CLAUDE_ENV_FILE`
+(`SQUAD_VAULT_PATH`/`SQUAD_PROJECT_ROOT`/`SQUAD_DISPLAY_NAME`/`SQUAD_DIR`/`SQUAD_TRACKER_MODE`;
+`SQUAD_TRACKER_MODE` is `detached` unless `chisel.mode` is provably `connected`),
+which every later Bash call in the session, subagents included, sees.
+Each skill and agent carries one fallback line instead of a protocol block:
+use those variables, and if `SQUAD_PROJECT_ROOT` is unset (headless
+`claude -p`, the evals) run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`
+via Bash — an ordinary, unambiguous shell call, not a new category of soft
+dependency. Hooks that run outside the session env (`worktree.sh`,
+`lore-checkpoint.sh`, `squad-stats.py`) still call `path-resolve.sh`
+directly. `PATH_RESOLUTION.md` at
 the repo root documents the algorithm and its rationale but is itself
 never read at runtime by anything — only `path-resolve.sh` is. If you
 change how project-root resolution works, edit `path-resolve.sh`, then

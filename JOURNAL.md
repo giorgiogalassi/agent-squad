@@ -1391,6 +1391,39 @@ reads independent of `chisel.mode`).
 > that says whether the reviewer works has to read where the verdict
 > actually is.
 
+### Iteration 35: Path resolution exported once per session
+
+**Problem:** 14 skills and agents opened with the same "Path resolution
+protocol": run `path-resolve.sh`, read five `KEY=value` lines, never use
+`git rev-parse --show-toplevel`. The script was right; the cost was the
+prose repeated in every file and re-executed by every skill and subagent,
+and a skill that forgot the step silently worked on the wrong vault project.
+
+**Change (#294, part of #292):**
+
+- New SessionStart hook `squad-env.sh` runs `path-resolve.sh` once and
+  appends `SQUAD_VAULT_PATH`, `SQUAD_PROJECT_ROOT`, `SQUAD_DISPLAY_NAME`,
+  `SQUAD_DIR` and `SQUAD_TRACKER_MODE` to `$CLAUDE_ENV_FILE` as
+  single-quoted `export` lines (paths with spaces or quotes round-trip,
+  nothing is eval'd). Idempotent: earlier `SQUAD_*` lines are dropped before
+  the new ones are appended, so `clear` and `compact` leave no duplicates.
+  `lore-orient.sh` reuses the exported values when present.
+- Skills and agents replace the block with one fallback line; the fallback
+  covers sessions without the hook (`claude -p`, evals). `squad-lint.sh`
+  forbids the full block and requires the fallback.
+- `CwdChanged` is not registered. Sidecar is gone (`claude -w` starts the
+  session inside the linked worktree) and `path-resolve.sh` resolves a
+  worktree to its main project, so the values never change mid-session.
+
+Spike #300 (Claude Code 2.1.312) settled the open point: `$CLAUDE_ENV_FILE`
+exports reach subagents' Bash, so Ralph does not pass the values in prompts.
+
+> **Key decision:** keep one algorithm in a script, and move only its
+> transport into the session environment; the prose that used to restate
+> the call is now a one-line fallback the linter can check.
+
+---
+
 ---
 
 ## 3. Final Architecture

@@ -1,9 +1,10 @@
 # Path Resolution
 
-The algorithm behind `path-resolve.sh`, the shared utility every skill
-and agent's "Path resolution protocol" (or equivalent "Resolve paths
-before reading any file" / "Deduce candidate project name") calls as its
-first step.
+The algorithm behind `path-resolve.sh`, the shared utility whose output
+the SessionStart hook `squad-env.sh` exports once per session as
+`SQUAD_VAULT_PATH`, `SQUAD_PROJECT_ROOT`, `SQUAD_DISPLAY_NAME`,
+`SQUAD_DIR` and `SQUAD_TRACKER_MODE`. Skills and agents read those
+variables and fall back to running the script when they are unset.
 
 > **This document is not read by any skill or agent at runtime — the
 > script is.** That distinction matters and is deliberate. Iteration 19
@@ -151,12 +152,14 @@ flow regardless. The script doesn't decide any of that —
 every skill's own protocol still states its own policy inline, exactly
 as before. Only the mechanical resolution step moved into the script.
 
-Every skill and agent's protocol now reads:
-
-> Run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its output lines
-> (`KEY=value`, five in total; parse by key, not position):
-> `VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`, `TRACKER_MODE`.
-> (Each skill reads only the keys it needs.)
+Every skill and agent now carries one fallback line instead of a
+protocol block: use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`,
+`$SQUAD_DISPLAY_NAME`, `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE` (exported by
+`squad-env.sh`); if `$SQUAD_PROJECT_ROOT` is unset (headless `claude -p`,
+evals), run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its
+`KEY=value` lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`,
+`SQUAD_DIR`, `TRACKER_MODE`; parse by key, not position). `squad-lint.sh`
+forbids the full block and requires the fallback.
 
 ## What does NOT change
 
@@ -192,7 +195,7 @@ the SessionStart orientation includes the last 40 lines of that `JOURNAL.md`.
 ## Installing the script
 
 `path-resolve.sh` is a required dependency, not an optional hook: every
-skill's first step calls it. It ships in the plugin's `hooks/` directory
+skill's fallback and the env hook call it. It ships in the plugin's `hooks/` directory
 next to `lore-orient.sh` (which also calls it, with a defensive inline
 fallback if it is somehow missing), so installing the plugin installs it.
 See `README.md`'s Installation section.

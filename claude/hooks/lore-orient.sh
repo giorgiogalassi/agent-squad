@@ -69,7 +69,12 @@ fi
 # shell-quoted, so eval-ing it would break on a path containing a space
 # and execute anything shaped like $(...) or `...` in a directory name.
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-if [ -x "$HOOK_DIR/path-resolve.sh" ]; then
+if [ -n "${SQUAD_PROJECT_ROOT:-}" ] && [ -n "${SQUAD_VAULT_PATH:-}" ]; then
+  # Values already exported by squad-env.sh earlier in this session (clear,
+  # compact): reuse them instead of resolving a second time.
+  VAULT="$SQUAD_VAULT_PATH"; ROOT="$SQUAD_PROJECT_ROOT"; DISPLAY="${SQUAD_DISPLAY_NAME:-}"
+  SQUAD_DIR="${SQUAD_DIR:-}"; TRACKER_MODE="${SQUAD_TRACKER_MODE:-}"
+elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
   while IFS='=' read -r _key _value; do
     case "$_key" in
       VAULT_PATH) VAULT="$_value" ;;

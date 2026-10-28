@@ -80,8 +80,9 @@ when explicitly requested or named by a context ref.
 > SessionEnd hook.
 
 1. Resolve the vault path (above); missing → ask to create and wait.
-2. Deduce the candidate project: run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`,
-   take `PROJECT_ROOT` (correct inside worktrees — never
+2. Deduce the candidate project: use `$SQUAD_PROJECT_ROOT` (if unset or empty, run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `PROJECT_ROOT`),
+   take the root (correct inside worktrees — never
    `git rev-parse --show-toplevel` directly; see PATH_RESOLUTION.md);
    candidate name = final path component; record `PROJECT_ROOT` as
    `cwd_path`. Not a git repo → current directory name/path. Resolved

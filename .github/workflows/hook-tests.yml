@@ -74,6 +74,8 @@ on:
       - "scripts/lib/**"
       - "scripts/squad-lint.sh"
       - "scripts/test-lore-map.sh"
+      - "scripts/test-squad-env.sh"
+      - "claude/hooks/squad-env.sh"
       - "claude/hooks/lore-map.sh"
       - ".github/workflows/hook-tests.yml"
 
@@ -200,3 +202,7 @@ jobs:
       - name: Run scripts/test-lore-map.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-map.sh; else bash scripts/test-lore-map.sh; fi
+
+      - name: Run scripts/test-squad-env.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-env.sh; else bash scripts/test-squad-env.sh; fi

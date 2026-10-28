@@ -81,7 +81,7 @@ ok() {
 }
 
 # ---------------------------------------------------------------------
-# Check 1: path-resolution protocol present in every skill and agent
+# Check 1: path-resolution env fallback present (full protocol block forbidden)
 # ---------------------------------------------------------------------
 check_path_resolution_protocol() {
   section "1. path-resolution protocol"
@@ -129,8 +129,15 @@ check_path_resolution_protocol() {
       ok "$f: pure delegating wrapper (explicitly does no work itself) — path resolution belongs to the agent it hands off to, skipping"
       continue
     fi
-    if ! grep -Eq "bash [^ ]*path-resolve\.sh" "$f"; then
-      fail "$f: no 'bash .../path-resolve.sh' step and no 'squad-lint: stateless' marker — the path-resolution protocol block is missing or was not carried over"
+    # The protocol block moved into hooks/squad-env.sh (SessionStart exports
+    # SQUAD_* once). A file may no longer carry the full block (run the script,
+    # read the five keys from its output) and must carry the env fallback:
+    # $SQUAD_PROJECT_ROOT plus "bash <path>/path-resolve.sh" for sessions
+    # started without the hook (claude -p, evals).
+    if grep -Eq 'Path resolution protocol|path-resolve\.sh`? ?(and read|; read)|from the `path-resolve\.sh` output' "$f"; then
+      fail "$f: carries the full path-resolution protocol block — replace it with the SQUAD_* env fallback line"
+    elif ! grep -q 'SQUAD_PROJECT_ROOT' "$f" || ! grep -Eq "bash [^ ]*path-resolve\.sh" "$f"; then
+      fail "$f: no env fallback (\$SQUAD_PROJECT_ROOT plus 'bash .../path-resolve.sh') and no 'squad-lint: stateless' marker — the path-resolution fallback line is missing"
     fi
   done
 
