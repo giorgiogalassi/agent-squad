@@ -257,7 +257,7 @@ the last 30 lines of `progress.txt` (`tail -n 30` of the `where --file progress`
   last issue on the branch
 
 Before spawning, determine the **working directory**: the
-Sidecar-supplied `working_directory` when running under Sidecar, else
+`working_directory` supplied by the caller (a worktree session), else
 the project root (never `git rev-parse --show-toplevel`). Capture a
 baseline there:
 

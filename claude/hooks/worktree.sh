@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Worktree lifecycle hook, shared by Sidecar today and Ralph's future
-# epic mode. Extracts the create/path/remove mechanics that used to be
-# spread through Sidecar's skill prose into an executable, testable
-# contract.
+# Worktree lifecycle script: the WorktreeCreate and WorktreeRemove hooks
+# (hook-create, hook-remove; registered in hooks/hooks.json) plus the
+# create/path/remove/deps mechanics behind them, as an executable,
+# testable contract. Native `claude -w <name>` calls the hooks; Ralph's
+# epic mode may call the plain subcommands.
 #
 # This is mechanism only, not policy (same boundary path-resolve.sh
 # documents): this script decides nothing about *when* to warn a user,
 # what wording to print, what needs confirmation, or when to refuse a
 # force-remove over uncommitted work. It only resolves paths, creates
-# and removes worktrees, and reports outcomes. Callers (Sidecar, Ralph)
-# own all of that policy.
+# and removes worktrees, and reports outcomes. Callers (the hooks,
+# Ralph) own all of that policy.
 #
 # The hook resolves its own project root by invoking path-resolve.sh
 # (expected next to this script) and never calls
@@ -34,7 +35,7 @@
 #                      without creating anything.
 #   remove <branch>   Remove the worktree for <branch>, deleting only
 #                      generated trees it can name by path (node_modules,
-#                      *.sidecar-tmp). Refuses (exit 1, never --force)
+#                      *.wt-tmp). Refuses (exit 1, never --force)
 #                      if the worktree has uncommitted tracked changes.
 #                      Prints REMOVED=true|false and CLEANED=<paths>.
 #   deps <worktree-path>
@@ -50,6 +51,19 @@
 #                      finding (kind: branch-drift|presence-diff|
 #                      self-stale).
 #
+#   hook-create       WorktreeCreate hook. Reads the hook JSON on stdin
+#                      (name, cwd), runs `create` for <name> (attaches an
+#                      existing local or origin branch, else creates it),
+#                      copies the files .worktreeinclude lists, runs `deps`
+#                      and stores its lines in <worktree git dir>/squad-deps
+#                      for the SessionStart orientation. Prints ONLY the
+#                      worktree path on stdout (the hook contract); every
+#                      failure goes to stderr with a non-zero exit.
+#   hook-remove       WorktreeRemove hook. Reads the hook JSON on stdin
+#                      (worktree_path, else name + cwd) and runs `remove`
+#                      on that path. Exit 1 (uncommitted tracked work) names
+#                      the manual command on stderr.
+#
 # Depends only on git and POSIX shell utilities. No jq.
 #
 # Ships in the plugin's hooks/ directory next to path-resolve.sh (this script
@@ -62,8 +76,31 @@ EXIT_REFUSAL=1
 EXIT_ERROR=2
 
 usage() {
-  echo "usage: worktree.sh create|path|remove <branch> | deps <worktree-path>" >&2
+  echo "usage: worktree.sh create|path|remove <branch> | deps <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
 }
+
+# --- hook JSON input (hook-create / hook-remove only) ---
+# json_field <key>: string value of a top-level key in $HOOK_JSON. jq when
+# present, else a sed extraction (hook payloads are flat string fields).
+json_field() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$HOOK_JSON" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null
+  else
+    printf '%s' "$HOOK_JSON" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+  fi
+}
+
+HOOK_JSON=""
+case "${1:-}" in
+  hook-create|hook-remove)
+    HOOK_JSON="$(cat 2>/dev/null)"
+    hook_cwd="$(json_field cwd)"
+    if [ -n "$hook_cwd" ] && ! cd "$hook_cwd" 2>/dev/null; then
+      echo "error: cannot enter hook cwd $hook_cwd" >&2
+      exit "$EXIT_ERROR"
+    fi
+    ;;
+esac
 
 # --- resolve PROJECT_ROOT via path-resolve.sh (never git rev-parse --show-toplevel) ---
 
@@ -161,6 +198,12 @@ cmd_create() {
     exit "$EXIT_ERROR"
   }
 
+  if ! git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch" \
+     && git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+    # Pick up a branch that exists only on origin (best effort, offline is fine).
+    git -C "$ROOT" fetch origin "$branch" --quiet >/dev/null 2>&1 </dev/null || true
+  fi
+
   if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
     git -C "$ROOT" worktree add "$target" "$branch" >/dev/null 2>&1
   elif git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
@@ -170,7 +213,7 @@ cmd_create() {
   fi
   status=$?
   if [ "$status" -ne 0 ]; then
-    echo "error: git worktree add failed for '$branch'" >&2
+    echo "error: git worktree add failed for '$branch' at $target" >&2
     exit "$EXIT_ERROR"
   fi
 
@@ -189,8 +232,13 @@ cmd_path() {
 }
 
 cmd_remove() {
-  branch="$1"
-  target="$(worktree_path_for "$branch")"
+  remove_path "$(worktree_path_for "$1")"
+}
+
+# remove_path <absolute-worktree-path>: shared by remove (by branch) and
+# hook-remove (by the path Claude Code hands the hook).
+remove_path() {
+  target="$1"
 
   if [ ! -d "$target" ]; then
     echo "REMOVED=false"
@@ -204,11 +252,11 @@ cmd_remove() {
   fi
 
   # Refuse on any uncommitted change to a tracked file. Untracked
-  # generated trees (node_modules, *.sidecar-tmp) are handled below and
+  # generated trees (node_modules, *.wt-tmp) are handled below and
   # do not block removal.
   dirty="$(git -C "$target" status --porcelain --untracked-files=no 2>/dev/null)"
   if [ -n "$dirty" ]; then
-    echo "refusal: worktree at $target has uncommitted tracked changes" >&2
+    echo "refusal: worktree at $target has uncommitted tracked changes; review them with: git -C '$target' status; once they are committed or discarded, remove it with: git worktree remove '$target'" >&2
     echo "REMOVED=false"
     echo "CLEANED="
     exit "$EXIT_REFUSAL"
@@ -217,7 +265,7 @@ cmd_remove() {
   cleaned=""
   # Only ever delete generated trees this script can name by path.
   # Never a blanket force over the worktree's untracked content.
-  find_output="$(find "$target" -mindepth 1 \( -name node_modules -o -name '*.sidecar-tmp' \) -type d 2>/dev/null)"
+  find_output="$(find "$target" -mindepth 1 \( -name node_modules -o -name '*.wt-tmp' \) -type d 2>/dev/null)"
   if [ -n "$find_output" ]; then
     old_ifs="$IFS"
     IFS='
@@ -239,7 +287,7 @@ cmd_remove() {
     echo "CLEANED=$cleaned"
     exit "$EXIT_OK"
   else
-    echo "refusal: git worktree remove refused $target (untracked content remains); never forced" >&2
+    echo "refusal: git worktree remove refused $target (untracked content remains); never forced. Inspect it with: git -C '$target' status" >&2
     echo "REMOVED=false"
     echo "CLEANED=$cleaned"
     exit "$EXIT_REFUSAL"
@@ -275,7 +323,7 @@ deps_populate_one() {
   wt="$2"
   src="$ROOT/$rel"
   target="$wt/$rel"
-  tmp="${target}.sidecar-tmp"
+  tmp="${target}.wt-tmp"
 
   # Reuse check (NEW-18b): an existing, non-empty target is authoritative.
   # A stale tmp sibling is deleted, never re-entered into the copy path
@@ -389,7 +437,74 @@ EOF
   exit "$EXIT_OK"
 }
 
+# --- hook entry points ---
+
+# Copy the files .worktreeinclude lists (gitignore syntax; only files that
+# are git-ignored in the source checkout, like Claude Code's own handling)
+# into the new worktree. The hook replaces the default creation, so Claude
+# Code no longer processes the file itself.
+copy_worktreeinclude() {
+  wt="$1"
+  inc="$ROOT/.worktreeinclude"
+  [ -f "$inc" ] || return 0
+  while IFS= read -r pat || [ -n "$pat" ]; do
+    case "$pat" in ''|'#'*) continue ;; esac
+    git -C "$ROOT" ls-files -z --others --ignored --exclude-standard -- "${pat#/}" 2>/dev/null \
+    | while IFS= read -r -d '' f; do
+        [ -f "$ROOT/$f" ] || continue
+        mkdir -p "$wt/$(dirname "$f")" 2>/dev/null && cp -p "$ROOT/$f" "$wt/$f" 2>/dev/null
+      done
+  done < "$inc"
+}
+
+cmd_hook_create() {
+  name="$(json_field name)"
+  if [ -z "$name" ]; then
+    echo "error: WorktreeCreate input has no 'name'" >&2
+    exit "$EXIT_ERROR"
+  fi
+  out="$(cmd_create "$name")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+  path="$(printf '%s\n' "$out" | sed -n 's/^WORKTREE_PATH=//p')"
+  created="$(printf '%s\n' "$out" | sed -n 's/^WORKTREE_CREATED=//p')"
+  if [ -z "$path" ] || [ ! -d "$path" ]; then
+    echo "error: worktree path missing after create for '$name'" >&2
+    exit "$EXIT_ERROR"
+  fi
+  if [ "$created" = "true" ]; then
+    copy_worktreeinclude "$path"
+  fi
+  # Dependencies and staleness: failures here never block the session.
+  gd="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)"
+  deps_out="$(cmd_deps "$path" 2>/dev/null)" || true
+  [ -n "$gd" ] && printf '%s\n' "$deps_out" > "$gd/squad-deps" 2>/dev/null
+  echo "$path"
+  exit "$EXIT_OK"
+}
+
+cmd_hook_remove() {
+  path="$(json_field worktree_path)"
+  if [ -z "$path" ]; then
+    name="$(json_field name)"
+    if [ -z "$name" ]; then
+      echo "error: WorktreeRemove input has neither 'worktree_path' nor 'name'" >&2
+      exit "$EXIT_ERROR"
+    fi
+    path="$(worktree_path_for "$name")"
+  fi
+  # Stdout is not part of the WorktreeRemove contract; keep it quiet.
+  remove_path "$path" >/dev/null
+}
+
 # --- dispatch ---
+
+case "${1:-}" in
+  hook-create) cmd_hook_create ;;
+  hook-remove) cmd_hook_remove ;;
+esac
 
 if [ "$#" -lt 2 ]; then
   usage

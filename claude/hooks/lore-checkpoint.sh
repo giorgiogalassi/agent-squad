@@ -46,7 +46,8 @@
 # vault-check.sh's index_set_row / index_set_active; see sync_index below.
 #
 # Worktree session with a dirty tree: the checkpoint line is
-# "uncommitted work on <branch>: N files" (no progress.txt line, never a commit).
+# "uncommitted work on <branch>: N files" (never a commit). A worktree session
+# with commits since its recorded starting HEAD also appends one progress.txt line.
 #
 # Model: SQUAD_LORE_MODEL (default haiku). Commits the vault if it is a git repo.
 #
@@ -312,6 +313,20 @@ fi
 
 # --- Worktree session: checkpoint line only -------------------------------
 if [ "$TOP" != "$ROOT" ]; then
+  # One progress.txt line per worktree session with committed work, counted
+  # from the HEAD that SessionStart recorded (lore-orient.sh). Notes come from
+  # the commit subjects, no model call. The record is consumed either way.
+  SESSION_REC="$VAULT/projects/$DISPLAY/.squad/sessions/$SESSION_ID"
+  if [ -n "$SESSION_ID" ] && [ -f "$SESSION_REC" ]; then
+    START_HEAD="$(cat "$SESSION_REC" 2>/dev/null)"
+    rm -f "$SESSION_REC"
+    NCOMMITS="$(git rev-list --count "$START_HEAD..HEAD" 2>/dev/null)"
+    if [ "${NCOMMITS:-0}" -gt 0 ] 2>/dev/null && [ "$BRANCH" != HEAD ]; then
+      SUBJECTS="$(git log --reverse --format=%s "$START_HEAD..HEAD" 2>/dev/null | head -n 3 | paste -sd';' - | cut -c1-200)"
+      bash "$HOOK_DIR/squad-progress.sh" append --issue "$BRANCH" \
+        --line "[$(date +%Y-%m-%d)] worktree session: $NCOMMITS commits. Notes: ${SUBJECTS:-none}" >/dev/null 2>&1
+    fi
+  fi
   DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${DIRTY:-0}" -gt 0 ]; then
     # Work stopped before a commit: record it, never commit it.

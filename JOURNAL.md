@@ -1206,6 +1206,42 @@ with report-time parsing.
 
 ---
 
+### Iteration 37: Sidecar retired, worktrees move into hooks (#295)
+
+**Supersedes:** Iteration 22 (Sidecar, the worktree skill) and Iteration 27
+(Sidecar shrunk to open and close). Iteration 22 declined native worktrees
+because they were Claude-only; that reason ended with Iteration 24.
+
+**Problem:** Sidecar hand-rolled, in prose, what Claude Code now does
+natively (`claude -w <name> -n <ticket>`, a keep/remove prompt on exit, the
+session starting inside the worktree so the project's own SessionStart hooks
+fire there). What native does not do is attach to an existing branch, clone
+`node_modules`, compare lockfiles, or refuse removal over uncommitted tracked
+work; those were the parts of the skill worth keeping.
+
+**Change:** `claude/skills/sidecar/` is deleted. `worktree.sh` gains
+`hook-create` (WorktreeCreate: JSON `{name, cwd}` on stdin; attaches an
+existing local or origin branch, else creates; copies the `.worktreeinclude`
+files, clones dependencies, prints only the path; failures go to stderr with a
+non-zero exit) and `hook-remove` (WorktreeRemove: same refusal rule as before,
+now naming the manual command). `lore-orient.sh` prints the orientation block
+inside a linked worktree (base from open PR, `progress.txt`, or `main`; diff
+stat; dependency lines stored by `hook-create`), emits `sessionTitle` = the
+branch, and records the starting HEAD under
+`<vault>/projects/<name>/.squad/sessions/<session-id>`. `lore-checkpoint.sh`
+counts commits from that record and appends one `progress.txt` line, with
+`Notes:` taken from the commit subjects (no model call). The temp suffix for
+cloned trees is now `*.wt-tmp`.
+
+**Verified by the spike on #292 (Claude Code 2.1.312):** WorktreeCreate fires
+before SessionStart and SessionStart still gets `CLAUDE_ENV_FILE`; attaching
+an existing branch from the hook works. **Corrected caveat:** isolation is
+advisory, a `cd` into the main checkout was not refused; nothing in the hooks
+or docs relies on it. **Not verified:** the keep/remove exit prompt on a
+hook-created worktree (interactive only).
+
+---
+
 ### Iteration 32: Incident capture and a stricter Cody
 
 **Problem:** three failures on one day (2026-10-14) were noticed only by

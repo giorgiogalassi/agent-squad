@@ -6,4 +6,3 @@ claude/skills/chisel/SKILL.md|^gh issue create|retires: 1b|2026-10-13
 claude/skills/chisel/SKILL.md|^gh issue edit .*--add-blocking|retires: 1b|2026-10-13
 claude/skills/chisel/SKILL.md|^gh project item-add|retires: 1b|2026-10-13
 claude/agents/cody.md|^gh pr create|retires: 1b|2026-10-13
-claude/skills/sidecar/SKILL.md|^gh pr create|retires: 1b|2026-10-13

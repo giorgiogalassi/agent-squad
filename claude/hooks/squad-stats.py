@@ -865,7 +865,7 @@ def resolve_paths():
 
 
 def pr_outcomes(since, paths):
-    """Outcomes of the PRs Ralph and Sidecar recorded in progress.txt."""
+    """Outcomes of the PRs Ralph and worktree sessions recorded in progress.txt."""
     if paths.get("TRACKER_MODE") != "connected":
         return "skipped-detached", None
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")

@@ -31,7 +31,7 @@ Every skill's path resolution protocol used to start from `git rev-parse
 or take its basename as a fallback project name.
 
 That breaks the moment a skill runs inside a linked git worktree — which
-Sidecar's worktrees are. `--show-toplevel` returns the *linked worktree's
+`claude -w` worktrees are. `--show-toplevel` returns the *linked worktree's
 own* directory, not the main repository's. Verified directly, in a
 throwaway repo with one linked worktree:
 
@@ -41,14 +41,14 @@ linked toplevel: /tmp/wt-test/linked
 ```
 
 Different absolute path, different basename. A skill invoked from inside
-a Sidecar worktree would fail the `lore-config.json` lookup entirely —
+a linked worktree would fail the `lore-config.json` lookup entirely —
 Seed would treat it as a new project and record a mapping for the
 worktree path itself, while every other skill stops with *"run /seed
 first"*. Worse, several skills fall back to
 the CWD basename as the project name when no mapping exists, which means
 `progress.txt`, `architecture.md`, `chisel-config.json`, and every other
 vault file would silently read from and write to a namespace named after
-the *branch* — fragmenting the very evidence trail Sidecar exists to
+the *branch* — fragmenting the very evidence trail the worktree session exists to
 preserve.
 
 ## The fix
@@ -69,8 +69,7 @@ The project root is the parent of that path — correct uniformly, whether
 the current directory is the main checkout or any linked worktree, no
 conditional branching required. This is a native git primitive (`git
 worktree` itself relies on the common-dir/git-dir split internally), not
-a Sidecar-specific convention, so it's robust to worktrees created
-outside Sidecar's own naming convention too.
+a convention of any one tool, so it's robust to worktrees however they were created.
 
 `--path-format=absolute` requires git 2.31+ (released March 2021). Git
 older than that does **not** fail on the unrecognised flag — verified
@@ -145,7 +144,7 @@ stops with a clear error instead of falling back to the vault. Reading
 
 It reports facts, not policy. What a caller does with an empty
 `DISPLAY_NAME` differs by skill — Seed does first contact itself
-(names and records the mapping); Forge, Archy, Chisel, Ralph, and Sidecar fall back to the
+(names and records the mapping); Forge, Archy, Chisel, and Ralph fall back to the
 basename of `PROJECT_ROOT` and continue; Lore handles repair (re-mapping,
 migration), so it reads `PROJECT_ROOT` and proceeds to its own naming
 flow regardless. The script doesn't decide any of that —
@@ -167,14 +166,13 @@ running inside one). Only *vault/display-name resolution* uses the
 recovered project root instead of the raw CWD. Two things that look like
 this fix but deliberately aren't touched by it:
 
-- Sidecar's own Phase 2 still uses `git -C <worktree-path> rev-parse
-  --show-toplevel` to resolve the *worktree's own* absolute path for the
-  `cd <worktree-path>` line it prints — correct as-is, not part of this
+- `worktree.sh` `hook-create` resolves the *worktree's own* absolute path
+  with `git -C <worktree-path>` calls — correct as-is, not part of this
   fix.
 - `lore-orient.sh`'s evidence section (`Branch: ...`, `Recent commits:
   ...`) intentionally uses the ambient working directory, not
   `PROJECT_ROOT` — a session's branch/commit evidence should reflect
-  wherever it actually is, which may be a Sidecar worktree on a different
+  wherever it actually is, which may be a linked worktree on a different
   branch than the main checkout. Only the vault lookup needed the
   common-dir fix; the evidence-gathering git calls were changed from `git
   -C "$ROOT"` to plain `git` for exactly this reason.
@@ -203,7 +201,7 @@ See `README.md`'s Installation section.
 
 Grep for `path-resolve.sh` to verify:
 
-- `claude/skills/{forge,archy,chisel,ralph,seed,sidecar}/SKILL.md`
+- `claude/skills/{forge,archy,chisel,ralph,seed}/SKILL.md`
 - `claude/agents/{cody,reven,lore}.md`
 - `claude/hooks/lore-orient.sh`
 - `claude/hooks/path-resolve.sh` — the actual implementation; everything

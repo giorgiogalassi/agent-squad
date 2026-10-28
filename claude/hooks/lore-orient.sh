@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Lore SessionStart orientation. Read-only. Injects "where you left off"
-# context at session start so you do not have to ask. Never writes, never
-# blocks: it always exits 0 and prints best-effort orientation to stdout,
+# Lore SessionStart orientation. Injects "where you left off" context at
+# session start so you do not have to ask. The only write is the starting-HEAD
+# record of a linked-worktree session (see below). Never blocks: it always exits 0 and prints best-effort orientation to stdout,
 # which the host injects as context.
 #
 # Registered by the plugin's hooks/hooks.json (SessionStart, matcher
@@ -20,14 +20,19 @@ HOOK_INPUT=""
 if [ ! -t 0 ]; then
   IFS= read -r -t 2 -d '' HOOK_INPUT || true
 fi
-HOOK_SOURCE=""
+HOOK_SOURCE=""; HOOK_CWD=""; HOOK_SESSION=""
 if [ -n "$HOOK_INPUT" ]; then
-  if command -v jq >/dev/null 2>&1; then
-    HOOK_SOURCE="$(printf '%s' "$HOOK_INPUT" | jq -r '.source // empty' 2>/dev/null)"
-  else
-    HOOK_SOURCE="$(printf '%s' "$HOOK_INPUT" | sed -n 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-  fi
+  _hk() {
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s' "$HOOK_INPUT" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null
+    else
+      printf '%s' "$HOOK_INPUT" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+    fi
+  }
+  HOOK_SOURCE="$(_hk source)"; HOOK_CWD="$(_hk cwd)"; HOOK_SESSION="$(_hk session_id)"
 fi
+# The session's own directory (a worktree session starts inside the worktree).
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null
 if [ "$HOOK_SOURCE" = "resume" ]; then
   echo "{}"
   exit 0
@@ -77,13 +82,15 @@ fi
 # without jq. The manual fallback is the *only* escaping applied to
 # $1 — callers must pass raw, unescaped text, or content ends up
 # double-escaped in the emitted JSON.
+# SESSION_TITLE (set for a linked-worktree session) adds hookSpecificOutput.sessionTitle.
+SESSION_TITLE=""
 emit_json() {
   local msg="$1" mode="${2:-full}"
   if command -v jq >/dev/null 2>&1; then
     if [ "$mode" = "msg-only" ]; then
       jq -n --arg msg "$msg" '{systemMessage: $msg}'
     else
-      jq -n --arg msg "$msg" '{systemMessage: $msg, hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
+      jq -n --arg msg "$msg" --arg t "$SESSION_TITLE" '{systemMessage: $msg, hookSpecificOutput: ({hookEventName: "SessionStart", additionalContext: $msg} + (if $t != "" then {sessionTitle: $t} else {} end))}'
     fi
     return
   fi
@@ -96,7 +103,9 @@ emit_json() {
   if [ "$mode" = "msg-only" ]; then
     printf '{"systemMessage": "%s"}\n' "$esc"
   else
-    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s"}}\n' "$esc" "$esc"
+    local tj=""
+    [ -n "$SESSION_TITLE" ] && tj=", \"sessionTitle\": \"${SESSION_TITLE//\"/\\\"}\""
+    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s"%s}}\n' "$esc" "$esc" "$tj"
   fi
 }
 
@@ -204,11 +213,87 @@ if [ "$SQUAD_DIR" != "$PROJ/.squad" ] && [ -f "$ROOT/JOURNAL.md" ]; then
   [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
 fi
 
+# Linked-worktree orientation (#295): replaces the Sidecar skill's opening.
+# A session started by `claude -w <branch>` runs inside .claude/worktrees/<name>;
+# the WorktreeCreate hook (worktree.sh hook-create) already attached the branch
+# and cloned node_modules. Here: base, diff stat, dependency lines, the session
+# title, and the starting HEAD that SessionEnd counts commits from.
+WT_TOP="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
+  WT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  OUTPUT="${OUTPUT}${NL}### Worktree session${NL}"
+  if [ -n "$WT_BRANCH" ] && [ "$WT_BRANCH" != HEAD ]; then
+    SESSION_TITLE="$WT_BRANCH"
+    # Base, first match wins: open PR (connected), progress.txt naming this
+    # branch, then main (said explicitly, never silently).
+    WT_BASE=""; WT_BASE_SRC=""
+    if [ "${TRACKER_MODE:-}" = connected ] && command -v gh >/dev/null 2>&1; then
+      _bf="$(mktemp 2>/dev/null)"
+      ( gh pr view "$WT_BRANCH" --json baseRefName -q .baseRefName > "$_bf" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+      _pid=$!; _i=0
+      while kill -0 "$_pid" 2>/dev/null && [ "$_i" -lt 50 ]; do sleep 0.1; _i=$((_i + 1)); done
+      if kill -0 "$_pid" 2>/dev/null; then pkill -P "$_pid" 2>/dev/null; kill "$_pid" 2>/dev/null; fi
+      WT_BASE="$(head -n 1 "$_bf" 2>/dev/null)"; rm -f "$_bf"
+      [ -n "$WT_BASE" ] && WT_BASE_SRC="open PR"
+    fi
+    if [ -z "$WT_BASE" ] && [ -f "$PROJ/.squad/progress.txt" ]; then
+      WT_BASE="$(grep -F "[$WT_BRANCH]" "$PROJ/.squad/progress.txt" 2>/dev/null | tail -n 1 | sed -n 's/.*[Bb]ase[: ]*\([A-Za-z0-9._\/-][A-Za-z0-9._\/-]*\).*/\1/p')"
+      [ -n "$WT_BASE" ] && WT_BASE_SRC="progress.txt"
+    fi
+    if [ -z "$WT_BASE" ]; then WT_BASE="main"; WT_BASE_SRC="default, no PR or progress.txt entry names one"; fi
+    OUTPUT="${OUTPUT}Branch: $WT_BRANCH   Base: $WT_BASE ($WT_BASE_SRC)${NL}"
+    case "$WT_BRANCH" in
+      main|master|develop|release/*|hotfix/*)
+        OUTPUT="${OUTPUT}WARNING: $WT_BRANCH is a shared integration branch; Cody refuses to commit on it.${NL}" ;;
+    esac
+    _bref=""
+    for _c in "$WT_BASE" "origin/$WT_BASE"; do
+      git rev-parse --verify --quiet "$_c^{commit}" >/dev/null 2>&1 && { _bref="$_c"; break; }
+    done
+    if [ -n "$_bref" ]; then
+      OUTPUT="${OUTPUT}Diff vs $_bref: $(git diff "$_bref...HEAD" --stat 2>/dev/null | tail -n 1 | sed 's/^ *//')${NL}"
+    else
+      OUTPUT="${OUTPUT}Diff: base $WT_BASE not found locally${NL}"
+    fi
+    # Dependency lines: stored by hook-create in the worktree's git dir.
+    _deps="$(git rev-parse --absolute-git-dir 2>/dev/null)/squad-deps"
+    if [ -s "$_deps" ]; then
+      while IFS= read -r _l; do
+        case "$_l" in
+          DEP=*)
+            IFS='|' read -r _rel _out _tier _sec <<< "${_l#DEP=}"
+            case "$_out" in
+              cloned) OUTPUT="${OUTPUT}Dependencies: $_tier clone of $_rel in ${_sec}s${NL}" ;;
+              already-present) OUTPUT="${OUTPUT}Dependencies: $_rel already present${NL}" ;;
+              failed) OUTPUT="${OUTPUT}Dependencies: clone of $_rel failed; run your install command in $WT_TOP/$(dirname "$_rel") before testing.${NL}" ;;
+            esac ;;
+          STALE=*)
+            IFS='|' read -r _rel _kind <<< "${_l#STALE=}"
+            case "$_kind" in
+              branch-drift) OUTPUT="${OUTPUT}Dependencies check: WARNING - the lockfile for $_rel differs between branch $WT_BRANCH and the source checkout; the copied node_modules may not match. Install in $WT_TOP/$(dirname "$_rel") before testing.${NL}" ;;
+              presence-diff) OUTPUT="${OUTPUT}Dependencies check: WARNING - the lockfile for $_rel exists in only one of the worktree and the source checkout. Install in $WT_TOP/$(dirname "$_rel") to regenerate it.${NL}" ;;
+              self-stale) OUTPUT="${OUTPUT}Dependencies check: NOTE - the source checkout's node_modules at $_rel is older than its lockfile; the copy may already have been stale. Install in the source checkout, not the worktree.${NL}" ;;
+            esac ;;
+        esac
+      done < "$_deps"
+      case "$OUTPUT" in *"Dependencies check: WARNING"*) OUTPUT="${OUTPUT}If a build or test fails, it may be the dependency mismatch, not the code change.${NL}" ;; esac
+    fi
+    # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
+    if [ -n "$HOOK_SESSION" ]; then
+      mkdir -p "$PROJ/.squad/sessions" 2>/dev/null \
+        && git rev-parse HEAD > "$PROJ/.squad/sessions/$HOOK_SESSION" 2>/dev/null
+      find "$PROJ/.squad/sessions" -type f -mtime +14 -delete 2>/dev/null
+    fi
+  else
+    OUTPUT="${OUTPUT}Detached HEAD in $WT_TOP; no branch name to show.${NL}"
+  fi
+fi
+
 # Local evidence: cheap, offline, lets the model reconcile a stale status.md
 # Uses the actual working directory, not $ROOT: $ROOT is the main project
 # root (needed for the vault lookup above), but the branch/commits should
 # reflect wherever this session actually is — the main checkout, or a
-# Sidecar worktree on a different branch entirely.
+# linked worktree on a different branch entirely.
 OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may be stale)${NL}"
 OUTPUT="${OUTPUT}Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
 OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"

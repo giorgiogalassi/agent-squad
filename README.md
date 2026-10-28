@@ -14,8 +14,8 @@ no write access to the tracker or the repository (see
 
 Forge -> Archy -> Chisel -> Ralph -> Cody -> Reven
 
-Sidecar, on an existing branch: opens a worktree and stops (Cody only on
-explicit opt-in — see "Sidecar" below)
+On an existing branch: `claude -w <branch>` opens a worktree through hooks
+and you iterate in conversation (see "Working on an existing branch" below)
 
 /challenge -> Challenge, standalone, any time (stress-tests a proposal or
 piece of writing before you commit to it — see "Challenge" below); also
@@ -70,42 +70,46 @@ stacked branch and PR per issue in connected mode, one branch per
 dependency chain in detached mode — and `Reven` reviews each PR against
 its base before merge.
 
-## Sidecar: iterating on an existing branch
+## Working on an existing branch
 
 The MVP flow above is sized for a batch of tracker issues. It's the wrong
 tool for "this UI piece is wrong on the branch I already have out" —
 re-running Forge and Chisel just to describe a fix to a branch that
-already exists is pure ceremony, and talking straight to the codebase
-instead leaves no trail in the vault.
+already exists is pure ceremony.
 
-`/sidecar <branch-name>` is the companion entry point for that case. It
-does not touch Forge, Archy, Chisel, or Ralph. Given a branch that
-already exists (typically one with an open PR, or one Ralph committed
-but hasn't closed), it:
+Claude Code opens the worktree natively and the plugin's hooks do the
+rest (the former Sidecar skill is retired):
 
-1. Creates a git worktree for that branch inside the project directory —
-   a real, disposable working copy so you can run and test it without
-   disturbing your main checkout.
-2. Orients from the diff against the branch's base, not from a full
-   re-read of prior planning docs.
-3. Stops. You iterate with the model directly in the worktree, or in a
-   separate session opened there. Cody runs only if you say "hand this to
-   Cody", once, with `open pr: no`.
-4. On "done": pushes and opens/updates the PR (or prints the paste-ready
-   description in detached mode), writes one summary line to
-   `progress.txt`, and removes the worktree.
+```bash
+claude -w <branch> -n <ticket>     # open (attach to the branch if it exists)
+# ... iterate in conversation; ask for a push or a PR when you want one ...
+/exit                              # clean worktree: removed; dirty: refused
+claude -w <branch> --resume        # pick the work up again
+```
 
-The worktree is an intentional exception to the squad's usual
-zero-footprint rule: unlike `.squad/` state, it is not squad memory, just
-an ordinary disposable checkout, git-ignored in the host project and
-gone by the time Sidecar closes. The evidence trail lands in the same
-`progress.txt` Ralph already writes to — one line per Sidecar session,
-not one per fix, since issues at this stage are small enough that a
-session-level summary is enough. Sidecar is deliberately just open and
-close: a Cody cold start per fix is the wrong granularity for iterative
-tweaks, and a separate session per worktree already gives isolation
-while keeping the conversational thread. Reven is never invoked automatically;
-run it yourself when you're ready for another review pass.
+- **Open** (`WorktreeCreate` hook, `worktree.sh hook-create`): if `<branch>`
+  is an existing local or origin branch the worktree attaches to it,
+  otherwise a new branch of that name is created. `node_modules` is cloned
+  (reflink or clonefile where available), the files `.worktreeinclude`
+  lists are copied, and lockfile staleness is recorded.
+- **Orient** (`SessionStart` hook, `lore-orient.sh`): inside a linked
+  worktree it prints the branch, its base (open PR, then `progress.txt`,
+  then `main`, said explicitly), the diff stat and the dependency check
+  lines, names the session after the branch when `-n` is not given, and
+  records the starting HEAD.
+- **Close** (`SessionEnd` hook, `lore-checkpoint.sh`): one `progress.txt`
+  line per session with committed work, counted from the starting HEAD,
+  plus the `status.md` checkpoint. `WorktreeRemove` (`worktree.sh
+  hook-remove`) deletes the cloned `node_modules` and removes the worktree,
+  and refuses when tracked files have uncommitted changes, naming the
+  manual command.
+
+Cody and Reven are never invoked automatically here; ask for them when you
+want them. Do not rely on Claude Code to stop commands from leaving the
+worktree: isolation is advisory, not enforced.
+
+The keep/remove prompt on `/exit` for a hook-created worktree has not been
+verified yet; it needs one interactive check.
 
 ## Challenge: stress-testing a proposal before you commit to it
 
@@ -242,7 +246,6 @@ agent-squad/
       chisel/       YAML/PRD -> GitHub issues
       seed/         Project initialization -> .squad/ context files
       ralph/        Agentic loop invoking Cody
-      sidecar/      Worktree-backed iterative fix session on an existing branch
       reven/        Slash-command wrapper delegating to the Reven agent
       lore/         Slash-command wrapper delegating to the Lore agent
       challenge/    Slash-command wrapper delegating to the Challenge agent
@@ -255,10 +258,9 @@ agent-squad/
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
-      worktree.sh      create/path/remove/deps worktree lifecycle
-                       mechanism (used today by Sidecar; Ralph's epic
-                       mode will consume it too — see the "Worktree
-                       hook" section below).
+      worktree.sh      WorktreeCreate/WorktreeRemove hooks plus the
+                       create/path/remove/deps mechanism behind them
+                       (see the "Worktree hook" section below).
       lore-orient.sh   SessionStart read-only orientation script
       lore-checkpoint.sh
       decisions-lint.sh   decisions.md checks (KEY=value per finding), shared by the hook, lore decide and lore check
@@ -374,13 +376,13 @@ not scripted yet (planned batch 1b).
 
 `claude/hooks/worktree.sh` extracts worktree lifecycle management
 (create, locate, remove, dependency population) out of skill prose into
-an executable, testable mechanism. Sidecar consumes it today — Phases 2,
-2b, 2c, and 5 all call into it — and Ralph's future epic mode is
-specified against the same `create`/`path`/`remove`/`deps` contract.
+an executable, testable mechanism. The `WorktreeCreate` and
+`WorktreeRemove` hooks (registered in `hooks/hooks.json`) call its
+`hook-create` and `hook-remove` entry points, and Ralph's future epic mode
+is specified against the same `create`/`path`/`remove`/`deps` contract.
 
 It follows `path-resolve.sh`'s conventions: `KEY=VALUE` lines on
-stdout, mechanism only (no policy — Sidecar still owns when to warn,
-what to say, and when to ask the user for confirmation), no interactive
+stdout, mechanism only (no policy — it never decides what to say or when to ask the user for confirmation), no interactive
 prompts. It resolves its own project root via `path-resolve.sh`
 (expected as a sibling file) and never calls
 `git rev-parse --show-toplevel`, which returns a linked worktree's own
@@ -394,7 +396,12 @@ worktree.sh create <branch>          # WORKTREE_PATH=..., WORKTREE_CREATED=true|
 worktree.sh path <branch>            # WORKTREE_PATH=...
 worktree.sh remove <branch>          # REMOVED=true|false, CLEANED=<paths>
 worktree.sh deps <worktree-path>     # DEP=<rel>|<outcome>|<tier>|<seconds> and STALE=<rel>|<kind> lines
+worktree.sh hook-create              # WorktreeCreate: JSON {name, cwd} on stdin, prints only the path
+worktree.sh hook-remove              # WorktreeRemove: JSON {worktree_path} on stdin; exit 1 refuses
 ```
+
+The hooks report failures on stderr with a non-zero exit, which makes
+Claude Code fail the creation.
 
 Depends only on `git` and POSIX shell utilities — no `jq`.
 
@@ -411,8 +418,9 @@ keys; read-only otherwise).
 
 ### SessionStart auto-orientation
 
-A read-only hook can inject "where you left off" at the start of every
-session, so you do not have to ask. It never writes and never blocks. It
+A hook can inject "where you left off" at the start of every
+session, so you do not have to ask. It never blocks; its only write is the
+starting-HEAD record of a linked-worktree session. It
 also calls `path-resolve.sh`. The plugin registers it in
 `claude/hooks/hooks.json`; there is nothing to install.
 The hook also skips `resume` on its own, so switching sessions in agent
@@ -546,13 +554,13 @@ vault files directly when needed.
       prd/archive/                 archived by Chisel
       chisel-config.json           written on first Chisel run
       issues/                      detached-mode batch files and handoffs
-      progress.txt                 Ralph's per-issue batch memory, and Sidecar's one-line-per-session summary. Read by Cody.
+      progress.txt                 Ralph's per-issue batch memory, and the SessionEnd hook's one-line-per-worktree-session summary. Read by Cody.
     golden.md                      Golden Q&A template. Created by Seed if absent, never overwritten.
     status.md                      Resumption handoff. Reconstructed by the SessionEnd hook or `lore recover`. Checkpointed by the `cody-checkpoint.sh` SubagentStop hook when Cody finishes.
     decisions.md                   Key decisions log. Entries retire via `Supersedes:`/`Superseded by:` markers; 60 active cap, overflow to `decisions-archive.md`. Written by Lore on both platforms. `lore decide` is the single write path (`lore prefer` project-only calls it; `Superseded in part by:` keeps an entry active); `lore prefer` writes project-only rules here as `[rule]` entries (`--decision` writes an untagged one); `lore supersede` retires entries and `lore audit` lists stale ones (global ones go to `development.md`, never both). Fed back: Forge reads every active `[rule]` entry (cap 15) plus the last 20 active untagged ones, Ralph injects `development.md` plus those decisions into every Cody prompt, and Reven reads both before reviewing.
 ```
 
-Sidecar is the one exception to "all runtime files live in the vault": its
+Worktrees are the one exception to "all runtime files live in the vault": the
 git worktree (`.claude/worktrees/<branch>/`) lives inside the host project
 itself, git-ignored there, and is removed when the session closes. This
 path matches Claude Code's own native worktree convention
@@ -679,7 +687,7 @@ lives in `scripts/plugin-version-bump.sh`.
 
 ## Evals (tier 2)
 
-`claude/evals/` holds five advisory `claude plugin eval` cases that the bash
+`claude/evals/` holds six advisory `claude plugin eval` cases that the bash
 tests cannot cover, because they check what the agent *prose* does:
 
 | Case | Checks (zero-cost graders only) |
@@ -687,6 +695,7 @@ tests cannot cover, because they check what the agent *prose* does:
 | `connected-claim` | Cody runs `squad-labels.sh claim` in a connected fixture |
 | `detached-claim` | no Bash call contains `gh`; Cody does not call `squad-labels.sh claim` (Ralph records the detached claim in its handoff); the final answer carries `HEAD_SHA=` (the branch step ran) |
 | `worktree-continue` | Cody runs `squad-branch.sh continue` from a worktree and reports `HEAD_SHA=` |
+| `worktree-orient` | the SessionStart orientation script, run for a session inside a worktree, emits `sessionTitle` = the branch and the `Branch: ... Base: ...` line |
 | `ralph-no-review` | Ralph's skill text: with `--no-review` Phase 2e is skipped (reading check, no agents spawned) |
 | `ralph-review-loop` | Ralph's skill text: two `CHANGES REQUESTED` ends `needs-review` with `review: 2 rounds, last verdict CHANGES REQUESTED` (reading check) |
 
