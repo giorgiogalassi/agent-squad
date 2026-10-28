@@ -37,7 +37,7 @@ update INDEX;
 `lore prefer "<x>"` = record a preference, global or project-only;
 `lore decide "<title>: <body>" [--supersedes "<date> <title>"] [--rule]` = record a project decision;
 `lore supersede "<title>"...` = retire decisions.md entries;
-`lore audit [project]` = list entries the checkout no longer bears out.
+`lore audit [project]` = list entries the checkout no longer bears out, and batch items of merged issues.
 
 **Vault location:** `SECOND_BRAIN_PATH` if set and non-empty, else
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
@@ -290,8 +290,29 @@ missing → say so and stop).
    `lore supersede "<title>"` line.
 
 Never supersede automatically and write nothing: the user confirms, then
-runs `lore supersede`. `lore start` ends with one line offering
-`lore audit` when the project has active decisions.
+runs `lore supersede`.
+
+### Batch items of merged issues
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh list
+```
+
+Read the `AUDIT_ITEM=<batch>|<line>|<key>|<question|criterion>|<hash>|<text>` lines
+(`AUDIT_COUNT`, `AUDIT_BATCHES`); none = say so. Show one line per item with
+batch and issue key. For each, ask the user: **answered**, **still open** or
+**obsolete**; edit nothing without the answer. Then:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh close <batch> --line <n> --hash <hash> --as answered|open|obsolete [--decision "<YYYY-MM-DD> <title>"]
+```
+
+Read `OUTCOME`, `CHANGED`. Exit 0 = done; 10 = missing decision entry (record
+it with `lore decide`, then re-run) or bad or stale line (the batch changed since
+list: re-run `list`), report it; 2/20 report and stop.
+`answered` strikes the item and points to the `decisions.md` entry, `open`
+carries it to `status.md` Next, `obsolete` strikes it. Pass `<line>` and `<hash>` from the item's own AUDIT_ITEM line as is; the `<text>` is escaped for display, so never recompute the hash from it.
+An item can be listed while its PR is still open (`resolved` is not `merged`); "still open" is the right answer then.
 
 ## `lore check [--fix] [--all]`
 

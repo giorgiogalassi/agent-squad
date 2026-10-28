@@ -40,6 +40,8 @@ on:
       - "scripts/test-lore-incidents.sh"
       - "scripts/test-lore-checkpoint.sh"
       - "scripts/test-decisions-lint.sh"
+      - "scripts/test-batch-audit.sh"
+      - "claude/hooks/batch-audit.sh"
       - "scripts/test-vault-check.sh"
       - "claude/hooks/vault-check.sh"
       - "scripts/test-lore-index.sh"
@@ -123,6 +125,10 @@ jobs:
       - name: Run scripts/test-lore-checkpoint.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-lore-checkpoint.sh; else bash scripts/test-lore-checkpoint.sh; fi
+
+      - name: Run scripts/test-batch-audit.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-batch-audit.sh; else bash scripts/test-batch-audit.sh; fi
 
       - name: Run scripts/test-decisions-lint.sh (bash 3.2 on macOS)
         run: |
