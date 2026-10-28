@@ -8,7 +8,8 @@
 # `commit` commits the paths Lore wrote (on the lore/<project>-<date> branch in PR
 # mode, see lore-config.json "vault_main"). `finish` pushes that branch and opens
 # or updates its PR (connected mode only; detached never pushes).
-# Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no (unchanged: paths left uncommitted)
+# Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no (commit unchanged: paths left
+# uncommitted; finish unchanged: nothing pushed and no PR created)
 # Exit: 0 ok, 2 usage, 20 resolution, push or PR failure.
 set -u
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -32,7 +33,11 @@ case "$CMD" in
     ;;
   finish)
     squad_vault_finish "$V" || exit 20
-    squad_emit OUTCOME applied; squad_emit CHANGED yes
+    if [ "${SQUAD_VAULT_PUSHED:-0}" -gt 0 ]; then
+      squad_emit OUTCOME applied; squad_emit CHANGED yes
+    else
+      squad_emit OUTCOME unchanged; squad_emit CHANGED no
+    fi
     ;;
   *) squad_fail 2 "usage: vault-pr.sh commit \"<message>\" <path>... | finish" ;;
 esac

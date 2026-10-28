@@ -488,7 +488,13 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   branch per project and day. The main checkout ends level with `origin/main`.
   At SessionEnd (connected mode) `lore-checkpoint.sh` pushes the branch and
   opens the PR, or updates the open one (`vault-pr.sh finish`). Detached
-  mode commits to the branch and never pushes.
+  mode commits to the branch and never pushes. An explicit `"vault_main"`
+  setting skips detection entirely; without one, the hook runs once per day
+  (result cached in the vault's `.git/lore-pr-mode`) and a detected PR mode is
+  announced on stderr with a hint to set the value. A branch whose PR was
+  merged (squash or rebase included) is dropped at the next session end
+  (worktree and local branch, never forced over uncommitted changes); later
+  writes the same day go to `lore/<project>-<date>-2`, `-3`, ...
 - Optional decision nudge, off by default: set `"lore": {"nudge": true}` in
   `lore-config.json` and a `Stop` hook (`lore-nudge.sh`) asks a small model
   (`claude -p --model haiku`) at the end of each turn whether the turn settled

@@ -26,7 +26,7 @@ cat > "$TMPROOT/bin/gh" <<'EOP'
 #!/usr/bin/env bash
 echo "gh $*" >> "$GH_LOG"
 case "$1 $2" in
-  "pr list") printf '%s' "${GH_OPEN:-}" ;;
+  "pr list") case "$*" in *"--state merged"*) printf '%s' "${GH_MERGED_OID:-}" ;; *) printf '%s' "${GH_OPEN:-}" ;; esac ;;
   "pr create") echo "https://example.invalid/pull/7" ;;
   *) exit 1 ;;
 esac
@@ -110,6 +110,78 @@ mkdir -p "$V/preferences"; printf -- '- [2026-10-28] [global] x\n' > "$V/prefere
 (cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/vault-pr.sh" commit "[lore] pref" preferences/development.md >/dev/null 2>&1)
 check "commit: main level" level "$(level "$V")"
 check "commit: file on the branch" 1 "$(git -C "$V" show "$B:preferences/development.md" 2>/dev/null | grep -c global)"
+
+finish() {  # finish <vault> [env assignments...]: run vault-pr.sh finish, stdout to $TMPROOT/fin.out
+  local v="$1"; shift
+  (cd "$TMPROOT" && env "$@" SECOND_BRAIN_PATH="$v" bash "$TMPROOT/hooks/vault-pr.sh" finish > "$TMPROOT/fin.out" 2>/dev/null)
+}
+land() {  # land <vault> <origin-name> <branch>: squash-merge simulation, files copied onto origin main
+  rm -rf "$TMPROOT/lander"; git clone -q "$TMPROOT/$2-origin.git" "$TMPROOT/lander" 2>/dev/null
+  git -C "$1" archive "$3" projects | tar -x -C "$TMPROOT/lander"
+  git -C "$TMPROOT/lander" add -A && git -C "$TMPROOT/lander" commit -qm squash && git -C "$TMPROOT/lander" push -q origin main 2>/dev/null
+}
+
+# 6. Squash-merged branch: tree equals main; cleaned, not re-pushed, no PR created.
+mkvault sq '{"vault_main": "pr"}'; V="$TMPROOT/sq"
+decide "$V" "One: first"; B="lore/proj-$(date +%Y-%m-%d)"
+land "$V" sq "$B"
+: > "$GH_LOG"; finish "$V"; rc=$?
+check "squash: finish exit 0" 0 "$rc"
+check "squash: branch removed" "" "$(branches "$V")"
+check "squash: worktree removed" 0 "$(ls -d "$V"/.claude/worktrees/lore-* 2>/dev/null | wc -l | tr -d ' ')"
+git -C "$V" ls-remote --exit-code origin "refs/heads/$B" >/dev/null 2>&1; check "squash: not re-pushed" 2 $?
+check "squash: no pr create" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
+check "squash: nothing to do reports CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+
+# 7. Merged PR reported by gh (main's tree differs): dropped; dirty worktree refused.
+mkvault mg '{"vault_main": "pr"}'; V="$TMPROOT/mg"
+decide "$V" "One: first"
+tip="$(git -C "$V" rev-parse "$B")"
+: > "$GH_LOG"; printf 'x\n' >> "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)/projects/proj/decisions.md"
+finish "$V" GH_MERGED_OID="$tip"; rc=$?
+check "merged dirty: exit 20" 20 "$rc"
+check "merged dirty: branch kept" "$B " "$(branches "$V")"
+git -C "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)" checkout -q -- projects/proj/decisions.md
+finish "$V" GH_MERGED_OID="$tip"; rc=$?
+check "merged clean: exit 0" 0 "$rc"
+check "merged clean: branch removed" "" "$(branches "$V")"
+check "merged clean: no pr create" 0 "$(grep -c '^gh pr create' "$GH_LOG")"
+: > "$GH_LOG"; FAKE_TRACKER_MODE=detached; export FAKE_TRACKER_MODE; finish "$V"; unset FAKE_TRACKER_MODE
+check "detached finish: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+
+# 8. Same-day write after a merge starts a fresh branch.
+mkvault fr '{"vault_main": "pr"}'; V="$TMPROOT/fr"
+decide "$V" "One: first"; finish "$V"
+check "fresh: first finish pushed" "CHANGED=yes" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+land "$V" fr "$B"; git -C "$TMPROOT/fr-origin.git" branch -D "$B" >/dev/null 2>&1
+decide "$V" "Two: second"
+check "fresh: second branch" "$B-2" "$(git -C "$V" for-each-ref --format='%(refname:short)' 'refs/heads/lore/*-2')"
+check "fresh: merged branch untouched, not reused" 1 "$(git -C "$V" show "$B-2:projects/proj/decisions.md" | grep -c '^## .*Two')"
+check "fresh: second branch has one commit" 1 "$(git -C "$V" rev-list --count origin/main.."$B-2")"
+check "fresh: main tree clean" "" "$(git -C "$V" status --porcelain)"
+: > "$GH_LOG"; finish "$V"
+check "fresh: finish drops merged, pushes new" "CHANGED=yes" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+check "fresh: one pr create" 1 "$(grep -c '^gh pr create' "$GH_LOG")"
+finish "$V" GH_OPEN=9
+check "finish with nothing to push: CHANGED=no" "CHANGED=no" "$(grep '^CHANGED=' "$TMPROOT/fin.out")"
+
+# 9. Detection runs the pre-push hook once; an explicit setting never runs it.
+mkvault cnt; V="$TMPROOT/cnt"; : > "$TMPROOT/hook.count"
+cat > "$V/.git/hooks/pre-push" <<EOP
+#!/bin/sh
+echo run >> "$TMPROOT/hook.count"
+exit 1
+EOP
+chmod +x "$V/.git/hooks/pre-push"
+(cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/lore-decide.sh" "One: first" >/dev/null 2>"$TMPROOT/det.err")
+decide "$V" "Two: second"; decide "$V" "Three: third"
+check "detect: hook ran once across three commits" 1 "$(wc -l < "$TMPROOT/hook.count" | tr -d ' ')"
+check "detect: mode is named and setting recommended" 1 "$(grep -c 'vault_main' "$TMPROOT/det.err")"
+check "detect: three commits on branch" 3 "$(git -C "$V" rev-list --count origin/main.."$B")"
+mkvault exp '{"vault_main": "pr"}'; V="$TMPROOT/exp"; : > "$TMPROOT/hook.count"
+cp "$TMPROOT/cnt/.git/hooks/pre-push" "$V/.git/hooks/pre-push"
+decide "$V" "One: first"; decide "$V" "Two: second"
+check "explicit: hook never ran" 0 "$(wc -l < "$TMPROOT/hook.count" | tr -d ' ')"
 
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]
