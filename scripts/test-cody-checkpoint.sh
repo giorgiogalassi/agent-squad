@@ -51,7 +51,7 @@ setup connected
 commit_on 296-x "[#296] add thing"
 FAKE_PR="7 main" run_hook
 grep -q 'PR #7 opened. Branch: 296-x @' "$STATUS" && ok "pr: checkpoint line in status.md" || bad "pr: checkpoint line"
-check "pr: progress line" "[#296] resolved. PR: #7 (base: main). Notes: [#296] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+check "pr: progress line" "[#296] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [#296] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
 check "pr: summary STATE" pr "$(envval STATE)"
 check "pr: summary TREE" clean "$(envval TREE)"
 check "pr: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
@@ -149,6 +149,58 @@ mkdir -p "$(dirname "$PROGRESS")"; echo "[#296] 2026-10-24 resolved. PR: #7 (bas
 FAKE_PR="7 main" run_hook
 check "progress dedupe by PR number" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
 
+# 4c2. PR-mode vault: the current progress.txt is the lore worktree's copy; a line already
+#      committed there (vault main lacks it) must not be appended again
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-w "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$_wt/projects/fixture/.squad"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: from lore branch" >> "$_wt/projects/fixture/.squad/progress.txt"
+git -C "$_wt" add -A; $GIT -C "$_wt" commit -q -m "lore: progress"
+FAKE_PR="7 main" run_hook
+check "pr mode: lore worktree line dedupes" 1 "$(grep -c '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt")"
+check "pr mode: vault main copy untouched" 0 "$(cat "$PROGRESS" 2>/dev/null | grep -c '^\[#296\]')"
+
+# 4c3. PR mode, no worktree yet: the dedupe falls back to vault main and the read creates
+#      no branch and no worktree
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-n "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: on main" > "$PROGRESS"
+rm -f "$STATUS"  # the status note is a separate, legitimate vault write; keep it out of this check
+FAKE_PR="7 main" run_hook
+check "pr mode, no worktree: main copy dedupes" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
+check "pr mode, no worktree: no lore branch created" 0 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
+check "pr mode, no worktree: no worktree created" 1 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
+
+# 4c4. local-only project in a PR-mode vault: no worktree lookup (a worktree copy holding the
+#      line is ignored, so the line is appended to the main copy)
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+git -C "$F_VAULT" rm -q --cached projects/fixture/status.md; $GIT -C "$F_VAULT" commit -q -m untrack
+printf 'projects/fixture/status.md\n' >> "$F_VAULT/.git/info/exclude"
+commit_on 296-o "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$_wt/projects/fixture/.squad"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: from lore branch" >> "$_wt/projects/fixture/.squad/progress.txt"
+FAKE_PR="7 main" run_hook
+check "local-only: worktree copy not consulted" 1 "$(grep -c '^\[#296\]' "$PROGRESS" 2>/dev/null)"
+
+# 4c5. PR mode: vault main holds an uncommitted line, the worktree copy lacks it -> no duplicate
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-m "[#296] add thing"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$(dirname "$PROGRESS")"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: uncommitted on main" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "pr mode: main-only line, no duplicate on main" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
+grep -q '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt" 2>/dev/null && bad "pr mode: main-only line, nothing added to worktree" || ok "pr mode: main-only line, nothing added to worktree"
+
 # 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 setup connected
 commit_on 296-p "[#296] add thing"
@@ -171,6 +223,52 @@ setup connected
 commit_on 296-c "[#296] add thing"
 FAKE_PR="7 main" run_hook
 git -C "$F_VAULT" log --format=%s | grep -qx 'lore: progress fixture' && ok "control: progress commit keeps name" || bad "control: progress commit keeps name"
+
+# 4f. bare numeric ID in the subject ([283]) is normalised to [#283]: one progress line, summary ISSUE=#283
+setup connected
+commit_on 283-x "[283] add thing"
+FAKE_PR="7 main" run_hook
+check "bare ID: progress line normalised" "[#283] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [283] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+check "bare ID: summary ISSUE" "#283" "$(envval ISSUE)"
+# a legacy undated [283] line for the same PR counts as already recorded
+echo "[283] resolved. PR: #7 (base: main). Notes: legacy" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "bare ID: legacy line dedupes" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+
+# 4g. fix-round commit on a branch whose PR is already recorded: no second "opened" line, no second progress line
+setup connected
+commit_on 296-f "[#296] add thing"
+FAKE_PR="7 main" run_hook
+echo r >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "[#296] address review"
+FAKE_PR="7 main" run_hook
+check "fix round: one 'PR #7 opened' line" 1 "$(grep -c 'PR #7 opened' "$STATUS")"
+grep -q 'PR #7 updated. Branch: 296-f @ .*address review' "$STATUS" && ok "fix round: updated line" || bad "fix round: updated line"
+check "fix round: one progress line" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+check "fix round: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
+
+# 4i. only issue-key shapes count as an ID: [WIP] records nothing, [ABC-12] is a key, [#N] dedupe is anchored to line start
+setup connected
+BEFORE="$(cat "$STATUS")"
+commit_on 296-w "[WIP] add thing"
+FAKE_PR="7 main" run_hook
+check "non-key bracket: status unchanged" "$BEFORE" "$(cat "$STATUS")"
+[ -s "$PROGRESS" ] && bad "non-key bracket: no progress line" || ok "non-key bracket: no progress line"
+setup connected
+commit_on 12-k "[ABC-12] add thing"
+FAKE_PR="7 main" run_hook
+check "letters-digits key: progress line" "[ABC-12] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [ABC-12] add thing" "$(cat "$PROGRESS" 2>/dev/null)"
+setup connected
+commit_on 296-a "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"; echo "[#111] 2026-10-24 resolved. PR: #7 (base: main). Notes: [#296] mentioned only" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "dedupe anchored: ID inside Notes does not count" 2 "$(wc -l < "$PROGRESS" | tr -d ' ')"
+
+# 4h. Cody prose: claim is a scripted step before the first edit and again before review; commits use [#N]
+CODY="$REPO_ROOT/claude/agents/cody.md"
+grep -q 'squad-labels.sh claim --issue' "$CODY" && ok "cody.md: claim step" || bad "cody.md: claim step"
+check "cody.md: claim runs before review and again at PR time" 2 "$(grep -c 'squad-labels.sh claim --issue' "$CODY")"
+check "cody.md: re-claim and review each handle exit 20" 2 "$(awk '/claim --issue <n>/{f=1} f&&/^ *\| 20 \|/{c++} END{print c+0}' "$CODY")"
+grep -q 'git commit -m "\[#<issue-number>\]' "$CODY" && ok "cody.md: commit subject uses [#N]" || bad "cody.md: commit subject uses [#N]"
 
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?

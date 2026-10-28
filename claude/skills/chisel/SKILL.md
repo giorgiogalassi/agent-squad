@@ -132,6 +132,11 @@ pending PRD — Chisel archives after consumption). Otherwise read
 `.squad/forge/output.yaml`. Existence decides; never ask. Neither
 exists → say "No PRD or Forge output to consume" and stop.
 
+**Complexity gate.** Before reading the input, run
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-route.sh gate` (add `--override`
+only when the user passes it explicitly). Exit 0 → continue. Exit 10 →
+print the stderr line verbatim and stop; create nothing.
+
 ## Issue granularity
 
 Each issue: completable by one agent in one session without external

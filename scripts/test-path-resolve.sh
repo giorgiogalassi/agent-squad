@@ -71,5 +71,26 @@ else
   bad "connected case needs jq on PATH"
 fi
 
+# ---- lore-config.local.json (#355): untracked mappings merged over lore-config.json
+if command -v jq >/dev/null 2>&1; then
+  LOCAL="$VAULT/lore-config.local.json"; MAIN="$VAULT/lore-config.json"
+  val() { printf '%s\n' "$OUT" | sed -n "s/^$1=//p"; }
+  rm -f "$MAIN" "$LOCAL"
+  printf '{"projects":{"%s":"secret-client"},"context":{"%s":"repo"}}\n' "$PROJ" "$PROJ" > "$LOCAL"
+  run ""
+  [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local-only mapping -> DISPLAY_NAME" || bad "local-only mapping: $OUT"
+  [ "$(val SQUAD_DIR)" = "$PROJ/.squad" ] && ok "local-only context repo -> SQUAD_DIR" || bad "local context: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c '=')" = 5 ] && ok "still five output lines" || bad "output shape: $OUT"
+  printf '{"projects":{"%s":"tracked-name"}}\n' "$PROJ" > "$MAIN"
+  run ""
+  [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local mapping wins over tracked" || bad "merge precedence: $OUT"
+  rm -f "$LOCAL"; run ""
+  [ "$(val DISPLAY_NAME)" = "tracked-name" ] && ok "tracked mapping alone still works" || bad "tracked only: $OUT"
+  printf 'not json' > "$LOCAL"; run ""
+  [ "$(val DISPLAY_NAME)" = "tracked-name" ] && ok "invalid local file ignored" || bad "invalid local: $OUT"
+else
+  bad "local-config cases need jq on PATH"
+fi
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
