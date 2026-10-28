@@ -24,7 +24,7 @@ fixture "$TMP/a"
 c8 "$TMP/a" | grep -q '\[FAIL\]' && bad "pristine copy passes check 8" || ok "pristine copy passes check 8"
 
 fixture "$TMP/b"
-printf '\nRun `bash ${CLAUDE_PLUGIN_ROOT}/hooks/nope.sh go`.\n' >> "$TMP/b/claude/skills/sidecar/SKILL.md"
+printf '\nRun `bash ${CLAUDE_PLUGIN_ROOT}/hooks/nope.sh go`.\n' >> "$TMP/b/claude/skills/seed/SKILL.md"
 c8 "$TMP/b" | grep -q 'nope.sh' && ok "skill ref to missing hook is reported" || bad "skill ref to missing hook is reported"
 bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$TMP/b" >/dev/null 2>&1 && bad "missing hook exits non-zero" || ok "missing hook exits non-zero"
 
@@ -37,7 +37,7 @@ c9() { bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$1" 2>&1 | sed -n '/
 c9 "$TMP/a" | grep -q '\[FAIL\]' && bad "pristine copy passes check 9" || ok "pristine copy passes check 9"
 
 fixture "$TMP/d"
-printf '\nRun `bash ~/.claude/hooks/path-resolve.sh`.\n' >> "$TMP/d/claude/skills/sidecar/SKILL.md"
+printf '\nRun `bash ~/.claude/hooks/path-resolve.sh`.\n' >> "$TMP/d/claude/skills/seed/SKILL.md"
 c8 "$TMP/d" | grep -q 'plugin root' && ok "copy-install path is reported" || bad "copy-install path is reported"
 
 fixture "$TMP/e"

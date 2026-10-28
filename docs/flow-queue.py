@@ -19,7 +19,7 @@ STATIONS = [
     ("merge", "you", "Merge", "gate"),
     ("ckpt", "SessionEnd", "lore-checkpoint", "hook"),
 ]
-SIDE = ("sidecar", "/sidecar", "Sidecar", "side")  # side path, below the track
+SIDE = ("sidecar", "claude -w", "worktree", "side")  # side path, below the track
 
 # caption, plan token, #12, #13, highlighted station
 STEPS = [
@@ -31,7 +31,7 @@ STEPS = [
     ("Ralph loops, issue 2 of 2: #13 branches from #12's branch", None, "cody", "cody", "ralph"),
     ("Tests first again. PR #13 is stacked on #12's branch", None, "cody", "cody", "cody"),
     ("You run Reven on each PR. Each diffs against its own base", None, "reven", "reven", "reven"),
-    ("You fix a review note on #13 in a sidecar worktree. “Done” pushes it", None, "reven", "sidecar", "sidecar"),
+    ("You fix a review note on #13 in a worktree opened by hooks (claude -w)", None, "reven", "sidecar", "sidecar"),
     ("You retarget #13 to main, then merge #12", None, "merge", "reven", "merge"),
     ("Then #13 merges", None, "merge", "merge", "merge"),
     ("SessionEnd: lore-checkpoint updates status.md", None, "ckpt", "ckpt", "ckpt"),
@@ -160,7 +160,7 @@ static = (f"#t12{{{tf(pos('reven', '12'))}}}#t13{{{tf(pos('reven', '13'))}}}"
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="ttl dsc">',
        '<title id="ttl">Agent Squad: one batch through the pipeline</title>',
        '<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue '
-       '(tests first, the second PR stacked on the first), you review with Reven and fix one note in a sidecar, '
+       '(tests first, the second PR stacked on the first), you review with Reven and fix one note in a hook-opened worktree, '
        'retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>',
        '<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'
        '<path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker>'

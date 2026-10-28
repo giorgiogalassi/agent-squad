@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Executable test harness for claude/hooks/worktree.sh.
+# Executable test harness for claude/hooks/worktree.sh (subcommands and the
+# WorktreeCreate/WorktreeRemove hook entry points, fed JSON on stdin).
 #
 # The repo has no build system and no test suite; correctness has been
 # verified by prose review. worktree.sh is the first artifact where that
@@ -201,9 +202,9 @@ test_remove_cleans_generated_trees() {
   repo="$(fresh remove-cleans)"
   out="$(run_hook "$repo" create feat-g 2>"$TMPROOT/err0")"
   wt_path="$(printf '%s\n' "$out" | sed -n 's/^WORKTREE_PATH=//p')"
-  mkdir -p "$wt_path/node_modules/pkg" "$wt_path/build.sidecar-tmp"
+  mkdir -p "$wt_path/node_modules/pkg" "$wt_path/build.wt-tmp"
   echo x >"$wt_path/node_modules/pkg/index.js"
-  echo x >"$wt_path/build.sidecar-tmp/junk"
+  echo x >"$wt_path/build.wt-tmp/junk"
 
   out="$(run_hook "$repo" remove feat-g 2>"$TMPROOT/err")"
   rc=$?
@@ -218,8 +219,8 @@ test_remove_cleans_generated_trees() {
     *) fail "REMOVE-1-cleaned-names-node-modules" "CLEANED=[$cleaned] does not name node_modules" ;;
   esac
   case "$cleaned" in
-    *.sidecar-tmp*) pass "REMOVE-1-cleaned-names-sidecar-tmp" ;;
-    *) fail "REMOVE-1-cleaned-names-sidecar-tmp" "CLEANED=[$cleaned] does not name *.sidecar-tmp" ;;
+    *.wt-tmp*) pass "REMOVE-1-cleaned-names-sidecar-tmp" ;;
+    *) fail "REMOVE-1-cleaned-names-sidecar-tmp" "CLEANED=[$cleaned] does not name *.wt-tmp" ;;
   esac
   if [ ! -d "$wt_path" ]; then pass "REMOVE-1-worktree-gone"; else fail "REMOVE-1-worktree-gone" "$wt_path still exists"; fi
 }
@@ -304,8 +305,8 @@ test_deps_stale_tmp_no_nesting() {
   target="$repo/.claude/worktrees/target-wt"
   mkdir -p "$target/node_modules"
   echo "original" >"$target/node_modules/existing-marker.js"
-  mkdir -p "$target/node_modules.sidecar-tmp/junk"
-  echo x >"$target/node_modules.sidecar-tmp/junk/x"
+  mkdir -p "$target/node_modules.wt-tmp/junk"
+  echo x >"$target/node_modules.wt-tmp/junk/x"
 
   out="$(run_hook "$repo" deps "$target" 2>"$TMPROOT/err")"
   rc=$?
@@ -316,7 +317,7 @@ test_deps_stale_tmp_no_nesting() {
     *"DEP=node_modules|already-present|-|0"*) pass "DEPS-2-reports-already-present" ;;
     *) fail "DEPS-2-reports-already-present" "output=[$out]" ;;
   esac
-  if [ ! -e "$target/node_modules.sidecar-tmp" ]; then pass "DEPS-2-stale-tmp-deleted"; else fail "DEPS-2-stale-tmp-deleted" "$target/node_modules.sidecar-tmp still exists"; fi
+  if [ ! -e "$target/node_modules.wt-tmp" ]; then pass "DEPS-2-stale-tmp-deleted"; else fail "DEPS-2-stale-tmp-deleted" "$target/node_modules.wt-tmp still exists"; fi
   entries="$(find "$target/node_modules" -mindepth 1 -maxdepth 1 2>/dev/null)"
   if [ "$entries" = "$target/node_modules/existing-marker.js" ]; then
     pass "DEPS-2-no-nesting"
@@ -432,6 +433,115 @@ test_deps_mtime_all_digits() {
 }
 
 # ---------------------------------------------------------------------
+# hook entry points (WorktreeCreate / WorktreeRemove JSON on stdin)
+# ---------------------------------------------------------------------
+
+# hook_create <repo> <name>: feed the WorktreeCreate payload on stdin, with
+# the process cwd deliberately NOT the repo (the hook must honor `cwd`).
+# Sets HOOK_OUT, HOOK_ERR, HOOK_RC.
+hook_create() {
+  repo="$1"
+  name="$2"
+  HOOK_OUT="$(cd "$TMPROOT" && printf '{"session_id":"s1","transcript_path":"/x","cwd":"%s","hook_event_name":"WorktreeCreate","name":"%s"}' "$repo" "$name" | "$WT" hook-create 2>"$TMPROOT/herr")"
+  HOOK_RC=$?
+  HOOK_ERR="$(cat "$TMPROOT/herr")"
+}
+
+hook_remove() {
+  repo="$1"
+  path="$2"
+  HOOK_OUT="$(cd "$TMPROOT" && printf '{"session_id":"s1","cwd":"%s","hook_event_name":"WorktreeRemove","worktree_path":"%s"}' "$repo" "$path" | "$WT" hook-remove 2>"$TMPROOT/herr")"
+  HOOK_RC=$?
+  HOOK_ERR="$(cat "$TMPROOT/herr")"
+}
+
+test_hook_attach_existing_local() {
+  repo="$(fresh hook-local)"
+  git -C "$repo" branch feat-local
+  git -C "$repo" worktree list >/dev/null
+  hook_create "$repo" feat-local
+  if [ "$HOOK_RC" = "0" ]; then pass "HOOK-1-local-exit-zero"; else fail "HOOK-1-local-exit-zero" "rc=$HOOK_RC err=[$HOOK_ERR]"; fi
+  if [ "$HOOK_OUT" = "$repo/.claude/worktrees/feat-local" ]; then pass "HOOK-1-local-stdout-is-only-the-path"; else fail "HOOK-1-local-stdout-is-only-the-path" "stdout=[$HOOK_OUT]"; fi
+  br="$(git -C "$HOOK_OUT" symbolic-ref --short HEAD 2>/dev/null)"
+  if [ "$br" = "feat-local" ]; then pass "HOOK-1-local-branch-attached"; else fail "HOOK-1-local-branch-attached" "branch=[$br]"; fi
+}
+
+test_hook_attach_origin_only() {
+  repo="$(fresh hook-origin)"
+  bare="$TMPROOT/origin-hook.git"
+  git init -q --bare "$bare" >/dev/null 2>&1
+  git -C "$repo" remote add origin "$bare"
+  git -C "$repo" checkout -q -b feat-remote
+  echo remote >"$repo/remote.txt"
+  git -C "$repo" add remote.txt
+  git -C "$repo" commit -q -m "remote work"
+  tip="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" push -q origin feat-remote >/dev/null 2>&1
+  git -C "$repo" checkout -q main
+  git -C "$repo" branch -q -D feat-remote
+  git -C "$repo" update-ref -d refs/remotes/origin/feat-remote 2>/dev/null
+  hook_create "$repo" feat-remote
+  if [ "$HOOK_RC" = "0" ]; then pass "HOOK-2-origin-exit-zero"; else fail "HOOK-2-origin-exit-zero" "rc=$HOOK_RC err=[$HOOK_ERR]"; fi
+  head="$(git -C "$HOOK_OUT" rev-parse HEAD 2>/dev/null)"
+  if [ "$head" = "$tip" ]; then pass "HOOK-2-origin-head-is-branch-tip"; else fail "HOOK-2-origin-head-is-branch-tip" "head=[$head] tip=[$tip]"; fi
+}
+
+test_hook_create_new() {
+  repo="$(fresh hook-new)"
+  hook_create "$repo" brand-new
+  if [ "$HOOK_RC" = "0" ] && [ -d "$HOOK_OUT" ]; then pass "HOOK-3-new-created"; else fail "HOOK-3-new-created" "rc=$HOOK_RC out=[$HOOK_OUT] err=[$HOOK_ERR]"; fi
+  br="$(git -C "$HOOK_OUT" symbolic-ref --short HEAD 2>/dev/null)"
+  if [ "$br" = "brand-new" ]; then pass "HOOK-3-new-branch-named"; else fail "HOOK-3-new-branch-named" "branch=[$br]"; fi
+}
+
+test_hook_create_failure_stderr() {
+  repo="$(fresh hook-fail)"
+  # A payload without a name must fail: non-zero, message on stderr, nothing on stdout.
+  HOOK_OUT="$(cd "$TMPROOT" && printf '{"cwd":"%s","name":""}' "$repo" | "$WT" hook-create 2>"$TMPROOT/herr")"
+  rc=$?
+  err="$(cat "$TMPROOT/herr")"
+  if [ "$rc" != "0" ] && [ -n "$err" ] && [ -z "$HOOK_OUT" ]; then pass "HOOK-4-failure-nonzero-and-stderr-only"; else fail "HOOK-4-failure-nonzero-and-stderr-only" "rc=$rc out=[$HOOK_OUT] err=[$err]"; fi
+}
+
+test_hook_deps_and_include() {
+  repo="$(fresh hook-deps)"
+  mkdir -p "$repo/node_modules/pkg"
+  echo x >"$repo/node_modules/pkg/i.js"
+  echo '{}' >"$repo/package-lock.json"
+  echo secret >"$repo/.env.local"
+  printf '.env.local\n' >"$repo/.gitignore"
+  printf '# copied\n.env.local\n' >"$repo/.worktreeinclude"
+  hook_create "$repo" feat-deps
+  if [ -f "$HOOK_OUT/node_modules/pkg/i.js" ]; then pass "HOOK-5-node_modules-cloned"; else fail "HOOK-5-node_modules-cloned" "missing in $HOOK_OUT"; fi
+  if [ "$(cat "$HOOK_OUT/.env.local" 2>/dev/null)" = "secret" ]; then pass "HOOK-5-worktreeinclude-copied"; else fail "HOOK-5-worktreeinclude-copied" ".env.local missing"; fi
+  gd="$(git -C "$HOOK_OUT" rev-parse --absolute-git-dir)"
+  if grep -q '^DEP=node_modules|cloned|' "$gd/squad-deps" 2>/dev/null; then pass "HOOK-5-deps-lines-stored"; else fail "HOOK-5-deps-lines-stored" "$(cat "$gd/squad-deps" 2>/dev/null)"; fi
+}
+
+test_hook_remove_clean() {
+  repo="$(fresh hook-rm)"
+  mkdir -p "$repo/node_modules/pkg"
+  echo x >"$repo/node_modules/pkg/i.js"
+  hook_create "$repo" feat-rm
+  path="$HOOK_OUT"
+  hook_remove "$repo" "$path"
+  if [ "$HOOK_RC" = "0" ] && [ ! -e "$path" ]; then pass "HOOK-6-remove-clean-worktree"; else fail "HOOK-6-remove-clean-worktree" "rc=$HOOK_RC exists=$([ -e "$path" ] && echo yes) err=[$HOOK_ERR]"; fi
+}
+
+test_hook_remove_refuses_on_dirty_tracked() {
+  repo="$(fresh hook-rm-dirty)"
+  hook_create "$repo" feat-dirty
+  path="$HOOK_OUT"
+  echo changed >>"$path/README.md"
+  hook_remove "$repo" "$path"
+  if [ "$HOOK_RC" = "1" ] && [ -d "$path" ]; then pass "HOOK-7-remove-refuses-on-dirty-tracked"; else fail "HOOK-7-remove-refuses-on-dirty-tracked" "rc=$HOOK_RC exists=$([ -d "$path" ] && echo yes)"; fi
+  case "$HOOK_ERR" in
+    *"git worktree remove "*) pass "HOOK-7-refusal-names-manual-command" ;;
+    *) fail "HOOK-7-refusal-names-manual-command" "stderr=[$HOOK_ERR]" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------
 # run everything
 # ---------------------------------------------------------------------
 
@@ -449,6 +559,13 @@ test_deps_stale_tmp_no_nesting
 test_deps_dep_line_format
 test_deps_no_symlinks_no_install
 test_deps_mtime_all_digits
+test_hook_attach_existing_local
+test_hook_attach_origin_only
+test_hook_create_new
+test_hook_create_failure_stderr
+test_hook_deps_and_include
+test_hook_remove_clean
+test_hook_remove_refuses_on_dirty_tracked
 
 echo "---"
 echo "$PASS_COUNT passed, $FAIL_COUNT failed (against $WT)"

@@ -16,7 +16,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
 
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
-cp "$REPO_ROOT"/claude/hooks/{lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore-checkpoint.sh,squad-progress.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 SUT="$TMPROOT/hooks/lore-checkpoint.sh"
 EVIDENCE="$TMPROOT/evidence"
 printf '#!/bin/sh\ncat > "%s"\nexit 1\n' "$EVIDENCE" > "$TMPROOT/fakebin/claude"
@@ -102,6 +102,20 @@ check "worktree HEAD unchanged" "$HEAD_BEFORE" "$(git -C "$F_WT" rev-parse HEAD)
 [ -f "$F_VAULT/projects/fixture/.squad/progress.txt" ] && bad "no progress line" || ok "no progress line"
 printf '{"cwd":"%s"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
 check "dirty line is idempotent" 1 "$(grep -c 'uncommitted work on fixture-wt' "$STATUS")"
+
+# 6b. worktree session with commits since its recorded starting HEAD: one progress.txt line (#295)
+git -C "$F_WT" checkout -q -- . 2>/dev/null; rm -f "$F_WT/d1.txt" "$F_WT/d2.txt"
+mkdir -p "$F_VAULT/projects/fixture/.squad/sessions"
+git -C "$F_WT" rev-parse HEAD > "$F_VAULT/projects/fixture/.squad/sessions/sess-6b"
+echo one > "$F_WT/c1.txt"; git -C "$F_WT" add c1.txt; git -C "$F_WT" -c user.name=T -c user.email=t@example.com commit -q -m "first session change"
+echo two > "$F_WT/c2.txt"; git -C "$F_WT" add c2.txt; git -C "$F_WT" -c user.name=T -c user.email=t@example.com commit -q -m "second session change"
+printf '{"cwd":"%s","session_id":"sess-6b"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
+PROG="$F_VAULT/projects/fixture/.squad/progress.txt"
+grep -q '^\[fixture-wt\] .*worktree session: 2 commits\. Notes: first session change;second session change' "$PROG" 2>/dev/null \
+  && ok "worktree session: progress line counts from the starting HEAD" || bad "worktree session progress line: $(cat "$PROG" 2>/dev/null)"
+[ -e "$F_VAULT/projects/fixture/.squad/sessions/sess-6b" ] && bad "session record consumed" || ok "session record consumed"
+printf '{"cwd":"%s","session_id":"sess-6b"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
+check "no second progress line without a record" 1 "$(grep -c 'worktree session' "$PROG")"
 
 # 7. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt

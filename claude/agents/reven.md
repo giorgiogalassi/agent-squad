@@ -72,7 +72,7 @@ branch) must be reviewed against its own base, not `main`.
 
 Resolve in this order; the first hit wins:
 
-1. `base: <branch>` given in your prompt (Ralph, Sidecar or the user can
+1. `base: <branch>` given in your prompt (Ralph or the user can
    pass it). Always wins.
 2. PR host named in `architecture.md` and not GitHub: read the PR's base
    through the access path that section names.

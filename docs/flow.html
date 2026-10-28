@@ -78,7 +78,7 @@
   .branch .cmd { color: var(--side); font-weight: 500; }
   .branch b { display: block; font-weight: 600; margin-bottom: 2px; }
   .branch p { margin: 0; color: var(--muted); }
-  .b-sidecar { grid-column: 3 / span 2; }
+  .b-worktree { grid-column: 3 / span 2; }
   .b-golden { grid-column: 5 / span 2; }
 
   /* legend */
@@ -112,7 +112,7 @@
     .pipe, .branches { grid-template-columns: 1fr; gap: 22px; }
     .node + .node::before { left: calc(50% - 1px); top: -22px; width: 0; height: 22px; border-top: 0; border-left: 3px solid var(--accent); }
     .node + .node::after { left: calc(50% - 7px); top: -9px; border: 7px solid transparent; border-left: 7px solid transparent; border-top: 9px solid var(--accent); }
-    .branch, .b-sidecar, .b-golden { grid-column: 1; }
+    .branch, .b-worktree, .b-golden { grid-column: 1; }
   }
   a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
@@ -202,9 +202,9 @@
   </div>
 
   <div class="branches">
-    <div class="branch b-sidecar">
-      <b><span class="cmd">/sidecar &lt;branch&gt;</span> after a review</b>
-      <p>Opens a worktree with dependencies and stops. You iterate directly, or in a separate session. Cody only on "hand this to Cody". "Done" pushes, updates the PR, removes the worktree.</p>
+    <div class="branch b-worktree">
+      <b><span class="cmd">claude -w &lt;branch&gt;</span> after a review</b>
+      <p>Hooks open a worktree on the branch with dependencies and orient the session. You iterate in conversation. Cody only when you ask. <code>/exit</code> removes a clean worktree; the SessionEnd hook writes the progress line.</p>
     </div>
   </div>
 
@@ -219,7 +219,7 @@
   <div class="matrix-wrap">
     <table>
       <thead>
-        <tr><th>file</th><th>lives in</th><th>orient</th><th>seed</th><th>forge</th><th>chisel</th><th>ralph</th><th>cody</th><th>reven</th><th>sidecar</th><th>checkpoint</th><th>lore prefer</th></tr>
+        <tr><th>file</th><th>lives in</th><th>orient</th><th>seed</th><th>forge</th><th>chisel</th><th>ralph</th><th>cody</th><th>reven</th><th>worktree hooks</th><th>checkpoint</th><th>lore prefer</th></tr>
       </thead>
       <tbody>
         <tr class="group"><td colspan="12">about you and the project (always in the vault)</td></tr>

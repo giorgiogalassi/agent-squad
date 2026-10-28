@@ -104,6 +104,40 @@ c="$(ctx "$(run_orient "$TMPROOT/absent.tsv")")"
 printf '%s\n' "$c" | grep -q 'uncommitted work on dirty-wt: 2 files' && ok "worktrees: dirty one listed with count" || bad "worktrees: dirty one listed: $c"
 printf '%s\n' "$c" | grep -q 'clean-wt' && bad "worktrees: clean one listed" || ok "worktrees: clean one omitted"
 
+# Linked-worktree session (#295): orientation block, sessionTitle, starting-HEAD record.
+# The main-checkout session emits no sessionTitle.
+printf 'DEP=node_modules|cloned|clonefile|2\nSTALE=node_modules|branch-drift\n' > "$(git -C "$TMPROOT/clean-wt" rev-parse --absolute-git-dir)/squad-deps"
+wt_orient() {  # wt_orient <cwd> <session-id>
+  (cd "$F_PROJECT" && printf '{"source":"startup","cwd":"%s","session_id":"%s"}' "$1" "$2" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)
+}
+o="$(wt_orient "$TMPROOT/clean-wt" sess-wt1)"
+[ "$(printf '%s' "$o" | "$JQ" -r '.hookSpecificOutput.sessionTitle')" = "clean-wt" ] && ok "worktree: sessionTitle is the branch" || bad "worktree: sessionTitle: $o"
+c="$(ctx "$o")"
+printf '%s\n' "$c" | grep -q '### Worktree session' && ok "worktree: orientation block" || bad "worktree: orientation block"
+printf '%s\n' "$c" | grep -q 'Branch: clean-wt   Base: main (default' && ok "worktree: base defaults to main, said explicitly" || bad "worktree: base line: $c"
+printf '%s\n' "$c" | grep -q 'Dependencies: clonefile clone of node_modules in 2s' && ok "worktree: Dependencies line" || bad "worktree: Dependencies line"
+printf '%s\n' "$c" | grep -q 'Dependencies check: WARNING.*node_modules' && ok "worktree: staleness warning" || bad "worktree: staleness warning"
+[ "$(cat "$F_VAULT/projects/fixture/.squad/sessions/sess-wt1" 2>/dev/null)" = "$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)" ] && ok "worktree: starting HEAD recorded" || bad "worktree: starting HEAD record"
+o="$(wt_orient "$F_PROJECT" sess-main)"
+printf '%s' "$o" | "$JQ" -e '.hookSpecificOutput | has("sessionTitle") | not' >/dev/null 2>&1 && ok "main checkout: no sessionTitle" || bad "main checkout: sessionTitle present: $o"
+printf '%s\n' "$(ctx "$o")" | grep -q '### Worktree session' && bad "main checkout: worktree block" || ok "main checkout: no worktree block"
+[ -e "$F_VAULT/projects/fixture/.squad/sessions/sess-main" ] && bad "main checkout: session record written" || ok "main checkout: no session record"
+
+# First write wins (compact/clear reuse the session_id) and resume records too (#295).
+REC_DIR="$F_VAULT/projects/fixture/.squad/sessions"
+FIRST_HEAD="$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)"
+echo c > "$TMPROOT/clean-wt/pre-compact.txt"; git -C "$TMPROOT/clean-wt" add pre-compact.txt
+git -C "$TMPROOT/clean-wt" -c user.name=T -c user.email=t@example.com commit -q -m "before compact"
+(cd "$F_PROJECT" && printf '{"source":"compact","cwd":"%s","session_id":"sess-wt1"}' "$TMPROOT/clean-wt" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" >/dev/null 2>&1)
+[ "$(cat "$REC_DIR/sess-wt1")" = "$FIRST_HEAD" ] && ok "compact keeps the first starting HEAD" || bad "compact moved the starting HEAD: $(cat "$REC_DIR/sess-wt1")"
+[ "$(git -C "$TMPROOT/clean-wt" rev-list --count "$(cat "$REC_DIR/sess-wt1")..HEAD")" = 1 ] && ok "commits before compact stay in the count" || bad "count after compact"
+rm -f "$REC_DIR/sess-res"
+o="$(cd "$F_PROJECT" && printf '{"source":"resume","cwd":"%s","session_id":"sess-res"}' "$TMPROOT/clean-wt" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+[ "$o" = "{}" ] && ok "resume still emits {}" || bad "resume output: $o"
+[ "$(cat "$REC_DIR/sess-res" 2>/dev/null)" = "$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)" ] && ok "resume in a worktree records the starting HEAD" || bad "resume record missing"
+(cd "$F_PROJECT" && printf '{"source":"resume","cwd":"%s","session_id":"sess-res-main"}' "$F_PROJECT" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" >/dev/null 2>&1)
+[ -e "$REC_DIR/sess-res-main" ] && bad "resume on main checkout wrote a record" || ok "resume on main checkout writes no record"
+
 # SessionStart source (#289): resume skips, everything else orients.
 run_src() {  # run_src <stdin-json> [path]
   (cd "$F_PROJECT" && printf '%s' "$1" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" PATH="${2:-$PATH}" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)

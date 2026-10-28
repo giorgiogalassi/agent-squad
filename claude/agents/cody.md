@@ -83,7 +83,7 @@ never happened.
 
 ### 1. Check out the branch
 
-`working_directory: <path>` in your prompt (Sidecar) → skip this step
+`working_directory: <path>` in your prompt (a worktree session) → skip this step
 entirely: run every command with that path as working directory, and
 never switch branches — the worktree is already on the branch,
 and switching inside someone else's worktree corrupts it.

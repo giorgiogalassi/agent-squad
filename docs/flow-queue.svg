@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="ttl dsc">
 <title id="ttl">Agent Squad: one batch through the pipeline</title>
-<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue (tests first, the second PR stacked on the first), you review with Reven and fix one note in a sidecar, retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>
+<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue (tests first, the second PR stacked on the first), you review with Reven and fix one note in a hook-opened worktree, retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>
 <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker><marker id="arrh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--hook)"/></marker></defs>
 <style>
 :root{--bg:#f6f7f9;--surface:#fff;--ink:#1c2230;--muted:#5d6675;--line:#d7dce4;--accent:#0f766e;--accent-soft:#d9f0ec;
@@ -144,7 +144,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 <rect class="box hook" x="1124.0" y="56" width="132" height="64" rx="6"/><rect id="hl_ckpt" class="hl ov" x="1121.0" y="53" width="138" height="70" rx="8"/><text class="cmd mono hook" x="1136.0" y="80">SessionEnd</text><text class="name" x="1136.0" y="102">lore-checkpoint</text>
 <path class="sidelink" d="M875.7 230 Q875.7 282.0 888.3 282.0"/>
 <path class="sidelink" d="M1020.3 282.0 Q1032.9 282.0 1032.9 230"/>
-<rect class="box side" x="888.3" y="250" width="132" height="64" rx="6"/><rect id="hl_sidecar" class="hl ov" x="885.3" y="247" width="138" height="70" rx="8"/><text class="cmd mono side" x="900.3" y="274">/sidecar</text><text class="name" x="900.3" y="296">Sidecar</text>
+<rect class="box side" x="888.3" y="250" width="132" height="64" rx="6"/><rect id="hl_sidecar" class="hl ov" x="885.3" y="247" width="138" height="70" rx="8"/><text class="cmd mono side" x="900.3" y="274">claude -w</text><text class="name" x="900.3" y="296">worktree</text>
 <path class="looparc" d="M698.6 54 C698.6 14 581.4 14 581.4 54" stroke-opacity="0.35" marker-end="url(#arrh)"/>
 <g id="loop" class="ov"><path class="looparc flow" d="M698.6 54 C698.6 14 581.4 14 581.4 54" marker-end="url(#arrh)"/></g>
 <text class="looplbl" x="640.0" y="20" text-anchor="middle">↻ next issue</text>
@@ -162,7 +162,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 <g id="c5" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 6 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Ralph loops, issue 2 of 2: #13 branches from #12's branch</text></g>
 <g id="c6" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 7 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Tests first again. PR #13 is stacked on #12's branch</text></g>
 <g id="c7" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 8 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You run Reven on each PR. Each diffs against its own base</text></g>
-<g id="c8" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 9 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You fix a review note on #13 in a sidecar worktree. “Done” pushes it</text></g>
+<g id="c8" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 9 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You fix a review note on #13 in a worktree opened by hooks (claude -w)</text></g>
 <g id="c9" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 10 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You retarget #13 to main, then merge #12</text></g>
 <g id="c10" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 11 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Then #13 merges</text></g>
 <g id="c11" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 12 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">SessionEnd: lore-checkpoint updates status.md</text></g>

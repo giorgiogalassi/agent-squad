@@ -6,15 +6,15 @@
 # This is mechanism only, not policy: DISPLAY_NAME is printed empty when
 # no mapping exists (or jq is unavailable to read one). What a caller
 # does about an empty DISPLAY_NAME differs by skill — Seed does first
-# contact itself (names and records the mapping); Forge, Chisel, Archy, Ralph, and
-# Sidecar fall back to the basename of PROJECT_ROOT and continue; Lore
+# contact itself (names and records the mapping); Forge, Chisel, Archy, and
+# Ralph fall back to the basename of PROJECT_ROOT and continue; Lore
 # handles repair (re-mapping, migration). This script
 # does not decide any of that — it only reports what's true right now.
 #
 # PROJECT_ROOT is resolved via `git rev-parse --git-common-dir`, not
 # `--show-toplevel`. The two agree in a normal checkout, but
 # `--show-toplevel` returns a *linked worktree's own* directory when run
-# from inside one (e.g. a worktree Sidecar created) rather than the main
+# from inside one (e.g. a worktree `claude -w` created) rather than the main
 # project's — see PATH_RESOLUTION.md for why that matters and how this
 # was verified.
 #
