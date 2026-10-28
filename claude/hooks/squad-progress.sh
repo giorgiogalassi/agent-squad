@@ -61,15 +61,31 @@ current() {
 }
 # stage <rel>: make the vault path hold the current content, ready to edit.
 stage() {
-  local cur base; cur="$(current "$1")"
+  local cur base merged; cur="$(current "$1")"
   mkdir -p "$(dirname "$V/$1")" || return 1
   if [ "$cur" != "$V/$1" ]; then
-    base="$V/$1.base.$$"
     if [ -f "$V/$1" ] && [ -f "$cur" ] && ! git -C "$V" diff --quiet HEAD -- "$1" 2>/dev/null; then
-      # Vault main holds an uncommitted write (async hook): merge, never overwrite.
-      git -C "$V" show "HEAD:$1" > "$base" 2>/dev/null || : > "$base"
-      git merge-file -p --union "$cur" "$base" "$V/$1" > "$V/$1.m" 2>/dev/null; mv "$V/$1.m" "$V/$1"
-      rm -f "$base"
+      # Vault main holds an uncommitted write (async hook).
+      case "$1" in
+        */progress.txt|*/session.log)
+          # Append-only files: union-merge so neither side's lines are lost. Only
+          # a clean exit with non-empty output counts; anything else fails (exit 20
+          # in the caller) and leaves the vault copy untouched.
+          base="$V/$1.base.$$"; merged="$V/$1.m"
+          git -C "$V" show "HEAD:$1" > "$base" 2>/dev/null || : > "$base"
+          if git merge-file -p --union "$cur" "$base" "$V/$1" > "$merged" 2>/dev/null && [ -s "$merged" ]; then
+            mv "$merged" "$V/$1"; rm -f "$base"
+          else
+            rm -f "$merged" "$base"
+            echo "squad-progress: git merge-file failed for $1; vault copy left intact" >&2
+            return 1
+          fi ;;
+        *)
+          # Rewritten files (ralph-run.md): a union would keep both versions of an
+          # edited row, so the lore copy wins over the uncommitted main copy.
+          echo "squad-progress: uncommitted vault-main $1 differs from HEAD; using the lore copy" >&2
+          cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1" ;;
+      esac
     else
       cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1"
     fi

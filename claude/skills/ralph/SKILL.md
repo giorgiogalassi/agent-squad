@@ -341,7 +341,7 @@ the issue is `exempt`/`skipped` in Test specs. Then:
 
 - **Committed, PR not opened** (detached non-last issue only —
   connected always opens): connected n/a; detached append
-  `- [ ] (committed on <branch>) <KEY>` to handoff. `squad-progress.sh append` `progress.txt`:
+  `- [ ] (committed on <branch>) <KEY>` to handoff. Then `squad-progress.sh append`:
   `[ID] committed on <branch> (base: <base>). Notes: <summary>`
 - **Committed and PR opened:** connected: nothing further — Cody already
   swapped `in_progress` → `in_review` (from `state_labels`) when it

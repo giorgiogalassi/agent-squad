@@ -149,5 +149,33 @@ check "race: hook line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#40\] hook l
 check "race: ralph line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#41\] ralph line$')"
 check "race: earlier lines not duplicated" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#5\] resolved')"
 
+# merge-file failure must leave the vault copy intact and fail with exit 20 (no truncation).
+mkdir -p "$TMPROOT/fakegit"
+REALGIT="$(command -v git)"
+cat > "$TMPROOT/fakegit/git" <<EOG
+#!/bin/sh
+for a in "\$@"; do [ "\$a" = merge-file ] && exit 255; done
+exec "$REALGIT" "\$@"
+EOG
+chmod +x "$TMPROOT/fakegit/git"
+printf '[#50] hook line 2\n' >> "$P"
+BEFORE="$(cat "$P")"
+(cd "$TMPROOT" && PATH="$TMPROOT/fakegit:$PATH" SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/squad-progress.sh" append --issue '#51' --line 'x' >"$TMPROOT/out" 2>"$TMPROOT/err"); RC=$?
+check "merge failure: exit 20" 20 "$RC"
+check "merge failure: vault copy intact" "$BEFORE" "$(cat "$P")"
+check "merge failure: reason on stderr" 1 "$(grep -c 'merge' "$TMPROOT/err")"
+check "merge failure: no temp files left" "" "$(ls "$(dirname "$P")" | grep -E '\.(m|base\.[0-9]+)$')"
+git -C "$V" checkout -q -- "projects/proj/.squad/progress.txt" 2>/dev/null
+
+# A dirty ralph-run.md on main must not duplicate rows: the lore copy wins, with a notice.
+R="$V/projects/proj/.squad/ralph-run.md"
+git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" > "$R"
+git -C "$V" add "$R" && git -C "$V" commit -qm "seed run" # main tracks an older ralph-run.md
+printf '%s\n' "$(cat "$R")" | sed -e 's/^Status:.*/Status: dirty/' -e 's/^\(| #6 .*| \)[^|]*|$/\1dirty |/' > "$R.x" && mv "$R.x" "$R"
+sp "$V" run-row --issue '#6' --set 'State=merged'
+check "run dirty: one row per issue" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 ')"
+check "run dirty: row updated" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 .*merged')"
+check "run dirty: notice on stderr" 1 "$(grep -c 'ralph-run.md' "$TMPROOT/err")"
+
 echo "---"; echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]
