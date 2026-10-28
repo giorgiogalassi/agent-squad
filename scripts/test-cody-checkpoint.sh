@@ -164,6 +164,44 @@ FAKE_PR="7 main" run_hook
 check "pr mode: lore worktree line dedupes" 1 "$(grep -c '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt")"
 check "pr mode: vault main copy untouched" 0 "$(cat "$PROGRESS" 2>/dev/null | grep -c '^\[#296\]')"
 
+# 4c3. PR mode, no worktree yet: the dedupe falls back to vault main and the read creates
+#      no branch and no worktree
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-n "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: on main" > "$PROGRESS"
+rm -f "$STATUS"  # the status note is a separate, legitimate vault write; keep it out of this check
+FAKE_PR="7 main" run_hook
+check "pr mode, no worktree: main copy dedupes" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
+check "pr mode, no worktree: no lore branch created" 0 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
+check "pr mode, no worktree: no worktree created" 1 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
+
+# 4c4. local-only project in a PR-mode vault: no worktree lookup (a worktree copy holding the
+#      line is ignored, so the line is appended to the main copy)
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+git -C "$F_VAULT" rm -q --cached projects/fixture/status.md; $GIT -C "$F_VAULT" commit -q -m untrack
+printf 'projects/fixture/status.md\n' >> "$F_VAULT/.git/info/exclude"
+commit_on 296-o "[#296] add thing"
+mkdir -p "$(dirname "$PROGRESS")"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$_wt/projects/fixture/.squad"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: from lore branch" >> "$_wt/projects/fixture/.squad/progress.txt"
+FAKE_PR="7 main" run_hook
+check "local-only: worktree copy not consulted" 1 "$(grep -c '^\[#296\]' "$PROGRESS" 2>/dev/null)"
+
+# 4c5. PR mode: vault main holds an uncommitted line, the worktree copy lacks it -> no duplicate
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-m "[#296] add thing"
+_wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
+mkdir -p "$(dirname "$PROGRESS")"
+echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: uncommitted on main" > "$PROGRESS"
+FAKE_PR="7 main" run_hook
+check "pr mode: main-only line, no duplicate on main" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
+grep -q '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt" 2>/dev/null && bad "pr mode: main-only line, nothing added to worktree" || ok "pr mode: main-only line, nothing added to worktree"
+
 # 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 setup connected
 commit_on 296-p "[#296] add thing"

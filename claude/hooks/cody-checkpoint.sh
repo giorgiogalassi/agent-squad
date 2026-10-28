@@ -103,14 +103,22 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
 fi
 
 PROGRESS="$PROJ/.squad/progress.txt"
-# PR-mode vault: the current progress.txt is the session worktree's copy (vault main is
-# reset after each scripted commit), so the dedupe reads it from there, via the same
-# resolver squad_vault_commit uses. Writes still go through squad_vault_commit.
-SEEN="$PROGRESS"
-if [ "$STATE" = pr ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
-  _wt="$(squad_vault_wt "$VAULT" "$DISPLAY" 2>/dev/null)" && [ -f "$_wt/projects/$DISPLAY/.squad/progress.txt" ] && SEEN="$_wt/projects/$DISPLAY/.squad/progress.txt"
+# PR-mode vault: the current progress.txt may be a session worktree's copy (vault main is
+# reset after each scripted commit), so the dedupe also reads any already existing worktree
+# copy, read-only (squad_vault_wt_existing never creates one). A line in either copy counts.
+_seen() {  # _seen <file>: is this issue's PR line in the file
+  grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$1" 2>/dev/null | grep -qE "PR: #$PR( |$)"
+}
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ]; then
+  _present=0
+  _seen "$PROGRESS" && _present=1
+  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
+    while IFS= read -r _wt; do
+      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/.squad/progress.txt" && _present=1
+    done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
+  fi
 fi
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && ! { grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$SEEN" 2>/dev/null | grep -qE "PR: #$PR( |$)"; }; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && [ "$_present" = 0 ]; then
   printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
   squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
 fi
