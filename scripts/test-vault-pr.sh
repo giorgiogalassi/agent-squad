@@ -183,5 +183,64 @@ cp "$TMPROOT/cnt/.git/hooks/pre-push" "$V/.git/hooks/pre-push"
 decide "$V" "One: first"; decide "$V" "Two: second"
 check "explicit: hook never ran" 0 "$(wc -l < "$TMPROOT/hook.count" | tr -d ' ')"
 
+# 10. Local main ahead of origin: its commits move onto the branch, main is levelled.
+mkvault ahead '{"vault_main": "pr"}'; V="$TMPROOT/ahead"
+echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
+decide "$V" "One: first"
+B="lore/proj-$(date +%Y-%m-%d)"
+check "ahead: main level with origin" level "$(level "$V")"
+check "ahead: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
+check "ahead: two commits on the branch" 2 "$(git -C "$V" rev-list --count origin/main.."$B")"
+mkvault aheadd '{"vault_main": "pr"}'; V="$TMPROOT/aheadd"
+echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
+echo mine > "$V/stray.md"
+ERR="$(cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/lore-decide.sh" "One: first" 2>&1 >/dev/null)"
+check "ahead dirty: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
+check "ahead dirty: user edit kept" mine "$(cat "$V/stray.md" 2>/dev/null)"
+check "ahead dirty: main still ahead" 1 "$(git -C "$V" rev-list --count origin/main..main)"
+check "ahead dirty: warned" 1 "$(printf %s "$ERR" | grep -c "could not be levelled")"
+# A refused reset is retried on the next call, once the tree is clean.
+git -C "$V" checkout -q -- stray.md
+decide "$V" "Two: second"
+check "ahead retry: main level" level "$(level "$V")"
+
+# Existing session branch, worktree gone, main ahead.
+mkvault aheadw '{"vault_main": "pr"}'; V="$TMPROOT/aheadw"
+decide "$V" "One: first"
+git -C "$V" worktree remove --force "$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)"
+echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
+decide "$V" "Two: second"
+check "ahead no-worktree: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
+check "ahead no-worktree: main level" level "$(level "$V")"
+
+# Existing worktree, main gains a commit later.
+mkvault aheadl '{"vault_main": "pr"}'; V="$TMPROOT/aheadl"
+decide "$V" "One: first"
+echo late > "$V/late.md"; git -C "$V" add late.md; git -C "$V" commit -qm "late"
+decide "$V" "Two: second"
+check "ahead later: late commit on the branch" 1 "$(git -C "$V" show "$B:late.md" 2>/dev/null | grep -c late)"
+check "ahead later: main level" level "$(level "$V")"
+
+# Merge conflict: main left as is.
+mkvault aheadc '{"vault_main": "pr"}'; V="$TMPROOT/aheadc"
+echo base > "$V/c.md"; git -C "$V" add c.md; git -C "$V" commit -qm c; git -C "$V" push -q origin main
+decide "$V" "One: first"
+W="$V/.claude/worktrees/lore-proj-$(date +%Y-%m-%d)"
+echo branchside > "$W/c.md"; git -C "$W" commit -qam "branch c"
+echo mainside > "$V/c.md"; git -C "$V" commit -qam "main c"
+decide "$V" "Two: second"
+check "ahead conflict: main stays ahead" 1 "$(git -C "$V" rev-list --count origin/main..main)"
+check "ahead conflict: worktree not mid-merge" "" "$(git -C "$W" status --porcelain | grep -v '^??')"
+
+# Diverged main keeps the old behaviour: nothing moved, nothing reset.
+mkvault div '{"vault_main": "pr"}'; V="$TMPROOT/div"
+echo o > "$V/o.md"; git -C "$V" add o.md; git -C "$V" commit -qm o; git -C "$V" push -q origin main
+git -C "$V" reset -q --hard HEAD~1
+echo l > "$V/l.md"; git -C "$V" add l.md; git -C "$V" commit -qm l
+L="$(git -C "$V" rev-parse main)"
+decide "$V" "One: first"
+check "diverged: main untouched" "$L" "$(git -C "$V" rev-parse main)"
+check "diverged: branch lacks local commit" 0 "$(git -C "$V" show "$B:l.md" 2>/dev/null | grep -c l)"
+
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

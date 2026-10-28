@@ -210,6 +210,31 @@ squad_vault_drop() {
   return 0
 }
 
+# squad_vault_level <vault> <main> <branch> <worktree>: when local main is strictly
+# ahead of origin/main (origin is an ancestor), make sure the session branch holds
+# main's tip (merged inside its worktree; a conflict is aborted and main left as is),
+# then level main with `reset --keep`, which refuses rather than touch uncommitted
+# work (main then stays ahead and the next call retries). A diverged main is untouched.
+squad_vault_level() {
+  local v="$1" m="$2" b="$3" wt="$4" _id=""
+  git -C "$v" rev-parse -q --verify "origin/$m" >/dev/null 2>&1 || return 0
+  [ "$(git -C "$v" rev-parse "$m")" != "$(git -C "$v" rev-parse "origin/$m")" ] || return 0
+  git -C "$v" merge-base --is-ancestor "origin/$m" "$m" 2>/dev/null || return 0
+  if ! git -C "$v" merge-base --is-ancestor "$m" "$b" 2>/dev/null; then
+    git -C "$wt" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
+    git -C "$wt" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
+    # shellcheck disable=SC2086
+    if ! git -C "$wt" $_id merge -q --no-edit "$m" >/dev/null 2>&1; then
+      git -C "$wt" merge --abort >/dev/null 2>&1
+      echo "squad: vault $m is ahead of origin but merging it into $b conflicts; left as is" >&2
+      return 0
+    fi
+  fi
+  git -C "$v" reset -q --keep "origin/$m" >/dev/null 2>&1 \
+    || echo "squad: vault $m is ahead of origin and could not be levelled (uncommitted changes); its commits are on $b" >&2
+  return 0
+}
+
 # squad_vault_wt <vault> <project>: print the session worktree (lore-<name>-<date>
 # on branch lore/<name>-<date>), creating it from origin's main when absent. When
 # that day's branch already landed (merged), later writes use lore/<name>-<date>-2,
@@ -244,6 +269,7 @@ squad_vault_wt() {
       git -C "$v" worktree add -q -b "$b" "$wt" "$base" >/dev/null 2>&1 || return 1
     fi
   fi
+  squad_vault_level "$v" "$br0" "$b" "$wt"
   printf '%s' "$wt"
 }
 
