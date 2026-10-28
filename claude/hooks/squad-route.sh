@@ -8,7 +8,8 @@
 #
 # recommend: takes complexity and change_type from the flags (both or neither;
 #   Forge passes them, so no output.yaml ordering dependency), else reads
-#   forge/output.yaml; emits COMPLEXITY, CHANGE_TYPE, ROUTE. high -> "/archy -> /chisel"; otherwise change_type decides
+#   forge/output.yaml; emits COMPLEXITY, CHANGE_TYPE, ROUTE. Both values are
+#   validated. high -> "/archy -> /chisel"; otherwise change_type decides
 #   (docs -> implement directly, code/mixed -> chisel pipeline).
 # gate: for Chisel. Passes (GATE=ok) unless forge/output.yaml says
 #   complexity: high and prd/current.md is missing (exit 10). No output.yaml
@@ -48,7 +49,7 @@ YAML="$SQUAD/forge/output.yaml"
 field() { sed -n "s/^$1:[[:space:]]*[\"']\{0,1\}\([A-Za-z]*\).*/\1/p" "$YAML" | head -n 1; }
 
 if [ -n "$ARG_C" ]; then
-  COMPLEXITY="$ARG_C"; CHANGE="$ARG_T"
+  COMPLEXITY="$ARG_C"; CHANGE="$ARG_T"; SRC_C="--complexity"; SRC_T="--change-type"
 else
   if [ ! -f "$YAML" ]; then
     [ "$VERB" = gate ] && { squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit GATE ok; exit 0; }
@@ -56,8 +57,10 @@ else
   fi
   COMPLEXITY="$(field complexity)"
   CHANGE="$(field change_type)"
+  SRC_C="output.yaml: complexity"; SRC_T="output.yaml: change_type"
 fi
-case "$COMPLEXITY" in low|medium|high) ;; *) squad_fail 10 "output.yaml: complexity must be low|medium|high" ;; esac
+case "$COMPLEXITY" in low|medium|high) ;; *) squad_fail 10 "$SRC_C must be low|medium|high" ;; esac
+[ "$VERB" = recommend ] && { case "$CHANGE" in code|docs|mixed) ;; *) squad_fail 10 "$SRC_T must be code|docs|mixed" ;; esac; }
 
 if [ "$VERB" = gate ]; then
   if [ "$COMPLEXITY" = high ] && [ ! -f "$SQUAD/prd/current.md" ]; then
@@ -74,7 +77,7 @@ else
   case "$CHANGE" in
     docs) ROUTE="implement directly (or /chisel for tracking)" ;;
     code|mixed) ROUTE="chisel pipeline" ;;
-    *) squad_fail 10 "output.yaml: change_type must be code|docs|mixed" ;;
+    *) ROUTE="" ;;
   esac
 fi
 squad_emit OUTCOME unchanged; squad_emit CHANGED no

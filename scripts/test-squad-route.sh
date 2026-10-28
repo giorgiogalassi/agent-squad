@@ -67,6 +67,17 @@ d="$(mk gq high code)"; run gate --squad-dir "$d" --override
 check "gate emits OUTCOME" "unchanged" "$(key OUTCOME)"
 check "gate emits CHANGED" "no" "$(key CHANGED)"
 
+# change_type is validated on every path and the message names its source
+run recommend --complexity high --change-type bogus
+check "recommend args high bad change-type rc" 10 "$RC"
+check "recommend args high bad change-type stdout" "" "$OUT"
+case "$ERR" in *"--change-type must be code|docs|mixed"*) ok "flag source named" ;; *) bad "flag source named ($ERR)" ;; esac
+run recommend --complexity low --change-type bogus
+case "$ERR" in *"--change-type must be code|docs|mixed"*) ok "flag source named (low)" ;; *) bad "flag source named low ($ERR)" ;; esac
+d="$(mk yb high bogus)"; run recommend --squad-dir "$d"
+check "recommend yaml high bad change_type rc" 10 "$RC"
+case "$ERR" in *"output.yaml: change_type must be code|docs|mixed"*) ok "yaml source named" ;; *) bad "yaml source named ($ERR)" ;; esac
+
 # quoted yaml values
 d="$TMPROOT/quoted"; mkdir -p "$d/forge"
 printf 'complexity: "high"\nchange_type: '"'"'code'"'"'  # note\n' > "$d/forge/output.yaml"
