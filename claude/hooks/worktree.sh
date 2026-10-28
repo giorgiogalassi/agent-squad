@@ -66,22 +66,19 @@
 #   hooks <worktree-path>
 #                      Resolve core.hooksPath as seen from the worktree.
 #                      Unset -> nothing printed. Names an existing folder
-#                      -> HOOKS=ok|<path>. Names a missing folder: run the
-#                      project's package.json "prepare" script when
-#                      declared (any shared core.hooksPath value it
-#                      writes is restored; shared git config is never
-#                      changed), then print HOOKS=installed|<path> or
-#                      HOOKS=missing|<path>. Never runs without a declared
-#                      prepare script.
+#                      -> HOOKS=ok|<path>. Names a missing folder ->
+#                      HOOKS=missing|<path>, plus |<cmd> (the package.json
+#                      "prepare" runner) when one is declared. Never runs
+#                      prepare: husky-style scripts write the shared
+#                      core.hooksPath. hook-create stores this line in
+#                      <worktree git dir>/squad-deps.
 #   env <worktree-path>
 #                      Scan the environment for variables whose value is
-#                      a path inside the source checkout (excluding its
-#                      worktrees and CLAUDE_*/PWD/OLDPWD). Prints
-#                      ENV=<name>|<source value>|<worktree equivalent>.
-#   session <worktree-path>
-#                      Prints SESSION_HOOKS=<events> when the host
-#                      project's .claude/settings.json declares
-#                      SessionStart and/or CwdChanged hooks.
+#                      a single path inside the source checkout (excluding
+#                      its worktrees, CLAUDE_*/PWD/OLDPWD, colon lists).
+#                      Prints ENV=<name>|<source value>|<worktree value>.
+#                      Called by the SessionStart hook, which sees the
+#                      session environment.
 #
 # Depends only on git and POSIX shell utilities. No jq.
 #
@@ -95,7 +92,7 @@ EXIT_REFUSAL=1
 EXIT_ERROR=2
 
 usage() {
-  echo "usage: worktree.sh create|path|remove <branch> | deps|hooks|env|session <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
+  echo "usage: worktree.sh create|path|remove <branch> | deps|hooks|env <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
 }
 
 # --- hook JSON input (hook-create / hook-remove only) ---
@@ -499,7 +496,8 @@ cmd_hook_create() {
   # Dependencies and staleness: failures here never block the session.
   gd="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)"
   deps_out="$(cmd_deps "$path" 2>/dev/null)" || true
-  [ -n "$gd" ] && printf '%s\n' "$deps_out" > "$gd/squad-deps" 2>/dev/null
+  hooks_out="$(cmd_hooks "$path" 2>/dev/null)" || true
+  [ -n "$gd" ] && printf '%s\n%s\n' "$deps_out" "$hooks_out" > "$gd/squad-deps" 2>/dev/null
   echo "$path"
   exit "$EXIT_OK"
 }
@@ -519,7 +517,7 @@ cmd_hook_remove() {
   exit "$EXIT_OK"
 }
 
-# --- hooks / env / session (worktree orientation) ---
+# --- hooks / env (worktree orientation) ---
 
 cmd_hooks() {
   wt="$1"
@@ -588,28 +586,6 @@ cmd_env() {
   exit "$EXIT_OK"
 }
 
-cmd_session() {
-  wt="$1"
-  settings="$wt/.claude/settings.json"
-  [ -f "$settings" ] || settings="$ROOT/.claude/settings.json"
-  [ -f "$settings" ] || exit "$EXIT_OK"
-  events=""
-  for ev in SessionStart CwdChanged; do
-    if command -v jq >/dev/null 2>&1; then
-      jq -e --arg ev "$ev" '.hooks | type == "object" and has($ev)' "$settings" >/dev/null 2>&1 && present=1 || present=0
-    elif grep -q "\"$ev\"[[:space:]]*:" "$settings" 2>/dev/null; then
-      present=1
-    else
-      present=0
-    fi
-    if [ "$present" = 1 ]; then
-      events="${events:+$events,}$ev"
-    fi
-  done
-  [ -z "$events" ] || echo "SESSION_HOOKS=$events"
-  exit "$EXIT_OK"
-}
-
 # --- dispatch ---
 
 case "${1:-}" in
@@ -637,7 +613,6 @@ case "$sub" in
   deps)   cmd_deps "$arg" ;;
   hooks)  cmd_hooks "$arg" ;;
   env)    cmd_env "$arg" ;;
-  session) cmd_session "$arg" ;;
   *)
     usage
     exit "$EXIT_ERROR"

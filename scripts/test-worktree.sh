@@ -81,7 +81,7 @@ fresh() {
   git -C "$d" config commit.gpgsign false
   echo "fixture" >"$d/README.md"
   git -C "$d" add README.md >/dev/null 2>&1
-  git -C "$d" commit -q -m init >/dev/null 2>&1
+  git -C "$d" -c user.name=T -c user.email=t@example.com commit -q -m init >/dev/null 2>&1
   printf '%s\n' "$d"
 }
 
@@ -474,7 +474,7 @@ test_hook_attach_origin_only() {
   git -C "$repo" checkout -q -b feat-remote
   echo remote >"$repo/remote.txt"
   git -C "$repo" add remote.txt
-  git -C "$repo" commit -q -m "remote work"
+  git -C "$repo" -c user.name=T -c user.email=t@example.com commit -q -m "remote work"
   tip="$(git -C "$repo" rev-parse HEAD)"
   git -C "$repo" push -q origin feat-remote >/dev/null 2>&1
   git -C "$repo" checkout -q main
@@ -600,16 +600,13 @@ test_env_override() {
   if [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then pass "ENV-2-source-untouched"; else fail "ENV-2-source-untouched" "dirty"; fi
 }
 
-test_session_hooks() {
-  repo="$(fresh session-hooks)"
-  target="$repo/.claude/worktrees/wt"
-  mkdir -p "$target"
-  out="$(run_hook "$repo" session "$target" 2>/dev/null)"
-  if [ -z "$out" ]; then pass "SESSION-1-none-silent"; else fail "SESSION-1-none-silent" "out=[$out]"; fi
-  mkdir -p "$repo/.claude"
-  printf '{"hooks":{"SessionStart":[],"CwdChanged":[]}}\n' >"$repo/.claude/settings.json"
-  out="$(run_hook "$repo" session "$target" 2>/dev/null)"
-  if [ "$out" = "SESSION_HOOKS=SessionStart,CwdChanged" ]; then pass "SESSION-2-detected"; else fail "SESSION-2-detected" "out=[$out]"; fi
+test_hook_create_stores_hooks_line() {
+  repo="$(fresh hook-hooksline)"
+  git -C "$repo" config core.hooksPath .husky/_
+  hook_create "$repo" feat-hooks
+  gd="$(git -C "$HOOK_OUT" rev-parse --absolute-git-dir)"
+  if grep -qx "HOOKS=missing|$HOOK_OUT/.husky/_" "$gd/squad-deps" 2>/dev/null; then pass "HOOKS-8-hook-create-stores-line"; else fail "HOOKS-8-hook-create-stores-line" "squad-deps=[$(cat "$gd/squad-deps" 2>/dev/null)]"; fi
+  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-9-shared-config-untouched"; else fail "HOOKS-9-shared-config-untouched" "changed"; fi
 }
 
 # ---------------------------------------------------------------------
@@ -641,7 +638,7 @@ test_hooks_missing_no_prepare
 test_hooks_ok_and_unset
 test_hooks_prepare_not_run_config_untouched
 test_env_override
-test_session_hooks
+test_hook_create_stores_hooks_line
 
 echo "---"
 echo "$PASS_COUNT passed, $FAIL_COUNT failed (against $WT)"

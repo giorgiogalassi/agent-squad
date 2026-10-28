@@ -15,7 +15,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 
 # Hooks dir copy with path-resolve.sh alongside, as installed.
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/nojq"
-cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$TMPROOT/hooks/"
+cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/worktree.sh" "$TMPROOT/hooks/"
 # PATH without jq: symlink the tools the hook needs, minus jq.
 for t in bash git cat sed awk grep dirname basename tr wc head tail sort date stat ls mkdir cut find; do
   p="$(command -v "$t" 2>/dev/null)" && [ -x "$p" ] && ln -sf "$p" "$TMPROOT/nojq/$t"
@@ -106,7 +106,7 @@ printf '%s\n' "$c" | grep -q 'clean-wt' && bad "worktrees: clean one listed" || 
 
 # Linked-worktree session (#295): orientation block, sessionTitle, starting-HEAD record.
 # The main-checkout session emits no sessionTitle.
-printf 'DEP=node_modules|cloned|clonefile|2\nSTALE=node_modules|branch-drift\n' > "$(git -C "$TMPROOT/clean-wt" rev-parse --absolute-git-dir)/squad-deps"
+printf 'DEP=node_modules|cloned|clonefile|2\nSTALE=node_modules|branch-drift\nHOOKS=missing|/x/.husky/_|npm run prepare\n' > "$(git -C "$TMPROOT/clean-wt" rev-parse --absolute-git-dir)/squad-deps"
 wt_orient() {  # wt_orient <cwd> <session-id>
   (cd "$F_PROJECT" && printf '{"source":"startup","cwd":"%s","session_id":"%s"}' "$1" "$2" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)
 }
@@ -117,6 +117,15 @@ printf '%s\n' "$c" | grep -q '### Worktree session' && ok "worktree: orientation
 printf '%s\n' "$c" | grep -q 'Branch: clean-wt   Base: main (default' && ok "worktree: base defaults to main, said explicitly" || bad "worktree: base line: $c"
 printf '%s\n' "$c" | grep -q 'Dependencies: clonefile clone of node_modules in 2s' && ok "worktree: Dependencies line" || bad "worktree: Dependencies line"
 printf '%s\n' "$c" | grep -q 'Dependencies check: WARNING.*node_modules' && ok "worktree: staleness warning" || bad "worktree: staleness warning"
+printf '%s\n' "$c" | grep -q 'Git hooks: core.hooksPath points at /x/.husky/_.*npm run prepare' && ok "worktree: missing hooks folder and command" || bad "worktree: hooks line: $c"
+# Env override (#278): scanned at SessionStart, applied through CLAUDE_ENV_FILE.
+ENVF="$TMPROOT/claude-env"; : > "$ENVF"
+o="$(cd "$F_PROJECT" && printf '{"source":"startup","cwd":"%s","session_id":"sess-env"}' "$TMPROOT/clean-wt" | NX_WORKSPACE_ROOT_PATH="$F_PROJECT" CLAUDE_ENV_FILE="$ENVF" SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+c="$(ctx "$o")"
+printf '%s\n' "$c" | grep -qF 'export NX_WORKSPACE_ROOT_PATH="$PWD"' && ok "worktree: override line shown" || bad "worktree: override line: $c"
+grep -q "^export NX_WORKSPACE_ROOT_PATH='.*clean-wt'$" "$ENVF" && ok "worktree: override written to CLAUDE_ENV_FILE" || bad "worktree: env file: $(cat "$ENVF")"
+o="$(cd "$F_PROJECT" && printf '{"source":"startup","cwd":"%s","session_id":"sess-env2"}' "$TMPROOT/clean-wt" | NX_WORKSPACE_ROOT_PATH="$F_PROJECT" SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+printf '%s\n' "$(ctx "$o")" | grep -q 'Env override: WARNING.*Run: export NX_WORKSPACE_ROOT_PATH' && ok "worktree: no env file, manual line" || bad "worktree: manual line"
 [ "$(cat "$F_VAULT/projects/fixture/.squad/sessions/sess-wt1" 2>/dev/null)" = "$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)" ] && ok "worktree: starting HEAD recorded" || bad "worktree: starting HEAD record"
 o="$(wt_orient "$F_PROJECT" sess-main)"
 printf '%s' "$o" | "$JQ" -e '.hookSpecificOutput | has("sessionTitle") | not' >/dev/null 2>&1 && ok "main checkout: no sessionTitle" || bad "main checkout: sessionTitle present: $o"
