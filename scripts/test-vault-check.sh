@@ -262,5 +262,20 @@ lacks "--all: local mapping counts" "VAULT_PROJECT_UNMAPPED=mapped-local" "$out"
 lacks "--all: lore-config.local.json is not a stray root file" "VAULT_STRAY_ROOT=lore-config.local.json" "$out"
 has "render explains unmapped" "ghost" "$(printf '%s\n' "VAULT_SCOPE=vault" "VAULT_PROJECT_UNMAPPED=ghost" | bash "$VC" render)"
 
+# Invalid config JSON must not flag every folder as unmapped; the file is reported instead.
+V6="$TMPROOT/v6"; mkvault "$V6"
+for n in alpha beta; do mkdir -p "$V6/projects/$n"; printf '# Status\n' > "$V6/projects/$n/status.md"; done
+printf '{"projects":{"/a":"alpha","/b":"beta"}}\n' > "$V6/lore-config.json"
+printf '{ not json\n' > "$V6/lore-config.local.json"
+out="$(bash "$VC" check --vault "$V6" --all)"
+lacks "invalid local config: no false unmapped (alpha)" "VAULT_PROJECT_UNMAPPED=alpha" "$out"
+lacks "invalid local config: no false unmapped (beta)" "VAULT_PROJECT_UNMAPPED=beta" "$out"
+has "invalid local config is reported" "VAULT_CONFIG_INVALID=lore-config.local.json" "$out"
+has "render explains invalid config" "lore-config.local.json" "$(printf '%s\n' "VAULT_SCOPE=vault" "VAULT_CONFIG_INVALID=lore-config.local.json" | bash "$VC" render)"
+printf '{"projects":{}}\n' > "$V6/lore-config.local.json"; printf '{ bad\n' > "$V6/lore-config.json"
+out="$(bash "$VC" check --vault "$V6" --all)"
+has "invalid tracked config is reported" "VAULT_CONFIG_INVALID=lore-config.json" "$out"
+lacks "invalid tracked config: no false unmapped" "VAULT_PROJECT_UNMAPPED=alpha" "$out"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

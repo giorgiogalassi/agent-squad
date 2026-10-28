@@ -35,6 +35,8 @@
 # Vault scope (preceded by VAULT_SCOPE=vault):
 #   VAULT_STRAY_ROOT=<file>
 #   VAULT_PROJECT_NO_INDEX=<project>
+#   VAULT_CONFIG_INVALID=<file>        lore-config(.local).json that fails to parse;
+#                                      UNMAPPED is not reported while one is invalid
 #   VAULT_PROJECT_UNMAPPED=<project>   folder in projects/ named by no entry in
 #                                      lore-config.json or lore-config.local.json
 # Fix results: FIXED_INDEX_ROW_DATE, FIXED_INDEX_ROW_ADDED,
@@ -317,13 +319,23 @@ $(printf '%s' "$miss" | squad_shared_projects "$vault")
 EOF
   fi
   if command -v jq >/dev/null 2>&1; then
-    local mapped d
-    mapped="$(cat "$vault/lore-config.json" "$vault/lore-config.local.json" 2>/dev/null | jq -r '.projects[]? // empty' 2>/dev/null)"
-    for d in "$vault"/projects/*/; do
-      [ -d "$d" ] || continue
-      n="${d%/}"; n="${n##*/}"
-      printf '%s\n' "$mapped" | grep -qxF -- "$n" || out="${out}VAULT_PROJECT_UNMAPPED=$n${NL}"
+    local mapped="" d f m bad=""
+    for f in lore-config.json lore-config.local.json; do
+      [ -f "$vault/$f" ] || continue
+      if m="$(jq -r '.projects[]? // empty' "$vault/$f" 2>/dev/null)"; then
+        mapped="${mapped}${m}${NL}"
+      else
+        bad=1; out="${out}VAULT_CONFIG_INVALID=$f${NL}"
+      fi
     done
+    # An unreadable config hides its mappings: report it, not every folder.
+    if [ -z "$bad" ]; then
+      for d in "$vault"/projects/*/; do
+        [ -d "$d" ] || continue
+        n="${d%/}"; n="${n##*/}"
+        printf '%s\n' "$mapped" | grep -qxF -- "$n" || out="${out}VAULT_PROJECT_UNMAPPED=$n${NL}"
+      done
+    fi
   fi
   if [ -n "$out" ]; then emit VAULT_SCOPE vault; printf '%s' "$out"; fi
 }
@@ -346,6 +358,7 @@ render() {
       JOURNAL_POINTER_MISSING) echo "decisions.md: context is repo and $v has no JOURNAL pointer (#330)" ;;
       VAULT_STRAY_ROOT) echo "vault root: stray file $v" ;;
       VAULT_PROJECT_UNMAPPED) echo "projects/$v exists but no lore-config.json or lore-config.local.json entry maps a checkout to it (run /seed, or map it in lore-config.local.json for a local-only project)" ;;
+      VAULT_CONFIG_INVALID) echo "$v is not valid JSON; project mappings in it are ignored (fix or restore it)" ;;
       VAULT_PROJECT_NO_INDEX) echo "INDEX.md: project $v has a status.md and no row" ;;
       FIXED_INDEX_ROW_DATE) echo "fixed: INDEX row date for $v" ;;
       FIXED_INDEX_ROW_ADDED) echo "fixed: INDEX row added for $v" ;;

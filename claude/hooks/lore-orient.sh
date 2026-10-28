@@ -58,8 +58,13 @@ else
   ROOT="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -n "$ROOT" ]; then ROOT="$(dirname "$ROOT")"; else ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; fi
   DISPLAY=""
-  if [ -n "$ROOT" ] && [ -f "$VAULT/lore-config.json" ] && command -v jq >/dev/null 2>&1; then
-    DISPLAY="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$VAULT/lore-config.json" 2>/dev/null)"
+  # Local config first, then tracked, matching path-resolve.sh.
+  if [ -n "$ROOT" ] && command -v jq >/dev/null 2>&1; then
+    for _cfg in lore-config.local.json lore-config.json; do
+      [ -f "$VAULT/$_cfg" ] || continue
+      DISPLAY="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$VAULT/$_cfg" 2>/dev/null)"
+      [ -n "$DISPLAY" ] && break
+    done
   fi
 fi
 
@@ -104,13 +109,29 @@ if [ -z "$ROOT" ]; then
   exit 0
 fi
 UNMAPPED_HINT=""
+NAME_OWNED=""
 if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
-  # No mapping, but the folder exists (local-only setups, #355): orient from it.
-  DISPLAY="${ROOT##*/}"
-  UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run /seed."
+  # Folder exists but no mapping for this checkout (local-only setups, #355).
+  # Use it only when no checkout in either config owns that name.
+  if command -v jq >/dev/null 2>&1; then
+    for _cfg in lore-config.local.json lore-config.json; do
+      [ -f "$VAULT/$_cfg" ] || continue
+      if jq -e --arg n "${ROOT##*/}" '[.projects[]?] | index($n) != null' "$VAULT/$_cfg" >/dev/null 2>&1; then
+        NAME_OWNED=1
+      fi
+    done
+  fi
+  if [ -z "$NAME_OWNED" ]; then
+    DISPLAY="${ROOT##*/}"
+    UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run /seed."
+  fi
 fi
 if [ -z "$DISPLAY" ]; then
-  emit_json "Lore: No vault mapping for this project — run /seed." msg-only
+  if [ -n "$NAME_OWNED" ]; then
+    emit_json "Lore: No vault mapping for this project — run /seed. projects/${ROOT##*/} belongs to another checkout." msg-only
+  else
+    emit_json "Lore: No vault mapping for this project — run /seed." msg-only
+  fi
   exit 0
 fi
 
