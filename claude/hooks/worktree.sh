@@ -63,6 +63,25 @@
 #                      (worktree_path, else name + cwd) and runs `remove`
 #                      on that path. Exit 1 (uncommitted tracked work) names
 #                      the manual command on stderr.
+#   hooks <worktree-path>
+#                      Resolve core.hooksPath as seen from the worktree.
+#                      Unset -> nothing printed. Names an existing folder
+#                      -> HOOKS=ok|<path>. Names a missing folder: run the
+#                      project's package.json "prepare" script when
+#                      declared (any shared core.hooksPath value it
+#                      writes is restored; shared git config is never
+#                      changed), then print HOOKS=installed|<path> or
+#                      HOOKS=missing|<path>. Never runs without a declared
+#                      prepare script.
+#   env <worktree-path>
+#                      Scan the environment for variables whose value is
+#                      a path inside the source checkout (excluding its
+#                      worktrees and CLAUDE_*/PWD/OLDPWD). Prints
+#                      ENV=<name>|<source value>|<worktree equivalent>.
+#   session <worktree-path>
+#                      Prints SESSION_HOOKS=<events> when the host
+#                      project's .claude/settings.json declares
+#                      SessionStart and/or CwdChanged hooks.
 #
 # Depends only on git and POSIX shell utilities. No jq.
 #
@@ -76,7 +95,7 @@ EXIT_REFUSAL=1
 EXIT_ERROR=2
 
 usage() {
-  echo "usage: worktree.sh create|path|remove <branch> | deps <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
+  echo "usage: worktree.sh create|path|remove <branch> | deps|hooks|env|session <worktree-path> | hook-create|hook-remove (JSON on stdin)" >&2
 }
 
 # --- hook JSON input (hook-create / hook-remove only) ---
@@ -497,6 +516,104 @@ cmd_hook_remove() {
   fi
   # Stdout is not part of the WorktreeRemove contract; keep it quiet.
   remove_path "$path" >/dev/null
+  exit "$EXIT_OK"
+}
+
+# --- hooks / env / session (worktree orientation) ---
+
+# Shared-config core.hooksPath (the value every worktree sees unless a
+# per-worktree config overrides it). Empty when unset.
+shared_hooks_path() {
+  git -C "$ROOT" config --local --get core.hooksPath 2>/dev/null
+}
+
+cmd_hooks() {
+  wt="$1"
+  if [ ! -d "$wt" ]; then
+    echo "error: worktree path does not exist: $wt" >&2
+    exit "$EXIT_ERROR"
+  fi
+
+  hp="$(git -C "$wt" config --get core.hooksPath 2>/dev/null)"
+  [ -n "$hp" ] || exit "$EXIT_OK"
+
+  case "$hp" in
+    /*) abs="$hp" ;;
+    *)  abs="$wt/$hp" ;;
+  esac
+
+  if [ -d "$abs" ]; then
+    echo "HOOKS=ok|$abs"
+    exit "$EXIT_OK"
+  fi
+
+  pkg="$wt/package.json"
+  if [ -f "$pkg" ] && grep -q '"prepare"[[:space:]]*:' "$pkg" 2>/dev/null; then
+    runner="npm"
+    [ -f "$wt/pnpm-lock.yaml" ] && runner="pnpm"
+    [ -f "$wt/yarn.lock" ] && runner="yarn"
+    if [ -f "$wt/bun.lock" ] || [ -f "$wt/bun.lockb" ]; then runner="bun"; fi
+
+    before="$(shared_hooks_path)"
+    (cd "$wt" && "$runner" run prepare >/dev/null 2>&1) || true
+    # Husky-style prepare scripts run `git config core.hooksPath`, which
+    # lands in the shared .git/config. Put the shared value back.
+    after="$(shared_hooks_path)"
+    if [ "$after" != "$before" ]; then
+      if [ -n "$before" ]; then
+        git -C "$ROOT" config --local core.hooksPath "$before"
+      else
+        git -C "$ROOT" config --local --unset core.hooksPath
+      fi
+    fi
+
+    if [ -d "$abs" ]; then
+      echo "HOOKS=installed|$abs"
+      exit "$EXIT_OK"
+    fi
+  fi
+
+  echo "HOOKS=missing|$abs"
+  exit "$EXIT_OK"
+}
+
+cmd_env() {
+  wt="$1"
+  if [ ! -d "$wt" ]; then
+    echo "error: worktree path does not exist: $wt" >&2
+    exit "$EXIT_ERROR"
+  fi
+
+  env | while IFS= read -r line; do
+    case "$line" in
+      [A-Za-z_]*=*) ;;
+      *) continue ;;
+    esac
+    name="${line%%=*}"
+    val="${line#*=}"
+    case "$name" in
+      PWD|OLDPWD|_|CLAUDE_*) continue ;;
+    esac
+    case "$val" in
+      "$ROOT"/.claude/worktrees|"$ROOT"/.claude/worktrees/*|"$ROOT"/.codex/worktrees|"$ROOT"/.codex/worktrees/*) continue ;;
+      "$ROOT") echo "ENV=$name|$val|$wt" ;;
+      "$ROOT"/*) echo "ENV=$name|$val|$wt${val#"$ROOT"}" ;;
+    esac
+  done
+  exit "$EXIT_OK"
+}
+
+cmd_session() {
+  settings="$ROOT/.claude/settings.json"
+  [ -f "$settings" ] || exit "$EXIT_OK"
+  events=""
+  for ev in SessionStart CwdChanged; do
+    if grep -q "\"$ev\"" "$settings" 2>/dev/null; then
+      events="${events:+$events,}$ev"
+    fi
+  done
+  [ -z "$events" ] || echo "SESSION_HOOKS=$events"
+  exit "$EXIT_OK"
 }
 
 # --- dispatch ---
@@ -524,6 +641,9 @@ case "$sub" in
   path)   cmd_path "$arg" ;;
   remove) cmd_remove "$arg" ;;
   deps)   cmd_deps "$arg" ;;
+  hooks)  cmd_hooks "$arg" ;;
+  env)    cmd_env "$arg" ;;
+  session) cmd_session "$arg" ;;
   *)
     usage
     exit "$EXIT_ERROR"

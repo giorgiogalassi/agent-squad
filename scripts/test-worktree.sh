@@ -542,6 +542,74 @@ test_hook_remove_refuses_on_dirty_tracked() {
 }
 
 # ---------------------------------------------------------------------
+# hooks / env / session (#278)
+# ---------------------------------------------------------------------
+
+test_hooks_missing_no_prepare() {
+  repo="$(fresh hooks-missing)"
+  git -C "$repo" config core.hooksPath .husky/_
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=missing|$target/.husky/_" ]; then pass "HOOKS-1-missing-reported"; else fail "HOOKS-1-missing-reported" "out=[$out]"; fi
+  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-2-shared-config-untouched"; else fail "HOOKS-2-shared-config-untouched" "changed"; fi
+}
+
+test_hooks_ok_and_unset() {
+  repo="$(fresh hooks-ok)"
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ -z "$out" ]; then pass "HOOKS-3-unset-silent"; else fail "HOOKS-3-unset-silent" "out=[$out]"; fi
+  git -C "$repo" config core.hooksPath .husky/_
+  mkdir -p "$target/.husky/_"
+  out="$(run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=ok|$target/.husky/_" ]; then pass "HOOKS-4-ok"; else fail "HOOKS-4-ok" "out=[$out]"; fi
+}
+
+test_hooks_prepare_runs_and_restores_config() {
+  repo="$(fresh hooks-prepare)"
+  git -C "$repo" config core.hooksPath .husky/_
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  # Fake runner: prepare creates the hooks folder and, like husky, also
+  # rewrites the shared core.hooksPath. The hook must put it back.
+  printf '{"scripts":{"prepare":"x"}}\n' >"$target/package.json"
+  bindir="$TMPROOT/fakebin-prepare"
+  mkdir -p "$bindir"
+  cat >"$bindir/npm" <<'FAKE'
+#!/bin/sh
+mkdir -p .husky/_
+git config core.hooksPath changed-by-prepare
+FAKE
+  chmod +x "$bindir/npm"
+  out="$(PATH="$bindir:$PATH" run_hook "$repo" hooks "$target" 2>/dev/null)"
+  if [ "$out" = "HOOKS=installed|$target/.husky/_" ]; then pass "HOOKS-5-installed"; else fail "HOOKS-5-installed" "out=[$out]"; fi
+  if [ "$(git -C "$repo" config --local core.hooksPath)" = ".husky/_" ]; then pass "HOOKS-6-shared-config-restored"; else fail "HOOKS-6-shared-config-restored" "got [$(git -C "$repo" config --local core.hooksPath)]"; fi
+}
+
+test_env_override() {
+  repo="$(fresh env-scan)"
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(cd "$repo" && NX_WORKSPACE_ROOT_PATH="$repo/app" OTHER_WT="$repo/.claude/worktrees/x" UNRELATED=/elsewhere CLAUDE_PROJECT_DIR="$repo" "$WT" env "$target" 2>/dev/null | grep -v '^ENV=\(PWD\|OLDPWD\)|')"
+  if [ "$out" = "ENV=NX_WORKSPACE_ROOT_PATH|$repo/app|$target/app" ]; then pass "ENV-1-override-reported"; else fail "ENV-1-override-reported" "out=[$out]"; fi
+  if [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then pass "ENV-2-source-untouched"; else fail "ENV-2-source-untouched" "dirty"; fi
+}
+
+test_session_hooks() {
+  repo="$(fresh session-hooks)"
+  target="$repo/.claude/worktrees/wt"
+  mkdir -p "$target"
+  out="$(run_hook "$repo" session "$target" 2>/dev/null)"
+  if [ -z "$out" ]; then pass "SESSION-1-none-silent"; else fail "SESSION-1-none-silent" "out=[$out]"; fi
+  mkdir -p "$repo/.claude"
+  printf '{"hooks":{"SessionStart":[],"CwdChanged":[]}}\n' >"$repo/.claude/settings.json"
+  out="$(run_hook "$repo" session "$target" 2>/dev/null)"
+  if [ "$out" = "SESSION_HOOKS=SessionStart,CwdChanged" ]; then pass "SESSION-2-detected"; else fail "SESSION-2-detected" "out=[$out]"; fi
+}
+
+# ---------------------------------------------------------------------
 # run everything
 # ---------------------------------------------------------------------
 
@@ -566,6 +634,11 @@ test_hook_create_failure_stderr
 test_hook_deps_and_include
 test_hook_remove_clean
 test_hook_remove_refuses_on_dirty_tracked
+test_hooks_missing_no_prepare
+test_hooks_ok_and_unset
+test_hooks_prepare_runs_and_restores_config
+test_env_override
+test_session_hooks
 
 echo "---"
 echo "$PASS_COUNT passed, $FAIL_COUNT failed (against $WT)"
