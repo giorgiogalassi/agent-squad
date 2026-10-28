@@ -325,9 +325,8 @@ After any vault write, if `<vault>/.git` exists, commit **only the files
 this command wrote**:
 
 1. Before staging: `git -C <vault> status --porcelain`. Keep the list.
-2. Commit by path through the script (it commits on the session's
-   `lore/<project>-<date>` branch when `"vault_main": "pr"` is set, in the vault
-   otherwise):
+2. Commit by path through the script (in PR mode, local commits ahead of origin
+   on vault main are moved onto the `lore/*` session branch):
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-pr.sh commit "[lore] <project> <action> YYYY-MM-DD HH:MM" <paths>`,
    where `<paths>` are exactly the vault-relative files this command created,
    edited or moved (both sides of a move). Read `OUTCOME`/`CHANGED`; exit 20 →
