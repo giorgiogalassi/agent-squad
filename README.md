@@ -702,7 +702,11 @@ tests cannot cover, because they check what the agent *prose* does:
 Each case has a `scaffold.sh` (sharing `claude/evals/lib/scaffold-common.sh`)
 that, inside the run's temporary `$HOME`, builds a fixture with `scripts/fixtures/make-fixture.sh`
 inside the workspace, and writes `$HOME/second-brain/lore-config.json` plus the
-fixture's `chisel-config.json`. The agent finds the repo at `project/` (and
+fixture's `chisel-config.json`. Scaffolds are not meant to be run by hand: they
+refuse (exit 1, stderr message) unless the cwd is `$HOME/cwd` (the eval layout)
+or `SQUAD_EVAL_SANDBOX=1` is set, and never overwrite a `lore-config.json` that
+maps a non-fixture project (#392). Only ever run one with a throwaway `HOME`.
+The agent finds the repo at `project/` (and
 `worktree/`) in its workspace. The `gh` shim must be first on `PATH` for the
 agent; the launcher provides that, and the first case prints `which gh`.
 

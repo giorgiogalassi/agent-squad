@@ -74,6 +74,8 @@ on:
       - "scripts/lib/**"
       - "scripts/squad-lint.sh"
       - "scripts/test-lore-map.sh"
+      - "scripts/test-eval-scaffold.sh"
+      - "claude/evals/lib/**"
       - "scripts/test-squad-env.sh"
       - "claude/hooks/squad-env.sh"
       - "claude/hooks/lore-map.sh"
@@ -206,3 +208,7 @@ jobs:
       - name: Run scripts/test-squad-env.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-env.sh; else bash scripts/test-squad-env.sh; fi
+
+      - name: Run scripts/test-eval-scaffold.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-eval-scaffold.sh; else bash scripts/test-eval-scaffold.sh; fi
