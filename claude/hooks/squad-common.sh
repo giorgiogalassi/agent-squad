@@ -215,7 +215,7 @@ squad_vault_drop() {
 # that day's branch already landed (merged), later writes use lore/<name>-<date>-2,
 # -3, ... so a merged branch is never reused.
 squad_vault_wt() {
-  local v="$1" pub d br0 base b wt ex i=1 sfx
+  local v="$1" pub d br0 base b wt ex i=1 sfx ahead
   pub="$(squad_public_name "$v" "${2:-vault}" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
   br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 1
@@ -233,7 +233,16 @@ squad_vault_wt() {
   done
   if [ ! -d "$wt" ]; then
     git -C "$v" remote get-url origin >/dev/null 2>&1 && git -C "$v" fetch -q origin >/dev/null 2>&1
-    base="$br0"; git -C "$v" rev-parse -q --verify "origin/$br0" >/dev/null 2>&1 && base="origin/$br0"
+    base="$br0"; ahead=0
+    if git -C "$v" rev-parse -q --verify "origin/$br0" >/dev/null 2>&1; then
+      base="origin/$br0"
+      # Local main ahead of origin (commits made before PR mode applied): the new branch
+      # starts from local main so those commits ride along; main is levelled below.
+      if [ "$(git -C "$v" rev-parse "$br0")" != "$(git -C "$v" rev-parse "origin/$br0")" ] \
+         && git -C "$v" merge-base --is-ancestor "origin/$br0" "$br0" 2>/dev/null; then
+        base="$br0"; ahead=1
+      fi
+    fi
     mkdir -p "$v/.claude/worktrees" || return 1
     # Without this the worktrees show up as untracked vault changes.
     ex="$(git -C "$v" rev-parse --git-path info/exclude)"; case "$ex" in /*) ;; *) ex="$v/$ex" ;; esac
@@ -242,6 +251,11 @@ squad_vault_wt() {
       git -C "$v" worktree add -q "$wt" "$b" >/dev/null 2>&1 || return 1
     else
       git -C "$v" worktree add -q -b "$b" "$wt" "$base" >/dev/null 2>&1 || return 1
+      # `reset --keep` refuses when it would touch uncommitted work, so nothing is lost;
+      # on refusal main stays ahead (its commits are on the branch too).
+      if [ "$ahead" = 1 ] && ! git -C "$v" reset -q --keep "origin/$br0" >/dev/null 2>&1; then
+        echo "squad: vault $br0 is ahead of origin and could not be levelled (uncommitted changes); its commits are on $b" >&2
+      fi
     fi
   fi
   printf '%s' "$wt"

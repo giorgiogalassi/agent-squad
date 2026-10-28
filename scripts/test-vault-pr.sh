@@ -183,5 +183,19 @@ cp "$TMPROOT/cnt/.git/hooks/pre-push" "$V/.git/hooks/pre-push"
 decide "$V" "One: first"; decide "$V" "Two: second"
 check "explicit: hook never ran" 0 "$(wc -l < "$TMPROOT/hook.count" | tr -d ' ')"
 
+# 10. Local main ahead of origin: its commits move onto the branch, main is levelled.
+mkvault ahead '{"vault_main": "pr"}'; V="$TMPROOT/ahead"
+echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
+decide "$V" "One: first"
+B="lore/proj-$(date +%Y-%m-%d)"
+check "ahead: main level with origin" level "$(level "$V")"
+check "ahead: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
+check "ahead: two commits on the branch" 2 "$(git -C "$V" rev-list --count origin/main.."$B")"
+mkvault aheadd '{"vault_main": "pr"}'; V="$TMPROOT/aheadd"
+echo stray > "$V/stray.md"; git -C "$V" add stray.md; git -C "$V" commit -qm "stranded"
+echo mine > "$V/projects/proj/decisions.md"
+decide "$V" "One: first"
+check "ahead dirty: stranded commit on the branch" 1 "$(git -C "$V" show "$B:stray.md" 2>/dev/null | grep -c stray)"
+
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

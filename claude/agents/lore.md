@@ -258,10 +258,10 @@ list candidates and stop, writing nothing).
   `Superseded by: [YYYY-MM-DD] retired: <reason>` under each entry.
 
 Markers sit on the line directly under the heading (see Decision format).
-Several titles in one call share one write and one vault commit. Stage
-only the decisions file, since the vault may hold unrelated dirty files:
-`git -C <vault> add projects/<n>/decisions.md && git -C <vault> commit -m "[lore] <project> supersede YYYY-MM-DD HH:MM"`
-(skip silently without a vault repo). Output:
+Several titles in one call share one write and one vault commit. Commit
+only the decisions file through the Vault commit section below (paths
+`projects/<n>/decisions.md`, action `supersede`); the vault may hold unrelated
+dirty files. Output:
 `Lore: superseded N entries (project: <n>).`
 
 ## `lore audit [project]`
@@ -325,18 +325,22 @@ After any vault write, if `<vault>/.git` exists, commit **only the files
 this command wrote**:
 
 1. Before staging: `git -C <vault> status --porcelain`. Keep the list.
-2. Commit by path:
-   `git -C <vault> add -- <paths> && git -C <vault> commit -m "[lore] <project> <action> YYYY-MM-DD HH:MM" -- <paths>`,
-   where `<paths>` are exactly the files this command created, edited or
-   moved (both sides of a move). The trailing `-- <paths>` keeps anything
-   someone else already staged out of the commit too.
+2. Commit by path through the script (it commits on the session's
+   `lore/<project>-<date>` branch when `"vault_main": "pr"` is set, in the vault
+   otherwise):
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-pr.sh commit "[lore] <project> <action> YYYY-MM-DD HH:MM" <paths>`,
+   where `<paths>` are exactly the vault-relative files this command created,
+   edited or moved (both sides of a move). Read `OUTCOME`/`CHANGED`; exit 20 →
+   one line, the writes stay uncommitted. Run the step 4 scan **before** this
+   call: in PR mode the script restores the written paths in the main checkout.
 3. **Never `git add -A`, `git add .` or `git commit -a`.** The vault is
    shared with the user's own edits and with other sessions; a blanket
    add commits whatever is on disk under a message about this project.
    It has committed a mass deletion of draft pieces, and seven weeks
    later their unexplained return, both as routine-looking `[lore]`
    commits from unrelated projects.
-4. Anything in the step 1 list that this command did not write: leave it
+4. Run this check after step 1 and before step 2. Anything in the step 1 list
+   that this command did not write: leave it
    unstaged and print one line,
    `Lore: vault has N changes I didn't make (e.g. <first path>) — left uncommitted.`
    If any of them is a deletion (`D`) under `drafts/` or `published/`,
