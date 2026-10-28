@@ -235,19 +235,36 @@ V9="$TMPROOT/v9"; mkvault "$V9"
 mkdir -p "$V9/projects/clean/notes"
 i=0; while [ $i -lt 400 ]; do printf 'n\n' > "$V9/projects/clean/notes/f$i.md"; i=$((i+1)); done
 for n in 1 2 3 4 5 6 7 8 9 10 11 12; do mkdir -p "$V9/projects/p$n"; printf '# S\nLast updated: 2026-10-25 10:00\n' > "$V9/projects/p$n/status.md"; done
-now_ms() { python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || echo 0; }
-s=$(now_ms); bash "$VC" check --vault "$V9" --project clean --vault-wide >/dev/null; e=$(now_ms)
-ms=$((e - s))
-if [ "$ms" -lt 200 ]; then ok "400-file vault check under 200 ms (${ms} ms)"; else bad "400-file vault check took ${ms} ms"; fi
+# Guard against an order-of-magnitude slowdown, not normal variance: best of 3 runs,
+# 200 ms locally, 1000 ms when CI is set. TEST_BUDGET_DELAY_S (test-only) injects a
+# sleep into each timed run to prove a real slowdown still fails.
+BUDGET_MS=200; [ -n "${CI:-}" ] && BUDGET_MS=1000
+HAVE_CLOCK=1; command -v python3 >/dev/null 2>&1 || HAVE_CLOCK=0
+now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+# best_ms <cmd...>: prints the fastest of 3 wall-clock runs in ms
+best_ms() {
+  local best="" k s e d
+  for k in 1 2 3; do
+    s=$(now_ms); sleep "${TEST_BUDGET_DELAY_S:-0}"; "$@" >/dev/null 2>&1; e=$(now_ms)
+    d=$((e - s)); if [ -z "$best" ] || [ "$d" -lt "$best" ]; then best=$d; fi
+  done
+  echo "$best"
+}
+budget() { # budget <label> <cmd...>
+  local label="$1"; shift
+  if [ "$HAVE_CLOCK" -eq 0 ]; then echo "skip - $label timing (python3 not found)"; return; fi
+  local ms; ms=$(best_ms "$@")
+  if [ "$ms" -lt "$BUDGET_MS" ]; then ok "$label under ${BUDGET_MS} ms (best of 3: ${ms} ms)"; else bad "$label took ${ms} ms (best of 3, budget ${BUDGET_MS} ms)"; fi
+}
+budget "400-file vault check" bash "$VC" check --vault "$V9" --project clean --vault-wide
 
 # full orient path (check + render + decisions-lint subprocesses)
 mkdir -p "$TMPROOT/proj9"; git -C "$TMPROOT/proj9" init -q >/dev/null 2>&1
 PROJ9="$(cd "$TMPROOT/proj9" && pwd -P)"
 printf '{"projects":{"%s":"clean"}}\n' "$PROJ9" > "$V9/lore-config.json"
 printf '[2026-10-21 11:55] [sidecar] start — A\n' > "$V9/projects/clean/.squad/session.log"
-s=$(now_ms); (cd "$PROJ9" && SECOND_BRAIN_PATH="$V9" bash "$TMPROOT/hooks/lore-orient.sh" </dev/null >/dev/null 2>&1); e=$(now_ms)
-ms=$((e - s))
-if [ "$ms" -lt 200 ]; then ok "400-file full orientation under 200 ms (${ms} ms)"; else bad "400-file full orientation took ${ms} ms"; fi
+orient9() { (cd "$PROJ9" && SECOND_BRAIN_PATH="$V9" bash "$TMPROOT/hooks/lore-orient.sh" </dev/null); }
+budget "400-file full orientation" orient9
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
