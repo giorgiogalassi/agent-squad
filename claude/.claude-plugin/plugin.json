@@ -1,6 +1,6 @@
 {
   "name": "agent-squad",
-  "version": "1.12.1",
+  "version": "1.12.2",
   "description": "Agent Squad: Forge, Archy, Chisel, Ralph, Cody, Reven, Lore, Seed and Challenge as a Claude Code plugin, with SessionStart orientation and SessionEnd checkpoint hooks.",
   "author": { "name": "giorgiogalassi" },
   "repository": "https://github.com/giorgiogalassi/agent-squad",
