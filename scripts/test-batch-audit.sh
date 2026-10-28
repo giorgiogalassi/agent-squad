@@ -178,5 +178,12 @@ check "stale line refused: exit 10" "10" "$rc"
 has "stale line: item untouched" "- Q eight" "$(cat "$Q2/issues/batch-3.md")"
 bash "$BA" close batch-3.md --line "$LN" --as obsolete --vault "$V2" --project demo >/dev/null 2>&1; check "close without --hash: exit 2" "2" "$?"
 
+# backslash sequences survive being struck byte-exact
+printf '%s\n' '- Q ten \n and \t end' >> "$Q2/issues/batch-3.md"
+HQ9="$(printf '%s' 'Q ten \n and \t end' | cksum | cut -d" " -f1)"
+LN9="$(grep -n '^- Q ten' "$Q2/issues/batch-3.md" | cut -d: -f1)"
+bash "$BA" close batch-3.md --line "$LN9" --hash "$HQ9" --as obsolete --vault "$V2" --project demo >/dev/null 2>&1; check "backslash close: exit 0" "0" "$?"
+check "backslash item struck byte-exact" '- ~~Q ten \n and \t end~~ (obsolete)' "$(sed -n "${LN9}p" "$Q2/issues/batch-3.md")"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

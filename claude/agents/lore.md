@@ -303,7 +303,8 @@ Read `OUTCOME`, `CHANGED`. Exit 0 = done; 10 = missing decision entry (record
 it with `lore decide`, then re-run) or bad or stale line (the batch changed since
 list: re-run `list`), report it; 2/20 report and stop.
 `answered` strikes the item and points to the `decisions.md` entry, `open`
-carries it to `status.md` Next, `obsolete` strikes it. Pass `<line>` and `<hash>` from the item's own AUDIT_ITEM line.
+carries it to `status.md` Next, `obsolete` strikes it. Pass `<line>` and `<hash>` from the item's own AUDIT_ITEM line as is; the `<text>` is escaped for display, so never recompute the hash from it.
+An item can be listed while its PR is still open (`resolved` is not `merged`); "still open" is the right answer then.
 
 ## `lore check [--fix] [--all]`
 

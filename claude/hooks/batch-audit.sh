@@ -188,8 +188,9 @@ esac
 indent="$(printf '%s' "$cur" | sed -E 's/^([[:space:]]*[-*] ).*/\1/')"
 text="${cur#"$indent"}"
 TMP="$F.tmp.$$"
-awk -v n="$LINE" -v pre="$indent" -v txt="$text" -v ptr="$PTR" \
-  'NR==n { print pre "~~" txt "~~" ptr; next } { print }' "$F" > "$TMP" && mv "$TMP" "$F" || { rm -f "$TMP"; squad_fail 20 "cannot write $F"; }
+# ENVIRON keeps the text byte-exact (awk -v would expand backslash escapes)
+BA_PRE="$indent" BA_TXT="$text" BA_PTR="$PTR" awk -v n="$LINE" \
+  'NR==n { print ENVIRON["BA_PRE"] "~~" ENVIRON["BA_TXT"] "~~" ENVIRON["BA_PTR"]; next } { print }' "$F" > "$TMP" && mv "$TMP" "$F" || { rm -f "$TMP"; squad_fail 20 "cannot write $F"; }
 
 PATHS="projects/$PROJECT/.squad/issues/$(basename "$F")"
 if [ "$AS" = open ]; then
