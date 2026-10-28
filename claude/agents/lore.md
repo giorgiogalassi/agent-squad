@@ -37,7 +37,7 @@ update INDEX;
 `lore prefer "<x>"` = record a preference, global or project-only;
 `lore decide "<title>: <body>" [--supersedes "<date> <title>"] [--rule]` = record a project decision;
 `lore supersede "<title>"...` = retire decisions.md entries;
-`lore audit [project]` = list entries the checkout no longer bears out.
+`lore audit [project]` = list entries the checkout no longer bears out, and batch items of merged issues.
 
 **Vault location:** `SECOND_BRAIN_PATH` if set and non-empty, else
 `~/second-brain/`. Never read `.squad/lore-config.json` for it. Vault
@@ -282,7 +282,27 @@ missing → say so and stop).
    `lore supersede "<title>"` line.
 
 Never supersede automatically and write nothing: the user confirms, then
-runs `lore supersede`. `lore start` ends with one line offering
+runs `lore supersede`.
+
+### Batch items of merged issues
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh list
+```
+
+Read the `AUDIT_ITEM=<batch>|<line>|<key>|<question|criterion>|<text>` lines
+(`AUDIT_COUNT`, `AUDIT_BATCHES`); none = say so. Show one line per item with
+batch and issue key. For each, ask the user: **answered**, **still open** or
+**obsolete**; edit nothing without the answer. Then:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/batch-audit.sh close <batch> --line <n> --as answered|open|obsolete [--decision "<YYYY-MM-DD> <title>"]
+```
+
+Read `OUTCOME`, `CHANGED`. Exit 0 = done; 10 = missing decision entry (record
+it with `lore decide`, then re-run) or bad line, report it; 2/20 report and stop.
+`answered` strikes the item and points to the `decisions.md` entry, `open`
+carries it to `status.md` Next, `obsolete` strikes it. `lore start` ends with one line offering
 `lore audit` when the project has active decisions.
 
 ## `lore check [--fix] [--all]`
