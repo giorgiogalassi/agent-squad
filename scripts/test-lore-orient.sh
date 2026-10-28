@@ -127,7 +127,7 @@ printf '%s\n' "$(ctx "$o")" | grep -q '### Worktree session' && bad "main checko
 REC_DIR="$F_VAULT/projects/fixture/.squad/sessions"
 FIRST_HEAD="$(git -C "$TMPROOT/clean-wt" rev-parse HEAD)"
 echo c > "$TMPROOT/clean-wt/pre-compact.txt"; git -C "$TMPROOT/clean-wt" add pre-compact.txt
-git -C "$TMPROOT/clean-wt" commit -q -m "before compact"
+git -C "$TMPROOT/clean-wt" -c user.name=T -c user.email=t@example.com commit -q -m "before compact"
 (cd "$F_PROJECT" && printf '{"source":"compact","cwd":"%s","session_id":"sess-wt1"}' "$TMPROOT/clean-wt" | SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$F_VAULT" bash "$TMPROOT/hooks/lore-orient.sh" >/dev/null 2>&1)
 [ "$(cat "$REC_DIR/sess-wt1")" = "$FIRST_HEAD" ] && ok "compact keeps the first starting HEAD" || bad "compact moved the starting HEAD: $(cat "$REC_DIR/sess-wt1")"
 [ "$(git -C "$TMPROOT/clean-wt" rev-list --count "$(cat "$REC_DIR/sess-wt1")..HEAD")" = 1 ] && ok "commits before compact stay in the count" || bad "count after compact"

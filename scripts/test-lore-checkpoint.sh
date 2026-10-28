@@ -107,8 +107,8 @@ check "dirty line is idempotent" 1 "$(grep -c 'uncommitted work on fixture-wt' "
 git -C "$F_WT" checkout -q -- . 2>/dev/null; rm -f "$F_WT/d1.txt" "$F_WT/d2.txt"
 mkdir -p "$F_VAULT/projects/fixture/.squad/sessions"
 git -C "$F_WT" rev-parse HEAD > "$F_VAULT/projects/fixture/.squad/sessions/sess-6b"
-echo one > "$F_WT/c1.txt"; git -C "$F_WT" add c1.txt; git -C "$F_WT" commit -q -m "first session change"
-echo two > "$F_WT/c2.txt"; git -C "$F_WT" add c2.txt; git -C "$F_WT" commit -q -m "second session change"
+echo one > "$F_WT/c1.txt"; git -C "$F_WT" add c1.txt; git -C "$F_WT" -c user.name=T -c user.email=t@example.com commit -q -m "first session change"
+echo two > "$F_WT/c2.txt"; git -C "$F_WT" add c2.txt; git -C "$F_WT" -c user.name=T -c user.email=t@example.com commit -q -m "second session change"
 printf '{"cwd":"%s","session_id":"sess-6b"}' "$F_WT" | bash "$SUT" >/dev/null 2>&1
 PROG="$F_VAULT/projects/fixture/.squad/progress.txt"
 grep -q '^\[fixture-wt\] .*worktree session: 2 commits\. Notes: first session change;second session change' "$PROG" 2>/dev/null \
