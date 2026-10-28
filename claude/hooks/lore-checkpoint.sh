@@ -139,6 +139,7 @@ while IFS='=' read -r _key _value; do
     VAULT_PATH) VAULT="$_value" ;;
     PROJECT_ROOT) ROOT="$_value" ;;
     DISPLAY_NAME) DISPLAY="$_value" ;;
+    TRACKER_MODE) TRACKER_MODE="$_value" ;;
   esac
 done < <("$HOOK_DIR/path-resolve.sh")
 
@@ -171,12 +172,7 @@ if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x 
   if [ -s "$_dl.tmp" ]; then mv "$_dl.tmp" "$_dl"; else rm -f "$_dl.tmp" "$_dl"; fi
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
      && [ -n "$(git -C "$VAULT" status --porcelain -- "projects/$DISPLAY/decisions.md" 2>/dev/null)" ]; then
-    git -C "$VAULT" add "projects/$DISPLAY/decisions.md" >/dev/null 2>&1
-    _id=""
-    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-    # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/decisions.md" >/dev/null 2>&1 || true
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/decisions.md"
   fi
 fi
 
@@ -190,7 +186,7 @@ fi
 # are already paired, so no duplicate end is written. Only session.log is
 # committed, by pathspec, and only when it changed.
 close_session_log() {
-  local log="$VAULT/projects/$DISPLAY/.squad/session.log" first epoch since br n _id=""
+  local log="$VAULT/projects/$DISPLAY/.squad/session.log" first epoch since br n
   [ -f "$log" ] && [ -f "$HOOK_DIR/vault-check.sh" ] && [ -f "$TRANSCRIPT" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   first="$(jq -r '.timestamp // empty' "$TRANSCRIPT" 2>/dev/null | head -n 1)"
@@ -203,11 +199,7 @@ close_session_log() {
   n="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; close_session_starts "$log" "$since" "$br" 2>/dev/null )"
   [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$VAULT" add "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1
-    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-    # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/.squad/session.log" >/dev/null 2>&1 || true
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/session.log"
   fi
 }
 [ "$MODE" = hook ] && close_session_log
@@ -223,14 +215,7 @@ NOW="$(date "+%Y-%m-%d %H:%M")"
 
 commit_vault() {
   if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$VAULT" add "projects/$DISPLAY/status.md" >/dev/null 2>&1
-    # No git identity (fresh CI runner, bare machine) would make the commit fail
-    # silently; fall back to a fixed one only when none is configured.
-    _id=""
-    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-    # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: $1 $(squad_public_name "$VAULT" "$DISPLAY")" -- "projects/$DISPLAY/status.md" >/dev/null 2>&1 || true
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: $1 $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/status.md"
   fi
 }
 
@@ -271,7 +256,7 @@ TMPC="$(mktemp)"; TMPB="$(mktemp)"
 # (vault-check.sh, sourced in a subshell: it sets -u). Only INDEX.md is
 # committed, by pathspec, so unrelated vault changes are never swept in.
 sync_index() {
-  local idx="$VAULT/INDEX.md" upd st r1 r2 _id=""
+  local idx="$VAULT/INDEX.md" upd st r1 r2
   [ -f "$idx" ] && [ -f "$STATUS" ] && [ -f "$HOOK_DIR/vault-check.sh" ] || return 0
   squad_local_only "$VAULT" "$DISPLAY" && return 0
   upd="$(sed -n 's/^Last updated: \([0-9-]*\).*/\1/p' "$STATUS" | head -n 1)"
@@ -281,14 +266,11 @@ sync_index() {
   r2="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_active "$idx" "$DISPLAY" "$upd" 2>/dev/null )"
   [ -n "$r1$r2" ] || return 0
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$VAULT" add INDEX.md >/dev/null 2>&1
-    git -C "$VAULT" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-    git -C "$VAULT" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-    # shellcheck disable=SC2086
-    git -C "$VAULT" $_id commit -q -m "lore: index $DISPLAY" -- INDEX.md >/dev/null 2>&1 || true
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: index $DISPLAY" INDEX.md
   fi
 }
-trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index' EXIT
+# Session end (#350): push the vault's lore/* branches and open or update their PR.
+trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_finish "$VAULT" >/dev/null 2>&1' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended

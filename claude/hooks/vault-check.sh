@@ -395,11 +395,9 @@ main() {
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       case " ${paths[*]:-} " in *" $f "*) continue ;; esac
-      git -C "$vault" add -- "$f" >/dev/null 2>&1 && paths+=("$f")
+      paths+=("$f")
     done <<< "$FIXED_FILES"
-    if [ "${#paths[@]}" -gt 0 ] && ! git -C "$vault" diff --cached --quiet -- "${paths[@]}" 2>/dev/null; then
-      git -C "$vault" commit -q -m "[lore] check --fix $(now_ts)" -- "${paths[@]}" >/dev/null 2>&1 || true
-    fi
+    [ "${#paths[@]}" -gt 0 ] && squad_vault_commit "$vault" "${name:-vault}" "[lore] check --fix $(now_ts)" "${paths[@]}"
   fi
   return 0
 }

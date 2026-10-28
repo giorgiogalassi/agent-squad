@@ -106,16 +106,10 @@ if [ -n "$ACTIVE_OVER" ]; then
   rm -f "$KEEP" "$MOVE"
 fi
 
-if git -C "$VAULT_PATH" rev-parse --git-dir >/dev/null 2>&1; then
-  git -C "$VAULT_PATH" add "projects/$NAME/decisions.md" >/dev/null 2>&1
-  [ -f "$(dirname "$FILE")/decisions-archive.md" ] && git -C "$VAULT_PATH" add "projects/$NAME/decisions-archive.md" >/dev/null 2>&1
-  _id=""
-  git -C "$VAULT_PATH" config user.name >/dev/null 2>&1 || _id="$_id -c user.name=lore"
-  git -C "$VAULT_PATH" config user.email >/dev/null 2>&1 || _id="$_id -c user.email=lore@localhost"
-  # shellcheck disable=SC2086
-  git -C "$VAULT_PATH" $_id commit -q -m "[lore] $(squad_public_name "$VAULT_PATH" "$NAME") decide $(date '+%Y-%m-%d %H:%M')" -- \
-    "projects/$NAME/decisions.md" $([ -f "$(dirname "$FILE")/decisions-archive.md" ] && echo "projects/$NAME/decisions-archive.md") >/dev/null 2>&1 || true
-fi
+_paths="projects/$NAME/decisions.md"
+[ -f "$(dirname "$FILE")/decisions-archive.md" ] && _paths="$_paths projects/$NAME/decisions-archive.md"
+# shellcheck disable=SC2086
+squad_vault_commit "$VAULT_PATH" "$NAME" "[lore] $(squad_public_name "$VAULT_PATH" "$NAME") decide $(date '+%Y-%m-%d %H:%M')" $_paths
 
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ENTRY "$ENTRY"; squad_emit ARCHIVED "$ARCHIVED"
 bash "$LINT" check "$FILE" | grep -E '^DECISIONS_(OVER_CAP|OVER_RULE_CAP|BULLETS)=' || true

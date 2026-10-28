@@ -187,7 +187,14 @@ only; project-only → `projects/<n>/decisions.md` only. Never both.
    [n / <entry>]"; on an entry, apply both markers. Apply the 60-active
    and 15-rule caps of that file; over 15 active `[rule]` entries, print
    `Lore: decisions.md over rule cap (N active [rule]) — supersede one manually.` Write nothing to development.md.
-4. Commit the vault.
+4. Commit the vault: project-only is committed by `lore-decide.sh`; global:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/vault-pr.sh commit "[lore] prefer global" preferences/development.md
+   ```
+   Read `OUTCOME` and `CHANGED`; exit 20 = report it, the change stays
+   uncommitted. With `"vault_main": "pr"` in `lore-config.json` the commit
+   lands on the session branch `lore/<project>-<date>` and the PR is opened by
+   the SessionEnd hook, never by hand.
 5. Output: `Lore: preference recorded (global).` or
    `Lore: preference recorded (project: <n>).`
 
