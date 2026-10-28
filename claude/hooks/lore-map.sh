@@ -16,7 +16,10 @@
 # ignore: creates the vault .gitignore listing lore-config.local.json, or appends
 #   the line when missing; committed when the vault is a git repo.
 #
-# Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no  [TARGET=local|tracked]
+# Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no  [TARGET=local|tracked
+#   TRACKED_FILES=yes|no]. TRACKED_FILES=yes: projects/<name>/ already has tracked
+#   files on a local target (the stderr notice carries the `git rm -r --cached`
+#   command); `no` otherwise. Exit stays 0.
 # Exit: 0 ok, 2 usage, 10 precondition (no jq, no vault, config is not valid JSON),
 #       20 resolution or I/O failure.
 set -u
@@ -82,7 +85,7 @@ else
   SRC=""
 fi
 
-CHANGED=no
+CHANGED=no; TRACKED_FILES=no
 if [ "$TARGET" = local ]; then
   # Make the whole vault treat the project as local-only (squad_local_only, #351):
   # an entry in .git/info/exclude is untracked, so the name is never committed.
@@ -94,13 +97,17 @@ if [ "$TARGET" = local ]; then
     if [ -s "$EXC" ] && [ -n "$(tail -c 1 "$EXC")" ]; then
       printf '\n' >> "$EXC" || squad_fail 20 "cannot write $EXC"
     fi
-    printf 'projects/%s/\n' "$NAME" >> "$EXC" || squad_fail 20 "cannot write $EXC"
+    # A re-run after an exit-20 failure must not append the entry a second time.
+    if ! grep -qxF "projects/$NAME/" "$EXC" 2>/dev/null; then
+      printf 'projects/%s/\n' "$NAME" >> "$EXC" || squad_fail 20 "cannot write $EXC"
+    fi
     # --no-index: tracked files under the folder do not count against the rule.
     git -C "$VAULT" check-ignore -q --no-index "projects/$NAME/status.md" >/dev/null 2>&1 \
       || squad_fail 20 "projects/$NAME/ is still not ignored after writing $EXC (a negation pattern in .gitignore?)"
     CHANGED=yes
   fi
   if is_git_vault && [ -n "$(git -C "$VAULT" ls-files -- "projects/$NAME" 2>/dev/null | head -1)" ]; then
+    TRACKED_FILES=yes
     echo "lore-map: projects/$NAME/ already has tracked files in the vault; ignoring does not untrack them. Run: git -C \"$VAULT\" rm -r --cached \"projects/$NAME\" (not done for you)" >&2
   fi
   # Ignore rule first: the name must never exist in the vault before it is ignored.
@@ -145,5 +152,5 @@ if [ "$TARGET" = local ]; then
   fi
 fi
 if [ "$CHANGED" = yes ]; then squad_emit OUTCOME applied; else squad_emit OUTCOME unchanged; fi
-squad_emit CHANGED "$CHANGED"; squad_emit TARGET "$TARGET"
+squad_emit CHANGED "$CHANGED"; squad_emit TARGET "$TARGET"; squad_emit TRACKED_FILES "$TRACKED_FILES"
 exit 0

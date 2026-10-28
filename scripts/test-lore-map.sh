@@ -162,6 +162,13 @@ has "tracked notice: printed" "rm -r --cached" "$err"
 check "tracked notice: exactly once" 1 "$(printf '%s\n' "$err" | grep -c 'rm -r --cached')"
 check "tracked notice: files kept" "projects/shared/status.md" "$(git -C "$V" ls-files projects/shared)"
 
+out="$(bash "$LM" set --vault "$V" --root /w/shared --name shared --local 2>/dev/null)"
+has "tracked key: yes" "TRACKED_FILES=yes" "$out"
+V="$TMPROOT/v13b"; mkvault "$V"; mkdir -p "$V/projects/fresh"
+out="$(bash "$LM" set --vault "$V" --root /w/fresh --name fresh --local 2>/dev/null)"; rc=$?
+check "tracked key no: exit 0" 0 "$rc"
+has "tracked key: no" "TRACKED_FILES=no" "$out"
+
 # 14. Exclude file without a trailing newline: the entry lands on its own line.
 V="$TMPROOT/v14"; mkvault "$V"
 EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
@@ -178,6 +185,10 @@ printf '!projects/neg/\n' >> "$V/.gitignore"; git -C "$V" commit -qam neg
 err="$(bash "$LM" set --vault "$V" --root /w/neg --name neg --local 2>&1 >/dev/null)"; rc=$?
 check "post-check: exit 20" 20 "$rc"
 has "post-check: stderr reason" "not ignored" "$err"
+bash "$LM" set --vault "$V" --root /w/neg --name neg --local >/dev/null 2>&1; rc=$?
+check "post-check rerun: exit 20" 20 "$rc"
+EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
+check "post-check rerun: entry once" 1 "$(grep -cxF 'projects/neg/' "$EXC")"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

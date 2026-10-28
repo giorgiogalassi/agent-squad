@@ -55,10 +55,7 @@ holds the mappings of local-only projects; a new vault's `.gitignore`
 lists it. A local-only project (`git -C <vault> check-ignore -q
 projects/<n>/status.md` succeeds) or `lore start --local` writes its
 mapping there; never into `lore-config.json` (`lore-map.sh set` enforces it).
-On a local target the script also adds `projects/<n>/` to the vault's
-untracked `.git/info/exclude`; if the folder already has tracked files it
-prints a `git rm -r --cached` command and does not run it. Relay that
-command to the user.
+Exit codes and `TRACKED_FILES` handling: see `lore start` step 3.
 
 **Paths.** `.squad/` below always means
 `<vault>/projects/<project-name>/.squad/` — never a directory inside the
@@ -99,12 +96,13 @@ when explicitly requested or named by a context ref.
      directory, record the mapping with
      `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<cwd_path>" --name "<name>" [--local]`
      (it picks `lore-config.local.json` for a local-only project or `--local`,
-     else `lore-config.json`; read `OUTCOME`, `TARGET`; exit 0 = done, 10 = jq
-     missing or config not valid JSON, stop and tell the user, 2/20 = report
-     the stderr reason and stop; on a local target it also adds
-     `projects/<name>/` to the vault's untracked `.git/info/exclude`, and a
-     printed `git rm -r --cached` command for already tracked files is
-     relayed to the user, never run), use `candidate`; no prompt.
+     else `lore-config.json`; read `OUTCOME`, `TARGET`, `TRACKED_FILES`;
+     exit 0 = done, 10 = jq missing or config not valid JSON, stop and tell
+     the user, 2 = report the stderr reason and stop, 20 = report the stderr
+     reason and stop; `TRACKED_FILES=yes`: relay the printed
+     `git rm -r --cached` command to the user and never run it; until they
+     do, write nothing else under that project's folder), use `candidate`;
+     no prompt.
    - Conflict → prompt once: "A vault project named `<candidate>`
      already exists. Display name for this project [`<candidate>-2`]:";
      use the answer (default `<candidate>-2`), create, record (same
