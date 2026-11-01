@@ -172,6 +172,28 @@ barrel/index plus at most 10 component files. Nothing else outside
 Phase 1 is read; the "never read source" rule holds for everything
 else.
 
+## Phase 4b: extract the import graph
+
+After `scout-cache.md` is written (its Module map names the groups):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py extract
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html
+```
+
+Read `GRAPH`, `FILES`, `EDGES`, `MODULES`, `CYCLES`, `UNTESTED_MODULES`
+from `extract`, `OUT` from `render`.
+
+| Exit | Action |
+|---|---|
+| 0 | Continue; mention `CYCLES` and `UNTESTED_MODULES` in the closing summary when above 0. |
+| 10, 20 | Print the stderr reason and continue; the graph is optional. |
+
+`graph.json` is the one import graph of the project, read later by Atlas
+to show where a diff falls; `graph.html` is its page. Never write either
+by hand and never describe the graph in `architecture.md`: the Module
+map is the prose, the graph is the code's.
+
 ## Phase 5: ensure .squad directories
 
 ```bash

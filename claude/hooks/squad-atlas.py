@@ -12,7 +12,12 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
                                 it does not exist yet.
   render <id>                   Read atlas.json + brief.md and write
                                 index.html: one file, no network, no
-                                external script.
+                                external script. When <SQUAD_DIR>/graph.json
+                                exists (squad-graph.py extract, run by
+                                Seed), the page carries the module import
+                                graph with the diff's modules highlighted,
+                                drawn by squad-graph.py (one renderer for
+                                Seed and Atlas).
 
 Range resolution:
   pr number   connected mode: `gh pr view` for head/base/title/body
@@ -36,6 +41,7 @@ Python 3.8+ standard library only.
 
 import datetime as dt
 import html
+import importlib.util
 import json
 import os
 import re
@@ -436,7 +442,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;p
 summary{cursor:pointer;padding:6px 8px;font-family:ui-monospace,Menlo,monospace;font-size:13px}details pre{margin:0;border-radius:0 0 4px 4px}
 .diff .a{color:var(--add)}.diff .d{color:var(--del)}.diff .h{color:var(--acc)}input[type=search]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);margin:6px 0 10px}
 .bars text{font-size:12px;fill:var(--fg)}.bars rect{fill:var(--acc)}.bars .lab{fill:var(--mut)}.pill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;margin-right:4px}
-.brief p{max-width:75ch}.hidden{display:none}
+.brief p{max-width:75ch}.hidden{display:none}.gnode{cursor:pointer}.touched-row{border-left:3px solid var(--acc)}
 """
 
 JS = """
@@ -451,6 +457,19 @@ JS = """
       var any=false, el=h.nextElementSibling;
       while(el && el.tagName==='DETAILS'){ if(!el.classList.contains('hidden')) any=true; el=el.nextElementSibling; }
       h.classList.toggle('hidden', !any);
+    });
+  });
+})();
+"""
+
+
+GRAPH_JS = """
+(function(){
+  document.querySelectorAll('.gnode').forEach(function(g){
+    g.addEventListener('click',function(){
+      var m=g.dataset.module;
+      document.querySelectorAll('[data-files]').forEach(function(t){t.classList.toggle('hidden',t.dataset.files!==m);});
+      var el=document.getElementById('drill'); if(el) el.textContent='Files in '+m;
     });
   });
 })();
@@ -491,6 +510,25 @@ def bars_svg(by_module):
     return "\n".join(parts)
 
 
+def graph_fragment(sd, atlas_json):
+    """Module graph section from squad-graph.py, or None when no graph.json."""
+    gpath = os.path.join(sd, "graph.json")
+    if not os.path.exists(gpath):
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("squad_graph", os.path.join(HERE, "squad-graph.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with open(gpath, encoding="utf-8") as f:
+            data = json.load(f)
+        ov = {"files": [x["path"] for x in atlas_json.get("files", [])], "title": atlas_json.get("title")}
+        frag, _ = mod.graph_section(data, ov, "")
+        return frag
+    except (OSError, ValueError, AttributeError, ImportError) as e:
+        sys.stderr.write("squad-atlas: graph section skipped: %s\n" % e)
+        return None
+
+
 def cmd_render(argv):
     if len(argv) != 1:
         fail(2, "usage: render <id>")
@@ -523,11 +561,13 @@ def cmd_render(argv):
          % (html.escape(data["title"]), html.escape(data.get("project") or ""), html.escape(data["base"]),
             html.escape(data["head"]), len(data["commits"]), len(files), added, deleted,
             data["generated"], data["source"]),
-         "<nav><a href=\"#brief\">Brief</a><a href=\"#modules\">Modules</a><a href=\"#files\">Files</a>"
+         "<nav><a href=\"#brief\">Brief</a><a href=\"#modules\">Modules</a><a href=\"#graph\">Graph</a><a href=\"#files\">Files</a>"
          "<a href=\"#tests\">Tests</a><a href=\"#criteria\">Criteria</a><a href=\"#reven\">Reven</a><a href=\"#commits\">Commits</a></nav>",
          "<main>",
          "<section id=\"brief\" class=\"brief\">%s</section>" % md_to_html(brief),
          "<section id=\"modules\"><h2>Lines changed per module</h2>%s</section>" % bars_svg(by_module),
+         "<section id=\"graph\"><h2>Where it falls in the project</h2>%s</section>" % (
+             graph_fragment(sd, data) or "<p class=\"mut\">No graph.json for this project; run /seed (squad-graph.py extract) to add the import graph.</p>"),
          "<section id=\"files\"><h2>Files</h2><input id=\"q\" type=\"search\" placeholder=\"filter by path\" aria-label=\"filter files\">"]
     for mod in sorted(by_module, key=lambda m: -(by_module[m][0] + by_module[m][1])):
         a, d, n = by_module[mod]
@@ -554,7 +594,7 @@ def cmd_render(argv):
     H.append("<section id=\"commits\"><h2>Commits (%d)</h2><table><tr><th>sha</th><th>date</th><th>subject</th></tr>%s</table></section>" % (
         len(data["commits"]), "".join("<tr><td><code>%s</code></td><td>%s</td><td>%s</td></tr>" % (
             c["sha"], c["date"], html.escape(c["subject"])) for c in data["commits"])))
-    H.append("</main><script>%s</script></body></html>" % JS)
+    H.append("</main><script>%s</script></body></html>" % (JS + GRAPH_JS))
     out = os.path.join(adir, "index.html")
     try:
         with open(out, "w", encoding="utf-8") as f:

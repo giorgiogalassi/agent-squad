@@ -115,8 +115,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py render <ID>
 ```
 
 Read `HTML`, `BRIEF`. Exit codes as in Step 1. The page is one file
-with no network access: the brief, a module bar chart, the file list
-with a path filter, the diff per file folded under each path, the
+with no network access: the brief, a module bar chart, the project's
+module import graph with the diff's modules highlighted (from
+`<SQUAD_DIR>/graph.json`, written by Seed through `squad-graph.py`;
+absent when Seed never ran: say so, do not build it here), the file
+list with a path filter, the diff per file folded under each path, the
 commits, the tests and the verdict trail.
 
 ## Step 4: show
