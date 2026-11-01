@@ -52,8 +52,10 @@ or
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-retro.py collect --batch [<path>]
 ```
 
-Read `PRS`, `REVIEWED`, `MERGED`, `REVERTED`, `FOLLOWED_UP`, `UNKNOWN`,
-`SOURCE` (`vcs`, `git-only` or `local-only`), `WINDOW`.
+Read `PRS`, `REVIEWED`, `ESCALATED`, `SKIPPED`, `MERGED`, `REVERTED`,
+`FOLLOWED_UP`, `UNKNOWN`, `SOURCE` (`vcs`, `git-only` or `local-only`),
+`WINDOW`. Issue ids are whatever `progress.txt` holds (`#327` or
+`HV-22` on detached projects).
 
 | Exit | Action |
 |---|---|
@@ -88,9 +90,14 @@ The report (Markdown, under `.squad/retro/<date>.md`) holds, in order:
    the script assigns from the review text (tests, naming, scope,
    error handling, docs, performance, security, other), with counts and
    the PRs where each appeared.
-4. **Rounds per PR** and the share of PRs that passed at round 1
-   (`FIRST_PASS_PCT`).
-5. **Rule candidates**: each pattern that appeared in at least three
+4. **Escalations and blocked skips**: every issue Ralph escalated in
+   the window (date, attempts, the recorded reason) and the issues
+   skipped because blocked by one. These are a fact about Chisel's
+   slicing and Cody's limits, not about Reven; they never feed the
+   blocker kinds.
+5. **Rounds per PR** and the share of PRs that passed at round 1
+   (`FIRST_PASS_PCT`), over reviewed PRs only.
+6. **Rule candidates**: each pattern that appeared in at least three
    PRs (`--min <n>` on `collect` changes the threshold), written as one
    runnable line:
 
@@ -109,6 +116,7 @@ Print, in this order and nothing more:
 ```
 Retro, <WINDOW> (<SOURCE>)
   PRs:            <PRS> (<REVIEWED> reviewed, <MERGED> merged, <REVERTED> reverted, <FOLLOWED_UP> fixed after merge, <UNKNOWN> unknown)
+  Escalated:      <ESCALATED> (<SKIPPED> skipped as blocked)
   First pass:     <FIRST_PASS_PCT>% approved at round 1; <ROUNDS_AVG> rounds on average
   Held:           <HELD_PCT>% of approvals held after merge
   Top blocker:    <TOP_BLOCKER_KIND> (<TOP_BLOCKER_COUNT> PRs)

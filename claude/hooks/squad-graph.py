@@ -24,7 +24,7 @@ graph.json contract (stable; write another renderer against it, never
 a second extractor):
   {
     "generated": "YYYY-MM-DD", "root": "<abs>", "extractor": "regex|madge|...",
-    "groups": [{"id": "<prefix>", "label": "<Module map text>"}],
+    "groups": [{"id": "<prefix or label>", "label": "<Module map text>"}],
     "nodes":  [{"id": "<path>", "group": "<prefix>", "lang": "ts",
                 "fan_in": n, "fan_out": n, "in_cycle": bool, "test": bool}],
     "edges":  [{"from": "<path>", "to": "<path>"}]
@@ -55,7 +55,8 @@ SKIP_DIRS = {".git", "node_modules", "dist", "build", "out", ".angular", ".nx", 
 EXTS = {".ts": "ts", ".tsx": "ts", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js",
         ".py": "py", ".sh": "sh", ".bash": "sh"}
 TEST_RE = re.compile(r"(^|/)(test|tests|spec|specs|__tests__|evals?)(/|$)|\.(test|spec)\.[a-z]+$|^scripts/test-.*\.sh$|_test\.(py|go)$")
-MODULE_RE = re.compile(r"^\s*[-*]\s*`?([^`:\s(]+)`?\s*[:—–-]+\s*(.*)$")
+MODULE_LINE_RE = re.compile(r"^\s*[-*]\s+(.+?)(?:\s+[-\u2014\u2013]+\s+|\s*[\u2014\u2013]\s*|:\s+)(.*)$")
+PATH_RE = re.compile(r"`([^`]+)`|(?<![\w`])((?:[\w.@-]+/)+[\w.@*-]*|[\w.@-]+\.[A-Za-z]{1,5})")
 IMPORT_RES = {
     "ts": [re.compile(r"""(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]"""),
            re.compile(r"""(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)""")],
@@ -110,23 +111,52 @@ def read_text(path):
 # -------------------------------------------------------------- extract
 
 def module_map(scout_path):
+    """Groups from the scout-cache Module map, bullets or a table
+    (| Module | Path | Role |). A bullet may list several paths
+    (`a/`, `b/` -- label), then the label names the group and every path
+    is a prefix of it; a table row is named by its first cell. Returns
+    [{"id", "label", "prefixes"}]; prefixes are matched longest first."""
     groups = []
     inside = False
     for line in (read_text(scout_path) or "").splitlines():
         if line.startswith("## "):
             inside = line.lower().startswith("## module map")
             continue
-        m = MODULE_RE.match(line) if inside else None
-        if m:
-            groups.append({"id": m.group(1).strip("/"), "label": m.group(2).strip() or m.group(1)})
-    groups.sort(key=lambda g: -len(g["id"]))
+        if not inside:
+            continue
+        if line.lstrip().startswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 2 or set(cells[0]) <= {"-", ":"} or cells[0].lower() in ("module", "name"):
+                continue
+            head, label = cells[1], (cells[2] if len(cells) > 2 else cells[0])
+            name = cells[0].strip("`")
+        else:
+            m = MODULE_LINE_RE.match(line)
+            if not m:
+                continue
+            head, label, name = m.group(1), m.group(2).strip(), None
+        prefixes = []
+        for a, b in PATH_RE.findall(head):
+            pth = (a or b).strip().strip("/")
+            if pth and not pth.startswith("*") and pth not in prefixes:
+                prefixes.append(pth.replace("/*", ""))
+        if not prefixes:
+            continue
+        gid = name or (prefixes[0] if len(prefixes) == 1 else (label or prefixes[0]))
+        if any(g["id"] == gid for g in groups):
+            gid = "%s (%s)" % (gid, prefixes[0])
+        groups.append({"id": gid, "label": label or gid, "prefixes": prefixes})
     return groups
 
 
 def group_of(path, groups):
+    best, best_len = None, -1
     for g in groups:
-        if path == g["id"] or path.startswith(g["id"] + "/"):
-            return g["id"]
+        for pre in g["prefixes"]:
+            if (path == pre or path.startswith(pre + "/")) and len(pre) > best_len:
+                best, best_len = g["id"], len(pre)
+    if best is not None:
+        return best
     return path.split("/")[0] if "/" in path else "(root)"
 
 

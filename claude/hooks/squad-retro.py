@@ -13,7 +13,9 @@ Sources, all read-only:
   progress.txt        "[#ID] review: <VERDICT> r<N>[. Obs: ...]",
                       "[#ID] review: N rounds, last verdict <X>",
                       "[#ID] [date] resolved. PR: #M (base: ...)",
-                      "[#ID] [date] escalated ..."
+                      "[#ID] [date] escalated (N attempts). <reason>",
+                      "[#ID] [date] skipped. Blocked by escalated <ID>"
+                      IDs are "#327" or "HV-22" (detached projects).
   ralph-run.md        batch table (Issue | Branch | ... | Rounds | Verdict | State)
   verdicts.tsv        stats store, for the model and timestamp of each verdict
   squad-stats.py      `branch <name>` for the cost per branch (COST_USD)
@@ -43,11 +45,12 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-REVIEW_RE = re.compile(r"^\[#?(\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
-SUMMARY_RE = re.compile(r"^\[#?(\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+(\d+)\s+rounds?,\s+last verdict\s+([A-Z_]+)")
-RESOLVED_RE = re.compile(r"^\[#?(\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
-ESCALATED_RE = re.compile(r"^\[#?(\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?escalated")
-RUN_ROW_RE = re.compile(r"^\|\s*#?(\d+)\s*\|")
+REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
+SUMMARY_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+(\d+)\s+rounds?,\s+last verdict\s+([A-Z_]+)")
+RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
+ESCALATED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?escalated(?:\s+(?:after\s+)?\(?(\d+) attempts?\)?)?\.?\s*(.*)$")
+SKIPPED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?skipped\.\s*(.*)$")
+RUN_ROW_RE = re.compile(r"^\|\s*#?([A-Za-z]+-\d+|\d+)\s*\|")
 
 # Kind -> keywords matched case-insensitively in Reven's observations.
 # Order matters: the first kind whose keyword matches wins per observation.
@@ -115,32 +118,38 @@ def read_tsv(path, cols):
 # ---------------------------------------------------------------- trail
 
 def parse_progress(lines):
-    """issue -> {rounds: [(n, verdict, obs)], pr, resolved, escalated}"""
+    """issue -> {rounds: [(n, verdict, obs)], pr, resolved, escalated, skipped, summary}
+    Issue ids are strings: "327" or "HV-22"."""
     trail = {}
 
     def rec(issue):
         return trail.setdefault(issue, {"rounds": [], "pr": None, "resolved": None,
-                                        "escalated": None, "summary": None})
+                                        "escalated": None, "skipped": None, "summary": None})
 
     for line in lines:
         m = REVIEW_RE.match(line)
         if m:
-            r = rec(int(m.group(1)))
+            r = rec(m.group(1))
             r["rounds"].append((int(m.group(4)), m.group(3).upper(), (m.group(5) or "").strip()))
             continue
         m = SUMMARY_RE.match(line)
         if m:
-            rec(int(m.group(1)))["summary"] = (int(m.group(3)), m.group(4))
+            rec(m.group(1))["summary"] = (int(m.group(3)), m.group(4))
             continue
         m = RESOLVED_RE.match(line)
         if m:
-            r = rec(int(m.group(1)))
+            r = rec(m.group(1))
             r["pr"] = int(m.group(3))
             r["resolved"] = m.group(2)
             continue
         m = ESCALATED_RE.match(line)
         if m:
-            rec(int(m.group(1)))["escalated"] = m.group(2) or "?"
+            rec(m.group(1))["escalated"] = {"date": m.group(2) or "?", "attempts": int(m.group(3)) if m.group(3) else None,
+                                          "reason": (m.group(4) or "").strip()}
+            continue
+        m = SKIPPED_RE.match(line)
+        if m:
+            rec(m.group(1))["skipped"] = {"date": m.group(2) or "?", "reason": (m.group(3) or "").strip()}
     for r in trail.values():
         r["rounds"].sort()
     return trail
@@ -154,7 +163,7 @@ def batch_issues(path):
     for line in lines:
         m = RUN_ROW_RE.match(line)
         if m and not line.lstrip("|").strip().startswith("Issue"):
-            issues.append(int(m.group(1)))
+            issues.append(m.group(1))
     return issues
 
 
@@ -265,10 +274,15 @@ def cmd_collect(argv):
         window = "batch %s" % os.path.basename(run)
     else:
         since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
-        keep = {i for i, r in trail.items() if (r["resolved"] or "9999") >= since
-                or any(True for _ in r["rounds"]) and not r["resolved"]}
+        def in_window(r):
+            d = r["resolved"] or (r["escalated"] or {}).get("date") or (r["skipped"] or {}).get("date")
+            if d and d != "?":
+                return d >= since
+            return bool(r["rounds"] or r["summary"])  # undated legacy lines count only when reviewed
+        keep = {i for i, r in trail.items() if in_window(r)}
         window = "last %d days" % days
-    trail = {i: r for i, r in trail.items() if i in keep and (r["rounds"] or r["summary"] or r["pr"])}
+    trail = {i: r for i, r in trail.items() if i in keep
+             and (r["rounds"] or r["summary"] or r["pr"] or r["escalated"] or r["skipped"])}
     if not trail:
         fail(10, "no verdicts in the window")
 
@@ -280,7 +294,7 @@ def cmd_collect(argv):
         m = RUN_ROW_RE.match(line)
         if m:
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            run_rows[int(m.group(1))] = cells
+            run_rows[m.group(1)] = cells
     for issue, r in trail.items():
         branch = run_rows.get(issue, [None, None])[1] if issue in run_rows else None
         r["branch"] = branch
@@ -305,8 +319,10 @@ def cmd_collect(argv):
         fail(20, "cannot write trail: %s" % e)
 
     posts = [r["post"] for r in trail.values()]
-    emit("PRS", len(trail))
+    emit("PRS", sum(1 for r in trail.values() if r["pr"] or r["rounds"] or r["summary"]))
     emit("REVIEWED", sum(1 for r in trail.values() if r["rounds"] or r["summary"]))
+    emit("ESCALATED", sum(1 for r in trail.values() if r["escalated"]))
+    emit("SKIPPED", sum(1 for r in trail.values() if r["skipped"] and not r["pr"]))
     emit("MERGED", sum(1 for p in posts if p.get("merged")))
     emit("REVERTED", sum(1 for p in posts if p.get("reverted")))
     emit("FOLLOWED_UP", sum(1 for p in posts if (p.get("followups") or 0) > 0))
@@ -327,11 +343,11 @@ def cmd_report(argv):
             data = json.load(f)
     except (OSError, ValueError):
         fail(10, "no collected trail; run collect first")
-    trail = {int(k): v for k, v in data["trail"].items()}
+    trail = dict(data["trail"])
     min_occ = data.get("min", 3)
 
-    rounds = [len(r["rounds"]) or (r["summary"][0] if r["summary"] else 0) for r in trail.values()]
     reviewed = [r for r in trail.values() if r["rounds"] or r["summary"]]
+    rounds = [len(r["rounds"]) or (r["summary"][0] if r["summary"] else 0) for r in reviewed]
     first_pass = sum(1 for r in reviewed if r["rounds"] and r["rounds"][0][1] == "APPROVED")
     approved = [r for r in reviewed if (r["rounds"] and r["rounds"][-1][1] == "APPROVED")
                 or (r["summary"] and r["summary"][1] == "APPROVED")]
@@ -350,7 +366,7 @@ def cmd_report(argv):
         if len(issues) >= min_occ:
             cands.append('/lore decide "Reven blocks on %s: raised in %d of %d reviewed PRs (%s); '
                          'add the check to Cody\'s pre-PR list" --rule'
-                         % (kind, len(issues), len(reviewed), ", ".join("#%d" % i for i in issues)))
+                         % (kind, len(issues), len(reviewed), ", ".join(ref(i) for i in issues)))
 
     today = dt.date.today().isoformat()
     L = ["# Retro: %s, %s" % (data.get("project") or "project", data["window"]),
@@ -358,13 +374,15 @@ def cmd_report(argv):
          "## Trail", "",
          "| Issue | PR | Rounds | Verdicts | Merged | Reverted | Follow-ups | Human comments | Reopened | Cost |",
          "|---|---|---|---|---|---|---|---|---|---|"]
-    for issue in sorted(trail):
+    for issue in sorted(trail, key=sort_key):
         r = trail[issue]
+        if not (r["pr"] or r["rounds"] or r["summary"]):
+            continue
         p = r["post"]
         verdicts = " > ".join("%s r%d" % (v, n) for n, v, _ in r["rounds"]) or (
             "%s (%d rounds)" % (r["summary"][1], r["summary"][0]) if r["summary"] else "-")
-        L.append("| #%d | %s | %d | %s | %s | %s | %s | %s | %s | %s |" % (
-            issue, "#%d" % r["pr"] if r["pr"] else ("escalated" if r["escalated"] else "-"),
+        L.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s |" % (
+            ref(issue), "#%d" % r["pr"] if r["pr"] else ("escalated" if r["escalated"] else "-"),
             len(r["rounds"]) or (r["summary"][0] if r["summary"] else 0), verdicts,
             p.get("merged") or "-", "yes" if p.get("reverted") else "no",
             na(p.get("followups")), na(p.get("human_comments")), na(p.get("reopened")),
@@ -376,7 +394,20 @@ def cmd_report(argv):
              sum(1 for r in approved if not r["post"].get("merged"))),
           "", "## Blockers by kind", "", "| Kind | PRs | Where |", "|---|---|---|"]
     for kind, issues in sorted(by_kind.items(), key=lambda kv: -len(kv[1])):
-        L.append("| %s | %d | %s |" % (kind, len(issues), ", ".join("#%d" % i for i in issues)))
+        L.append("| %s | %d | %s |" % (kind, len(issues), ", ".join(ref(i) for i in issues)))
+    esc = [(i, r) for i, r in trail.items() if r["escalated"]]
+    skp = [(i, r) for i, r in trail.items() if r["skipped"] and not r["pr"]]
+    L += ["", "## Escalations (%d) and blocked skips (%d)" % (len(esc), len(skp)), ""]
+    if esc:
+        L += ["| Issue | Date | Attempts | Reason |", "|---|---|---|---|"]
+        for i, r in sorted(esc, key=lambda t: sort_key(t[0])):
+            e = r["escalated"]
+            L.append("| %s | %s | %s | %s |" % (ref(i), e["date"], na(e["attempts"]), e["reason"][:160].replace("|", "/")))
+    else:
+        L.append("No escalation in the window.")
+    if skp:
+        L.append("")
+        L.append("Skipped because blocked: " + ", ".join(ref(i) for i, _ in sorted(skp, key=lambda t: sort_key(t[0]))))
     L += ["", "## Rounds", "",
           "- Reviewed PRs: %d; approved at round 1: %d; rounds on average: %s"
           % (len(reviewed), first_pass, "%.1f" % (sum(rounds) / len(rounds)) if rounds else "n/a"),
@@ -398,11 +429,21 @@ def cmd_report(argv):
     emit("TOP_BLOCKER_KIND", top[0])
     emit("TOP_BLOCKER_COUNT", len(top[1]))
     emit("COST_PER_MERGED_PR", "%.2f" % cost["per_merged"])
+    emit("ESCALATED", len(esc))
     emit("CANDIDATES", len(cands))
 
 
 def na(v):
     return "?" if v is None else str(v)
+
+
+def ref(issue):
+    return issue if "-" in issue else "#%s" % issue
+
+
+def sort_key(issue):
+    m = re.match(r"^([A-Za-z]*-?)(\d+)$", issue)
+    return (m.group(1), int(m.group(2))) if m else (issue, 0)
 
 
 def cost_per_merged(paths, trail):

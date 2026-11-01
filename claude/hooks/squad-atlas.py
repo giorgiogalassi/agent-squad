@@ -51,9 +51,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIFF_CAP_LINES = 400
 TEST_RE = re.compile(r"(^|/)(test|tests|spec|specs|__tests__|evals?)(/|$)|\.(test|spec)\.[a-z]+$|^scripts/test-.*\.sh$|_test\.(py|go)$")
-RESOLVED_RE = re.compile(r"^\[#?(\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
-REVIEW_RE = re.compile(r"^\[#?(\d+)\]\s+(?:\d{4}-\d{2}-\d{2}\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
-MODULE_RE = re.compile(r"^\s*[-*]\s*`?([^`:\s(]+)`?\s*[:—–-]+\s*(.*)$")
+RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
+REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:\d{4}-\d{2}-\d{2}\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
 
 BRIEF_TEMPLATE = """# Atlas brief: {title}
 
@@ -160,33 +159,26 @@ def ralph_rows(sd):
     for line in read_lines(os.path.join(sd, "ralph-run.md")) or []:
         if line.startswith("|") and not line.startswith("|---"):
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if cells and cells[0].lstrip("#").isdigit():
-                rows[int(cells[0].lstrip("#"))] = cells
+            if cells and re.match(r"^#?([A-Za-z]+-\d+|\d+)$", cells[0]):
+                rows[cells[0].lstrip("#")] = cells
     return rows
 
 
+def _graph_module():
+    spec = importlib.util.spec_from_file_location("squad_graph", os.path.join(HERE, "squad-graph.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def module_map(sd):
-    """[(prefix, name)] from the scout-cache Module map, longest prefix first."""
-    lines = read_lines(os.path.join(sd, "scout-cache.md")) or []
-    mods, inside = [], False
-    for line in lines:
-        if line.startswith("## "):
-            inside = line.lower().startswith("## module map")
-            continue
-        if inside:
-            m = MODULE_RE.match(line)
-            if m:
-                mods.append((m.group(1).strip("/"), m.group(2).strip() or m.group(1)))
-    mods.sort(key=lambda p: -len(p[0]))
-    return mods
+    """The scout-cache Module map, parsed once by squad-graph.py so Seed,
+    Atlas and the graph agree on what a module is."""
+    return _graph_module().module_map(os.path.join(sd, "scout-cache.md"))
 
 
 def module_of(path, mods):
-    for prefix, name in mods:
-        if path == prefix or path.startswith(prefix + "/"):
-            return prefix
-    top = path.split("/")[0] if "/" in path else "(root)"
-    return top
+    return _graph_module().group_of(path, mods)
 
 
 def criteria_from_text(body):
@@ -226,7 +218,7 @@ def verdicts_for(sd, issue):
         return out
     for line in read_lines(os.path.join(sd, "progress.txt")) or []:
         m = REVIEW_RE.match(line)
-        if m and int(m.group(1)) == issue:
+        if m and m.group(1) == issue:
             out.append({"round": int(m.group(3)), "verdict": m.group(2).upper(),
                         "obs": (m.group(4) or "").strip()})
     return out
@@ -236,7 +228,7 @@ def issue_for_pr(sd, pr):
     for line in read_lines(os.path.join(sd, "progress.txt")) or []:
         m = RESOLVED_RE.match(line)
         if m and int(m.group(3)) == pr:
-            return int(m.group(1))
+            return m.group(1)
     return None
 
 
@@ -258,7 +250,7 @@ def resolve_target(target, paths, sd):
             except (RuntimeError, KeyError, ValueError) as e:
                 sys.stderr.write("squad-atlas: gh: %s\n" % e)
         if issue is not None and issue in rows:
-            return {"id": "pr-%d" % pr, "title": "PR #%d (issue #%d)" % (pr, issue), "body": "",
+            return {"id": "pr-%d" % pr, "title": "PR #%d (issue %s)" % (pr, issue if "-" in issue else "#" + issue), "body": "",
                     "base": rows[issue][2], "head": rows[issue][1], "issue": issue, "source": "git-only"}
         fail(10, "PR not found: #%d is not fetchable and has no ralph-run.md row" % pr)
     # branch
@@ -307,7 +299,7 @@ def gather_one(spec, paths, sd):
     data = {"id": spec["id"], "title": spec["title"], "base": base, "head": head,
             "merge_base": merge_base[:12], "issue": spec["issue"], "source": spec["source"],
             "project": paths.get("DISPLAY_NAME"), "generated": dt.date.today().isoformat(),
-            "modules": {name: prefix for prefix, name in mods},
+            "modules": {g["id"]: g["label"] for g in mods},
             "files": files, "commits": commits, "criteria": criteria,
             "verdicts": verdicts_for(sd, spec["issue"]),
             "body": spec.get("body", "")}
@@ -354,7 +346,7 @@ def cmd_gather(argv):
         rows = ralph_rows(sd)
         if not rows:
             fail(10, "no ralph-run.md rows")
-        for issue in sorted(rows):
+        for issue in sorted(rows, key=lambda i: (re.sub(r"\d+$", "", i), int(re.search(r"\d+$", i).group()))):
             gather_one(resolve_target(rows[issue][1], paths, sd), paths, sd)
         return
     gather_one(resolve_target(argv[0], paths, sd), paths, sd)
@@ -516,9 +508,7 @@ def graph_fragment(sd, atlas_json):
     if not os.path.exists(gpath):
         return None
     try:
-        spec = importlib.util.spec_from_file_location("squad_graph", os.path.join(HERE, "squad-graph.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        mod = _graph_module()
         with open(gpath, encoding="utf-8") as f:
             data = json.load(f)
         ov = {"files": [x["path"] for x in atlas_json.get("files", [])], "title": atlas_json.get("title")}
