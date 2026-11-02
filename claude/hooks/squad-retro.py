@@ -10,7 +10,9 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
                       and emit the summary keys.
 
 Sources, all read-only:
-  progress.txt        "[#ID] review: <VERDICT> r<N>[. Obs: ...]",
+  progress.txt        "[#ID] [date] review: <VERDICT> r<N>[ <anything>]",
+                      observations from "Obs:"/"obs:" when present, else
+                      the trailing text (surrounding parentheses dropped),
                       "[#ID] review: N rounds, last verdict <X>",
                       "[#ID] [date] resolved. PR: #M (base: ...)",
                       "[#ID] [date] escalated (N attempts). <reason>",
@@ -45,7 +47,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
+REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)\b(.*)$")
+OBS_RE = re.compile(r"\b[Oo]bs:\s*(.*)$")
 SUMMARY_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+(\d+)\s+rounds?,\s+last verdict\s+([A-Z_]+)")
 RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
 ESCALATED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?escalated(?:\s+(?:after\s+)?\(?(\d+) attempts?\)?)?\.?\s*(.*)$")
@@ -117,6 +120,31 @@ def read_tsv(path, cols):
 
 # ---------------------------------------------------------------- trail
 
+def unwrap(text):
+    """Drop one pair of parentheses around the whole text."""
+    if text.startswith("(") and text.endswith(")"):
+        depth = 0
+        for i, c in enumerate(text):
+            depth += c == "("
+            depth -= c == ")"
+            if depth == 0:
+                return text[1:-1].strip() if i == len(text) - 1 else text
+    return text
+
+
+def review_obs(rest):
+    """Observations from the text after `rN`: the `Obs:` tail when present,
+    else the whole trailing text."""
+    rest = rest.strip().lstrip(".,;:-").strip()
+    m = OBS_RE.search(rest)
+    if m:
+        obs = m.group(1).strip()
+        if obs.endswith(")") and obs.count(")") > obs.count("("):
+            obs = obs[:-1].rstrip()
+        return obs
+    return unwrap(rest)
+
+
 def parse_progress(lines):
     """issue -> {rounds: [(n, verdict, obs)], pr, resolved, escalated, skipped, summary}
     Issue ids are strings: "327" or "HV-22"."""
@@ -130,7 +158,7 @@ def parse_progress(lines):
         m = REVIEW_RE.match(line)
         if m:
             r = rec(m.group(1))
-            r["rounds"].append((int(m.group(4)), m.group(3).upper(), (m.group(5) or "").strip()))
+            r["rounds"].append((int(m.group(4)), m.group(3).upper(), review_obs(m.group(5))))
             continue
         m = SUMMARY_RE.match(line)
         if m:

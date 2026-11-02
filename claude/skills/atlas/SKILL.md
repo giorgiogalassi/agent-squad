@@ -37,6 +37,10 @@ directory.
 to its base from `.squad/ralph-run.md` when listed, else the default
 branch), or `--batch` (every row of the current `ralph-run.md`, one
 atlas per row). No argument: ask once, offering the current branch.
+The base is compared as `origin/<base>` when that ref exists (a stale
+local base would pull in commits already merged), else the local
+branch; `--base <ref>` overrides it for any target and is passed on to
+`gather`. `BASE` prints the ref actually used.
 `--no-render` stops after the brief (no HTML).
 
 **Reads only.** Atlas never commits, never pushes, never comments on
@@ -46,7 +50,7 @@ the tracker or the VCS. Everything it writes lives under
 ## Step 1: gather
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py gather <target>
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py gather <target> [--base <ref>]
 ```
 
 Read `ATLAS_DIR`, `ID`, `TITLE`, `BASE`, `HEAD`, `COMMITS`, `FILES`,

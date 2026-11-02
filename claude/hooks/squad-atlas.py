@@ -3,7 +3,8 @@
 
 Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
-  gather <pr#|branch|--batch>   Resolve the range, collect the diff per
+  gather <pr#|branch|--batch> [--base <ref>]
+                                Resolve the range, collect the diff per
                                 file grouped by the scout-cache module
                                 map, commits, tests touched, acceptance
                                 criteria and Reven's observations into
@@ -29,11 +30,18 @@ Range resolution:
               repository default branch (origin/HEAD, else main/master).
   --batch     one gather per row of ralph-run.md; emits one block of
               keys per row separated by ID=.
+  base ref    origin/<base> when that remote-tracking ref exists (it is
+              the PR's real base: a stale local branch would pull in
+              commits already merged upstream), else the local <base>.
+              --base <ref> overrides it as given, for every target.
+              BASE= prints the ref actually compared against.
 
 Criteria: PR/issue body "Acceptance" section when fetched, else
 .squad/forge/output.yaml acceptance_criteria, else none.
-Verdicts: "[#ID] review: ... Obs: ..." lines of progress.txt for the
-issue that resolved into this PR or branch.
+Verdicts: "[#ID] [date] review: <VERDICT> r<N> <anything>" lines of
+progress.txt for the issue that resolved into this PR or branch. The
+observations are the text after "Obs:"/"obs:" when present, else the
+whole trailing text (one pair of surrounding parentheses dropped).
 
 Exit codes: 0 success, 2 usage error, 10 precondition, 20 I/O error.
 Python 3.8+ standard library only.
@@ -52,7 +60,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIFF_CAP_LINES = 400
 TEST_RE = re.compile(r"(^|/)(test|tests|spec|specs|__tests__|evals?)(/|$)|\.(test|spec)\.[a-z]+$|^scripts/test-.*\.sh$|_test\.(py|go)$")
 RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
-REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:\d{4}-\d{2}-\d{2}\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)(?:\.\s*Obs:\s*(.*))?$")
+REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:\d{4}-\d{2}-\d{2}\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)\b(.*)$")
+OBS_RE = re.compile(r"\b[Oo]bs:\s*(.*)$")
 
 BRIEF_TEMPLATE = """# Atlas brief: {title}
 
@@ -212,6 +221,31 @@ def criteria_from_forge(sd):
     return out
 
 
+def unwrap(text):
+    """Drop one pair of parentheses around the whole text."""
+    if text.startswith("(") and text.endswith(")"):
+        depth = 0
+        for i, c in enumerate(text):
+            depth += c == "("
+            depth -= c == ")"
+            if depth == 0:
+                return text[1:-1].strip() if i == len(text) - 1 else text
+    return text
+
+
+def review_obs(rest):
+    """Observations from the text after `rN`: the `Obs:` tail when present,
+    else the whole trailing text."""
+    rest = rest.strip().lstrip(".,;:-").strip()
+    m = OBS_RE.search(rest)
+    if m:
+        obs = m.group(1).strip()
+        if obs.endswith(")") and obs.count(")") > obs.count("("):
+            obs = obs[:-1].rstrip()
+        return obs
+    return unwrap(rest)
+
+
 def verdicts_for(sd, issue):
     out = []
     if issue is None:
@@ -220,7 +254,7 @@ def verdicts_for(sd, issue):
         m = REVIEW_RE.match(line)
         if m and m.group(1) == issue:
             out.append({"round": int(m.group(3)), "verdict": m.group(2).upper(),
-                        "obs": (m.group(4) or "").strip()})
+                        "obs": review_obs(m.group(4))})
     return out
 
 
@@ -262,16 +296,33 @@ def resolve_target(target, paths, sd):
             "head": t, "issue": issue, "source": "git-only"}
 
 
-def gather_one(spec, paths, sd):
+def ref_exists(root, ref):
+    return subprocess.run(["git", "rev-parse", "--verify", "-q", ref + "^{commit}"], cwd=root,
+                          capture_output=True).returncode == 0
+
+
+def base_ref(root, base, override=None):
+    """The ref the range is compared against: --base as given, else
+    origin/<base> when it exists, else the local <base>."""
+    if override:
+        if not ref_exists(root, override):
+            fail(10, "no diff against base: --base %s is not a commit" % override)
+        return override
+    if not base.startswith("origin/") and ref_exists(root, "refs/remotes/origin/" + base):
+        return "origin/" + base
+    if ref_exists(root, base):
+        return base
+    fail(10, "no diff against base: neither origin/%s nor %s exists" % (base, base))
+
+
+def gather_one(spec, paths, sd, base_override=None):
     root = paths["PROJECT_ROOT"]
-    base, head = spec["base"], spec["head"]
+    head = spec["head"]
+    base = base_ref(root, spec["base"], base_override)
     try:
         merge_base = git("merge-base", base, head, cwd=root).strip()
-    except RuntimeError:
-        try:
-            merge_base = git("merge-base", "origin/" + base, head, cwd=root).strip()
-        except RuntimeError as e:
-            fail(10, "no diff against base: %s" % e)
+    except RuntimeError as e:
+        fail(10, "no diff against base: %s" % e)
     numstat = git("diff", "--numstat", "%s..%s" % (merge_base, head), cwd=root)
     status = dict()
     for line in git("diff", "--name-status", "%s..%s" % (merge_base, head), cwd=root).splitlines():
@@ -334,8 +385,24 @@ def gather_one(spec, paths, sd):
 
 
 def cmd_gather(argv):
-    if len(argv) != 1:
-        fail(2, "usage: gather <pr#|branch|--batch>")
+    usage = "usage: gather <pr#|branch|--batch> [--base <ref>]"
+    base_override, rest = None, []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--base":
+            if i + 1 >= len(argv) or not argv[i + 1]:
+                fail(2, usage)
+            base_override = argv[i + 1]
+            i += 2
+        elif argv[i].startswith("--base="):
+            base_override = argv[i].split("=", 1)[1] or fail(2, usage)
+            i += 1
+        else:
+            rest.append(argv[i])
+            i += 1
+    if len(rest) != 1:
+        fail(2, usage)
+    argv = rest
     paths = resolve_paths()
     if not paths.get("VAULT_PATH") or not os.path.isdir(paths["VAULT_PATH"]):
         fail(10, "vault not found")
@@ -347,9 +414,9 @@ def cmd_gather(argv):
         if not rows:
             fail(10, "no ralph-run.md rows")
         for issue in sorted(rows, key=lambda i: (re.sub(r"\d+$", "", i), int(re.search(r"\d+$", i).group()))):
-            gather_one(resolve_target(rows[issue][1], paths, sd), paths, sd)
+            gather_one(resolve_target(rows[issue][1], paths, sd), paths, sd, base_override)
         return
-    gather_one(resolve_target(argv[0], paths, sd), paths, sd)
+    gather_one(resolve_target(argv[0], paths, sd), paths, sd, base_override)
 
 
 # --------------------------------------------------------------- render
