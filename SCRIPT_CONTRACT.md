@@ -65,7 +65,10 @@ verbs (`summary`, `resolve`) follow the contract above.
   snapshots the working-state files (`ralph-run.md`, `cody-checkpoint.env`,
   `progress.txt`) and commits once through the same committer internal. Without
   `--project` every project with an inbox is folded. Claims of dead pids are
-  adopted by one atomic rename, so each event is applied exactly once. Emits
+  adopted by one atomic rename; recovery goes by event ID (an `applied`
+  ledger written right after each effect), so no event is lost and none is applied
+  twice except after a crash in the instant between an effect and its ledger
+  line. Identical lines from distinct events are all kept. Emits
   `OUTCOME=applied|unchanged`, `CHANGED`, `APPLIED=<n>`, `QUARANTINED=<n>`.
   Exit 0 done or nothing to do, 2 usage, 10 no vault or unmapped project, 20 not
   a git repository, lock wait timed out or commit failed (claimed events stay

@@ -253,9 +253,8 @@ quarantine() {  # quarantine <file> <inbox> <reason>
   QUARANTINED=$((QUARANTINED + 1))
 }
 
-# append_line <file> <line> <dedupe>: append; dedupe=1 skips a line already present.
+# append_line <file> <line>: append.
 append_line() {
-  [ "$3" = 1 ] && grep -qxF -- "$2" "$1" 2>/dev/null && return 0
   printf '%s\n' "$2" >> "$1"
 }
 
@@ -303,7 +302,7 @@ FOLD_COMMITS=0
 fold_project() {
   local vault="$1" proj="$2" sn="$3" lock="$4"
   local state="$vault/projects/$proj/$sn" inbox claimed f d pid evs rev seen skip
-  local kind source key line ts adopted dedupe status paths rel msg
+  local kind source key line ts status paths rel msg eid ledger applied_n=0
   inbox="$state/inbox"; claimed="$inbox/.claimed-$$"
   status="$vault/projects/$proj/status.md"
   [ -d "$inbox" ] && ensure_exclude "$vault" "$sn"
@@ -327,8 +326,9 @@ fold_project() {
   LOCK="$lock"
   lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "lore: vault lock busy: $LOCK" >&2; return 1; }
   mkdir -p "$state" 2>/dev/null
-  evs=""
+  evs=""; ledgers="$claimed.ledgers"
   if [ -d "$claimed" ]; then
+    find "$claimed" -type f -name applied -exec cat {} + > "$ledgers" 2>/dev/null
     evs="$(find "$claimed" -type f -name '*.ev' 2>/dev/null | awk -F/ '{ print $NF "\t" $0 }' | sort | cut -f2-)"
   fi
   # Same SOURCE+KIND+KEY inside one batch: only the newest applies.
@@ -353,19 +353,24 @@ EOF2
     if printf '%s\n' "$skip" | grep -qxF -- "$f"; then rm -f "$f"; FOLD_APPLIED=$((FOLD_APPLIED + 1)); continue; fi
     kind="$(ev_field "$f" KIND)"; source="$(ev_field "$f" SOURCE)"; key="$(ev_field "$f" KEY)"
     line="$(ev_field "$f" LINE)"; ts="$(ev_field "$f" TS)"
-    adopted=0; case "$f" in */adopt-*) adopted=1 ;; esac
+    # Crash recovery goes by event ID: an event whose effect was recorded in an
+    # `applied` ledger (written right after the effect) is not applied again.
+    eid="$(ev_field "$f" ID)"
+    if [ -n "$eid" ] && [ -f "$ledgers" ] && grep -qxF -- "$eid" "$ledgers"; then rm -f "$f"; continue; fi
     if [ "$(ev_field "$f" V)" != 1 ]; then quarantine "$f" "$inbox" "unsupported or missing V"; continue; fi
     if [ -z "$source" ] || [ -z "$line" ]; then quarantine "$f" "$inbox" "missing SOURCE or LINE"; continue; fi
     [ -n "$ts" ] || ts="$(date '+%Y-%m-%d %H:%M:%S')"
     case "$kind" in
-      log)        append_line "$state/session.log" "[$ts] [$source] $line" "$adopted" ;;
-      progress)   append_line "$state/progress.txt" "$line" "$adopted" ;;
+      log)        append_line "$state/session.log" "[$ts] [$source] $line"  ;;
+      progress)   append_line "$state/progress.txt" "$line"  ;;
       checkpoint) apply_checkpoint "$status" "[$ts] [$source] $line" ;;
       note)       apply_note "$status" "$source" "$key" "$line" ;;
       *) quarantine "$f" "$inbox" "unknown kind: $kind"; continue ;;
     esac
+    [ -n "$eid" ] && printf '%s\n' "$eid" >> "$claimed/applied"
     rm -f "$f"
-    FOLD_APPLIED=$((FOLD_APPLIED + 1))
+    FOLD_APPLIED=$((FOLD_APPLIED + 1)); applied_n=$((applied_n + 1))
+    [ -n "${LORE_TEST_DIE_AFTER:-}" ] && [ "$applied_n" -ge "$LORE_TEST_DIE_AFTER" ] && kill -9 $$
   done <<EOF2
 $evs
 EOF2
@@ -387,6 +392,7 @@ $rel"
   fi
   lock_release; MY_OWNER=""
   [ "$rc" = 0 ] && rm -rf "$claimed"
+  rm -f "$ledgers"
   return "$rc"
 }
 

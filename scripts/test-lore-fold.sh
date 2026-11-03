@@ -150,5 +150,56 @@ kill $H 2>/dev/null; wait $H 2>/dev/null; rm -rf "$V/.git/lore.lock"
 fold >/dev/null 2>&1
 check "claimed events applied by the next fold" 1 "$(grep -c late "$V/projects/p/.lore/session.log")"
 
+# identical lines are real events: lock timeout then adoption appends the repeat
+V="$TMP/v9"; mkvault "$V"
+mkdir -p "$V/projects/p/.lore"; echo "[2] same line" > "$V/projects/p/.lore/progress.txt"
+git -C "$V" add -A; git -C "$V" commit -qm prog
+ev --project p --source s --kind progress --line "[2] same line" >/dev/null
+mkdir "$V/.git/lore.lock"; sleep 30 & H=$!
+printf 'PID=%s\nAT=%s\n' "$H" "$(date +%s)" > "$V/.git/lore.lock/owner"
+LORE_LOCK_WAIT=1 fold >/dev/null 2>&1
+kill $H 2>/dev/null; wait $H 2>/dev/null; rm -rf "$V/.git/lore.lock"
+fold >/dev/null 2>&1
+check "identical progress line after lock timeout is appended" 2 "$(grep -c 'same line' "$V/projects/p/.lore/progress.txt")"
+
+# the same line twice in one batch: both appended
+V="$TMP/v10"; mkvault "$V"
+ev --project p --source s --kind progress --line "[3] twice" >/dev/null
+ev --project p --source s --kind progress --line "[3] twice" >/dev/null
+fold >/dev/null 2>&1
+check "identical lines in one batch both appended" 2 "$(grep -c twice "$V/projects/p/.lore/progress.txt")"
+
+# crash after k of n: next fold applies exactly the remaining
+V="$TMP/v11"; mkvault "$V"
+i=1; while [ $i -le 5 ]; do ev --project p --source s --kind progress --line "[4] e$i" >/dev/null; i=$((i+1)); done
+LORE_TEST_DIE_AFTER=2 fold >/dev/null 2>&1
+check "crashed fold applied 2" 2 "$(grep -c 'e[0-9]' "$V/projects/p/.lore/progress.txt")"
+fold >/dev/null 2>&1
+check "recovery applied all 5" 5 "$(grep -c 'e[0-9]' "$V/projects/p/.lore/progress.txt")"
+check "no duplicates after recovery" 5 "$(sort -u "$V/projects/p/.lore/progress.txt" | grep -c 'e[0-9]')"
+# crash between effect and removal: the ledger skips the event by ID
+V="$TMP/v12"; mkvault "$V"
+IN="$V/projects/p/.lore/inbox"; mkdir -p "$IN/.claimed-99999"
+printf 'V=1\nID=x1\nSOURCE=s\nKIND=progress\nTS=2026-01-01 00:00:00\nLINE=[5] done\n' > "$IN/.claimed-99999/1-1-1.ev"
+printf 'V=1\nID=x2\nSOURCE=s\nKIND=progress\nTS=2026-01-01 00:00:00\nLINE=[5] todo\n' > "$IN/.claimed-99999/2-1-1.ev"
+printf 'x1\n' > "$IN/.claimed-99999/applied"; echo "[5] done" > "$V/projects/p/.lore/progress.txt"
+fold >/dev/null 2>&1
+check "ledgered event not re-applied" 1 "$(grep -c '\[5\] done' "$V/projects/p/.lore/progress.txt")"
+check "unledgered event applied" 1 "$(grep -c '\[5\] todo' "$V/projects/p/.lore/progress.txt")"
+
+# SessionStart with a held lock: orientation is delayed by the short wait only
+V="$TMP/v13"; mkvault "$V"; R="$TMP/r13"; mkdir -p "$R"; git -C "$R" init -q
+printf '{"projects":{"%s":"p"}}\n' "$(cd "$R" && pwd -P)" > "$V/lore-config.json"
+ev --project p --source s --kind log --line "held" >/dev/null
+mkdir "$V/.git/lore.lock"; sleep 30 & H=$!
+printf 'PID=%s\nAT=%s\n' "$H" "$(date +%s)" > "$V/.git/lore.lock/owner"
+t0="$(date +%s)"
+(cd "$R" && SECOND_BRAIN_PATH="$V" bash "$REPO_ROOT/claude/hooks/lore-orient.sh" >/dev/null 2>&1 </dev/null)
+t1="$(date +%s)"
+kill $H 2>/dev/null; wait $H 2>/dev/null; rm -rf "$V/.git/lore.lock"
+[ $((t1 - t0)) -le 6 ] && ok "orientation delayed at most a few seconds by a held lock" || bad "orientation took $((t1 - t0)) s"
+fold >/dev/null 2>&1
+check "event left for the next fold" 1 "$(grep -c held "$V/projects/p/.lore/session.log")"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
