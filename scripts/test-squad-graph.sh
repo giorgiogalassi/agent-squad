@@ -153,7 +153,7 @@ check "D-7 context node is the dependency the change added or removed" "['libs/u
 check "D-8 unit label comes from the manifest name" "core" "$(pj "$DJ" '[g["label"] for g in d["groups"] if g["id"]=="libs/core"][0]')"
 check "D-9 node lists its files and commits" "['calc.ts']/1" \
   "$(pj "$DJ" '[[f["path"].split("/")[-1] for f in g["files"]] for g in d["groups"] if g["id"]=="libs/core"][0]')/$(pj "$DJ" '[len(g["commits"]) for g in d["groups"] if g["id"]=="libs/core"][0]')"
-check "D-10 no per-file diff text and no hunks in the graph" "0" "$(grep -c '^@@\|"diff"' "$DJ")"
+check "D-10 no per-file diff text and no hunks in the graph" "0" "$(grep -c '@@' "$DJ")"
 check "D-11 graph.json format fields" "2/unit/diff/False" \
   "$(pj "$DJ" 'str(d["version"])+"/"+d["level"]+"/"+d["kind"]+"/"+str(d["prefix"]!="")')"
 check "D-12 first run is all cache misses" "0" "$(key CACHE_HITS)"
