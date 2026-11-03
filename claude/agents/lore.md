@@ -348,6 +348,8 @@ installed. Triggers: status.md missing, or stale (Last checkpoint newer
 than Last updated, or Last updated older than 7 days; current time via
 `date "+%Y-%m-%d %H:%M"`).
 
+0. Fold pending writer events first: `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore fold --project <project>`
+   (exit 20 = report it and continue; recovery reads whatever is committed).
 1. `git log --oneline -20`; `git diff HEAD`; `git stash list`;
    `gh pr list --state open 2>/dev/null || echo "gh unavailable"`.
 2. Read any open PR descriptions.

@@ -22,7 +22,7 @@ never read at runtime by anything — only `path-resolve.sh` is. If you
 change how project-root resolution works, edit `path-resolve.sh`, then
 update `PATH_RESOLUTION.md` to match.
 
-Second-brain: a SessionStart hook auto-orients (read-only); run
+Second-brain: a SessionStart hook auto-orients (it first folds pending writer events, a vault commit when any are pending; the orientation itself is read-only); run
 `/seed` on first contact with a project (it records the vault mapping);
 the hooks handle each session. `/lore start` is setup and repair only
 (legacy `.squad/` migration, re-mapping a moved checkout). Command surface: `lore start`,
