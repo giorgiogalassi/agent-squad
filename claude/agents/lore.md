@@ -249,7 +249,11 @@ request.
 Record only preferences validated by implementation, and not things
 Claude auto-memory already captures locally. A rule recorded
 project-only that appears in decisions across 2+ projects → propose
-promotion to development.md; never promote automatically.
+promotion to development.md; never promote automatically. A rule that
+comes from a local-only project (vault-ignored `projects/<n>/`) is promoted
+without its project name: the provenance tag reads `from local`, never the
+project's own name (#401); `lore fold` also rewrites local-only names to
+`local` in event lines.
 
 ## `lore decide "<title>: <body>" [--supersedes "<YYYY-MM-DD> <title>"] [--rule]`
 

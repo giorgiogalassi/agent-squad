@@ -128,9 +128,9 @@ printf 'V=1\nID=c\nSOURCE=s\nKIND=log\nTS=2026-01-01 00:00:02\nLINE=live one\n' 
 fold >/dev/null 2>&1
 check "live claim untouched" 0 "$(grep -c 'live one' "$V/projects/p/.lore/session.log")"
 
-# concurrent folds over 50 events
+# concurrent folds over 50 events (spread over 5 sources: one source keeps at most 20 per fold, #425)
 V="$TMP/v7"; mkvault "$V"
-i=1; while [ $i -le 50 ]; do ev --project p --source s --kind log --line "line-$i" >/dev/null; i=$((i+1)); done
+i=1; while [ $i -le 50 ]; do ev --project p --source "s$((i % 5))" --kind log --line "line-$i" >/dev/null; i=$((i+1)); done
 fold >/dev/null 2>"$TMP/e1" & P1=$!
 fold >/dev/null 2>"$TMP/e2" & P2=$!
 wait $P1; r1=$?; wait $P2; r2=$?

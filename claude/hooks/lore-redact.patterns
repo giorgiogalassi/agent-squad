@@ -1,0 +1,18 @@
+# Redaction patterns for `lore fold` (#425). One POSIX ERE per line; blank lines
+# and lines starting with "#" are ignored. A match is replaced by [REDACTED]
+# before an event reaches the vault; the event is still committed. The fold
+# uses a control-character sed delimiter, so any ERE is safe. Owner of this
+# list: this file.
+# GitHub tokens (classic prefixes and fine-grained)
+gh[pousr]_[A-Za-z0-9]{20,}
+github_pat_[A-Za-z0-9_]{20,}
+# Anthropic API keys
+sk-ant-[A-Za-z0-9_-]{16,}
+# AWS access key IDs
+AKIA[0-9A-Z]{16}
+# Bearer tokens
+[Bb]earer[[:space:]]+[A-Za-z0-9._~+/=-]{8,}
+# password= / token= style assignments (the whole assignment is masked)
+([Pp]ass(word|wd)|[Tt]oken|[Ss]ecret|[Aa]pi[_-]?[Kk]ey)[[:space:]]*=[[:space:]]*[^[:space:]]+
+# PEM private-key headers
+-----BEGIN ([A-Z]+ )*PRIVATE KEY-----

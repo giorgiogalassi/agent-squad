@@ -341,13 +341,78 @@ commit_in_wt() {
 
 FOLD_APPLIED=0
 FOLD_COMMITS=0
+FOLD_REDACTED=0
+FOLD_CAPPED=0
+
+# --- redaction and caps (#425): the committer is the one choke point ----------
+LINE_MAX=300          # characters of one event line kept
+SOURCE_CAP=20         # events per SOURCE kept (the newest) in one fold
+REDACT_MARK="[REDACTED]"
+TRUNC_MARK="[truncated]"
+REDACT_FILE="$HOOK_DIR/lore-redact.patterns"
+
+# redact_line <text> <local-names>: text with local-only project names replaced
+# by `local` and secret-pattern matches masked, then capped at LINE_MAX
+# characters. The result is in REDACTED_OUT and the match count added to
+# FOLD_REDACTED (no subshell, so the counter survives).
+REDACTED_OUT=""
+redact_line() {
+  local text="$1" names="$2" n pat cnt d
+  d="$(printf '\001')"
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    text="${text//"$n"/local}"
+  done <<EOF3
+$names
+EOF3
+  if [ -f "$REDACT_FILE" ]; then
+    while IFS= read -r pat; do
+      case "$pat" in ''|'#'*) continue ;; esac
+      cnt="$(printf '%s\n' "$text" | grep -oE -- "$pat" 2>/dev/null | wc -l | tr -d ' ')"
+      [ "${cnt:-0}" -gt 0 ] || continue
+      text="$(printf '%s' "$text" | sed -E "s${d}${pat}${d}${REDACT_MARK}${d}g")"
+      FOLD_REDACTED=$((FOLD_REDACTED + cnt))
+    done < "$REDACT_FILE"
+  fi
+  if [ "${#text}" -gt "$LINE_MAX" ]; then
+    text="${text:0:$((LINE_MAX - ${#TRUNC_MARK}))}$TRUNC_MARK"
+  fi
+  REDACTED_OUT="$text"
+}
+
+# local_names <vault>: names of the vault's local-only projects, one per line.
+local_names() {
+  local all shared
+  all="$(for d in "$1"/projects/*/; do [ -d "$d" ] || continue; d="${d%/}"; printf '%s\n' "${d##*/}"; done)"
+  [ -n "$all" ] || return 0
+  shared="$(printf '%s\n' "$all" | squad_shared_projects "$1")"
+  printf '%s\n' "$all" | grep -vxF -- "$shared"
+  return 0
+}
+
+# cap_events <event-list>: sets CAPPED_OUT to the list without the events beyond SOURCE_CAP
+# per SOURCE (the oldest drop; files removed, FOLD_CAPPED counts them).
+CAPPED_OUT=""
+cap_events() {
+  local f dropped
+  dropped="$(printf '%s\n' "$1" | awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' \
+    | while IFS= read -r f; do [ -n "$f" ] && printf '%s\t%s\n' "$(ev_field "$f" SOURCE)" "$f"; done \
+    | awk -F'\t' -v cap="$SOURCE_CAP" '++c[$1] > cap { print $2 }')"
+  CAPPED_OUT="$1"
+  [ -n "$dropped" ] || return 0
+  while IFS= read -r f; do rm -f "$f"; FOLD_CAPPED=$((FOLD_CAPPED + 1)); done <<EOF3
+$dropped
+EOF3
+  CAPPED_OUT="$(printf '%s\n' "$1" | grep -vxF -- "$dropped")"
+  return 0
+}
 
 # fold_project <vault> <project> <state-name> <lock>: claim, lock, apply, commit.
 # 0 done, 1 failed (claimed events stay in .claimed-<pid>/ for the next fold).
 fold_project() {
   local vault="$1" proj="$2" sn="$3" lock="$4"
   local state inbox claimed f d pid evs rev seen skip
-  local kind source key line ts status paths rel msg eid ledger applied_n=0 root="$vault" prmode=0
+  local kind source key line ts status paths rel msg eid ledger applied_n=0 root="$vault" prmode=0 lnames
   inbox="$vault/projects/$proj/$sn/inbox"; claimed="$inbox/.claimed-$$"
   # PR-mode vault: working state and events are applied in this project's session
   # worktree, whatever branch the checkout sits on. Any other mode: nothing is applied
@@ -387,6 +452,8 @@ fold_project() {
     find "$claimed" -type f -name applied -exec cat {} + > "$ledgers" 2>/dev/null
     evs="$(find "$claimed" -type f -name '*.ev' 2>/dev/null | awk -F/ '{ print $NF "\t" $0 }' | sort | cut -f2-)"
   fi
+  [ -n "$evs" ] && { cap_events "$evs"; evs="$CAPPED_OUT"; }
+  lnames="$(local_names "$vault")"
   # Same SOURCE+KIND+KEY inside one batch: only the newest applies.
   skip=""; seen=""
   rev="$(printf '%s\n' "$evs" | awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }')"
@@ -416,6 +483,8 @@ EOF2
     if [ "$(ev_field "$f" V)" != 1 ]; then quarantine "$f" "$inbox" "unsupported or missing V"; continue; fi
     if [ -z "$source" ] || [ -z "$line" ]; then quarantine "$f" "$inbox" "missing SOURCE or LINE"; continue; fi
     [ -n "$ts" ] || ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    redact_line "$line" "$lnames"; line="$REDACTED_OUT"
+    redact_line "$key" "$lnames"; key="$REDACTED_OUT"
     case "$kind" in
       log)        append_line "$state/session.log" "[$ts] [$source] $line"  ;;
       progress)   append_line "$state/progress.txt" "$line"  ;;
@@ -488,6 +557,7 @@ EOF2
   squad_emit OUTCOME "$([ "$FOLD_COMMITS" -gt 0 ] && echo applied || echo unchanged)"
   squad_emit CHANGED "$([ "$FOLD_COMMITS" -gt 0 ] && echo yes || echo no)"
   squad_emit APPLIED "$FOLD_APPLIED"; squad_emit QUARANTINED "$QUARANTINED"
+  squad_emit CAPPED "$FOLD_CAPPED"; squad_emit REDACTED "$FOLD_REDACTED"
   [ "$rc" = 0 ] || echo "lore: fold incomplete; unapplied events stay claimed for the next fold" >&2
   exit "$rc"
 }
