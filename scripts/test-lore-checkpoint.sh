@@ -165,7 +165,8 @@ check "on default branch: fold is called" 1 "$(grep -c '^fold' "$TMPROOT/fold.lo
 DEF="$(git -C "$F_VAULT" symbolic-ref --short HEAD)"
 git -C "$F_VAULT" switch -qc lore/other-2026-11-03
 rm -f "$TMPROOT/fold.log" "$F_VAULT/projects/fixture/.lore-checkpoint.log"; run_hook
-check "off default branch: no fold" "" "$(cat "$TMPROOT/fold.log" 2>/dev/null)"
+# (a detached `lore push` from the orientation's push retry, #427, may be logged too: only fold is forbidden)
+check "off default branch: no fold" 0 "$(grep -c '^fold' "$TMPROOT/fold.log" 2>/dev/null)"
 check "off default branch: skip reason logged" 1 "$(grep -c 'not on its default branch' "$F_VAULT/projects/fixture/.lore-checkpoint.log" 2>/dev/null)"
 git -C "$F_VAULT" switch -q "$DEF"
 
