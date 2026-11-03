@@ -12,7 +12,7 @@ has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1 (missing [$2] in [$3])" ;; es
 lacks() { case "$3" in *"$2"*) bad "$1 (unexpected [$2] in [$3])" ;; *) ok "$1" ;; esac; }
 
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{batch-audit.sh,squad-common.sh,path-resolve.sh,squad-incidents.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,batch-audit.sh,squad-common.sh,path-resolve.sh,squad-incidents.sh} "$TMPROOT/hooks/"
 BA="$TMPROOT/hooks/batch-audit.sh"
 export SQUAD_INCIDENTS=off
 V="$TMPROOT/vault"; P="$V/projects/demo"; SQ="$P/.squad"; mkdir -p "$SQ/issues"

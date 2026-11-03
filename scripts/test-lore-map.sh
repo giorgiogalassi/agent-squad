@@ -12,7 +12,7 @@ has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1 (missing [$2] in [$3])" ;; es
 
 export SQUAD_INCIDENTS=off
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{lore-map.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,lore-map.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 LM="$TMPROOT/hooks/lore-map.sh"
 
 mkvault() {  # mkvault <dir>: git vault, tracked config, ignore rule for projects/secret/
@@ -188,6 +188,13 @@ bash "$LM" set --vault "$V" --root /w/neg --name neg --local >/dev/null 2>&1; rc
 check "post-check rerun: exit 20" 20 "$rc"
 EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
 check "post-check rerun: entry once" 1 "$(grep -cxF 'projects/neg/' "$EXC")"
+
+# Off the default branch (#422): a tracked-config write is refused, not reported applied.
+V="$TMPROOT/voff"; mkvault "$V"; git -C "$V" switch -qc feature/x
+out="$(bash "$LM" set --vault "$V" --root /w/shared --name shared 2>/dev/null)"; rc=$?
+check "off main (direct): lore-map exits 10" 10 "$rc"
+check "off main (direct): not reported applied" 0 "$(printf '%s' "$out" | grep -c 'OUTCOME=applied')"
+check "off main (direct): no commit on the feature branch" 1 "$(git -C "$V" rev-list --count feature/x)"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

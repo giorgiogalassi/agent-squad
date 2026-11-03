@@ -43,7 +43,8 @@
 #   FIXED_SESSION_CLOSED=<n> <tag>, DECISIONS_APPLIED_INVERSE.
 set -u
 # shellcheck source=squad-common.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/squad-common.sh"
+VC_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$VC_HOOK_DIR/squad-common.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 KNOWN_ROOT_FILES=" CLAUDE.md INDEX.md lore-config.json lore-config.local.json squad-incidents.tsv "
@@ -423,7 +424,7 @@ main() {
       case " ${paths[*]:-} " in *" $f "*) continue ;; esac
       paths+=("$f")
     done <<< "$FIXED_FILES"
-    [ "${#paths[@]}" -gt 0 ] && squad_vault_commit "$vault" "${name:-vault}" "[lore] check --fix $(now_ts)" "${paths[@]}"
+    [ "${#paths[@]}" -gt 0 ] && { bash "$VC_HOOK_DIR/lore" commit --vault "$vault" --project "${name:-vault}" --message "[lore] check --fix $(now_ts)" --paths "${paths[@]}" >/dev/null || squad_commit_fail $?; }
   fi
   return 0
 }

@@ -112,16 +112,28 @@ _seen() {  # _seen <file>: is this issue's PR line in the file
 }
 if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ]; then
   _present=0
-  _seen "$PROGRESS" && _present=1
-  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
+  squad_vault_offdefault "$VAULT" || { _seen "$PROGRESS" && _present=1; }
+  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode_any "$VAULT"; then
     while IFS= read -r _wt; do
       [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/$STATE_NAME/progress.txt" && _present=1
     done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
   fi
 fi
 if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ] && [ "$_present" = 0 ]; then
-  printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
-  squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/progress.txt"
+  # Off the vault's default branch the checkout is another session's: write the
+  # session worktree (or nothing, direct mode) and never report a write that did not happen.
+  _wr="$(squad_vault_wroot "$VAULT" "$DISPLAY")"; _wrc=$?
+  if [ "$_wrc" = 0 ]; then
+    _wp="$_wr/projects/$DISPLAY/$STATE_NAME/progress.txt"
+    if [ "$_wr" != "$VAULT" ]; then
+      mkdir -p "$(dirname "$_wp")"
+      [ -f "$_wp" ] || : > "$_wp"
+    fi
+    printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$_wp"
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/progress.txt" || echo "cody-checkpoint: progress line not committed (vault checkout off its default branch)" >&2
+  else
+    echo "cody-checkpoint: vault checkout off its default branch in a direct-mode vault; progress line not written" >&2
+  fi
 fi
 
 if [ -d "$PROJ/$STATE_NAME" ]; then

@@ -437,6 +437,14 @@ fi
 # Staleness and budget signals. Each line is omitted when not applicable.
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 SIGNALS=""
+# Vault checkout on another session's branch (#422): say so; nothing is changed here.
+if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vdef="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
+  if [ -n "$_vdef" ]; then
+    _vcur="$(git -C "$VAULT" symbolic-ref -q --short HEAD 2>/dev/null)"
+    SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
+  fi
+fi
 if [ -f "$SQUAD_DIR/architecture.md" ]; then
   ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"
   NEWEST_F=""; NEWEST_M=0
