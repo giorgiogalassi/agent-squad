@@ -21,37 +21,29 @@ You never write code, plan features, or make architectural decisions.
 1. Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix). Never derive the root from
    `git rev-parse --show-toplevel` (breaks in worktrees; see
    PATH_RESOLUTION.md).
-2. First contact. Seed owns it; Lore owns repair only.
-   - `VAULT_PATH` is not an existing directory → ask
-     `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
-     Y → create it, then
-     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh ignore --vault "<path>"`
-     (writes the `.gitignore` listing `lore-config.local.json`; exit 0 =
-     done, other = report and stop). n → stop.
-   - `DISPLAY_NAME` non-empty → mapping exists; continue (never overwrite
-     it).
-   - `DISPLAY_NAME` empty → candidate = final component of `PROJECT_ROOT`.
-     `PROJECT_ROOT` equals the vault → stop ("The vault is not a
-     project"); never register it. If `<PROJECT_ROOT>/.squad/` exists and
-     the project is not `context: repo`, tell the user to run `lore start`
-     (setup/repair) to migrate it, then stop; do not migrate here. No
-     `<vault>/projects/<candidate>/` conflict → use `candidate` silently.
-     Conflict → prompt once: "A vault project named `<candidate>` already
-     exists. Display name for this project [`<candidate>-2`]:"; use the
-     answer (default `<candidate>-2`). Create `<vault>/projects/<name>/`
-     and record the mapping with
-     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<PROJECT_ROOT>" --name "<name>"`
-     (add `--local` when the user asked for a local-only project). The script
-     picks `lore-config.local.json` for a local-only project (vault-ignored
-     `projects/<name>/`, #351) or `--local`, else `lore-config.json`, and
-     keeps every other key. Read `OUTCOME`, `TARGET` and `TRACKED_FILES`.
-     Exit 0 = done; 10 = jq missing or the config is not valid JSON, tell
-     the user and stop (never overwrite it); 2 = report the stderr reason
-     and stop; 20 = report the stderr reason and stop.
-     `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
-     the user and never run it; until they do, write nothing else under
-     that project's folder.
-     Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
+2. First contact. Lore owns it; Seed calls it. Run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore map [--name "<name>"] [--local] [--create-vault]`
+   from the project (add `--root "<PROJECT_ROOT>"` outside it). It never
+   prompts and writes nothing when it asks a question. Read `OUTCOME`,
+   `NAME`, `TARGET`, `TRACKED_FILES`, and on exit 10 `NEED`/`SUGGESTED`:
+   - Exit 0: `OUTCOME=applied|unchanged`; an existing mapping is never
+     overwritten. Set `DISPLAY_NAME` to `NAME` for step 3 onward.
+   - `NEED=vault`: ask `Second-brain vault not found at <path>. Create it?
+     [Y/n]` and wait. Y: rerun with `--create-vault`. n: stop.
+   - `NEED=name`: ask once: "A vault project named `<candidate>` already
+     exists. Display name for this project [`<SUGGESTED>`]:", then rerun
+     with `--name <answer>` (default `SUGGESTED`).
+   - `NEED=migrate`: a legacy `<PROJECT_ROOT>/.squad/` exists; tell the user
+     to run `/lore start` to migrate it, then stop; do not migrate here.
+   - `NEED=jq`: tell the user jq is required and stop.
+   - Exit 10 without `NEED` (the vault checkout is off its default branch,
+     the config is not valid JSON): report the stderr reason and stop; never
+     claim the project was mapped. Exit 2 (the root is the vault: "The vault
+     is not a project") or 20: report the stderr reason and stop.
+   - `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
+     the user and never run it; until they do, write nothing else under that
+     project's folder.
+   - `--local` only when the user asked for a local-only project.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
    `STATE_DIR` (`<vault>/projects/<project-name>/<state_dir>/`, from path-resolve.sh), except `architecture.md`,
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`

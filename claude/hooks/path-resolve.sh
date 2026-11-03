@@ -5,10 +5,10 @@
 #
 # This is mechanism only, not policy: DISPLAY_NAME is printed empty when
 # no mapping exists (or jq is unavailable to read one). What a caller
-# does about an empty DISPLAY_NAME differs by skill — Seed does first
-# contact itself (names and records the mapping); Forge, Chisel, Archy, and
-# Ralph fall back to the basename of PROJECT_ROOT and continue; Lore
-# handles repair (re-mapping, migration). This script
+# does about an empty DISPLAY_NAME differs by skill — Seed and Lore do
+# first contact through `lore map` (names and records the mapping); Forge,
+# Chisel, Archy, and Ralph fall back to the basename of PROJECT_ROOT and
+# continue; Lore also handles repair (re-mapping, migration). This script
 # does not decide any of that — it only reports what's true right now.
 #
 # PROJECT_ROOT is resolved via `git rev-parse --git-common-dir`, not

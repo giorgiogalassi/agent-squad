@@ -95,6 +95,18 @@ verbs (`summary`, `resolve`) follow the contract above.
   writes `<git-common-dir>/lore-push-status` with the keys `AT=<epoch>`,
   `OUTCOME=applied|unchanged|failed` and `REASON=<one line, empty unless failed>`;
   the next SessionStart orientation shows a `failed` status and retries.
+- `map [--root <dir>] [--name <n>] [--local] [--create-vault] [--adopt]`: first contact; never
+  prompts. Resolves vault and root, creates `projects/<name>/` and records the mapping
+  through `lore-map.sh set` (committed through `commit`). Emits `OUTCOME=applied|unchanged`,
+  `CHANGED`, `NAME`, `TARGET=tracked|local`, `ROOT` (and `TRACKED_FILES`). Exit 0 done,
+  2 usage or the root is the vault, 10 a human must decide (`NEED=vault|name|migrate|jq`,
+  `SUGGESTED=<name>-2` with `name`; nothing written) or the commit was refused (vault off its
+  default branch), 20 resolution or I/O failure. `--create-vault` creates the vault with
+  `"state_dir": ".lore"`. Every `NEED` check runs before anything is created, so an exit 10
+  leaves the vault untouched. `--adopt --name <existing>` re-attaches an existing
+  `projects/<name>/` (moved checkout). A mapping whose root no longer exists on disk is stale and
+  is replaced (`REPLACED=<old root>`); when the old root still exists, exit 10 `NEED=owner` +
+  `OWNER=<root>`, nothing written. Exit 2 when the folder does not exist.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ### The shim and the client calling convention

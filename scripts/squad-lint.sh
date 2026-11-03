@@ -46,6 +46,8 @@
 #      are listed in COMMITTER_ALLOWLIST below (basenames), which the
 #      issues converting those writers empty. Escape:
 #      `lint:committer-ok` on the same line.
+#  14. first contact through lore map (#429): claude/skills/seed/SKILL.md must
+#      not call `lore-map.sh set` (it calls `lore map`).
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -602,6 +604,15 @@ EOF2
   [ "$VIOLATIONS" -eq "$before" ] && ok "only claude/hooks/lore commits to the vault"
 }
 
+check_seed_uses_lore_map() {
+  local before="$VIOLATIONS"
+  section "14. seed maps through lore map"
+  if grep -n 'lore-map\.sh set' claude/skills/seed/SKILL.md >/dev/null 2>&1; then
+    fail "claude/skills/seed/SKILL.md calls lore-map.sh set (call lore map)"
+  fi
+  [ "$VIOLATIONS" -eq "$before" ] && ok "seed has no lore-map.sh set call"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -615,6 +626,7 @@ check_description_drift
 check_safe_test_tmproot
 check_state_dir_literal
 check_single_committer
+check_seed_uses_lore_map
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

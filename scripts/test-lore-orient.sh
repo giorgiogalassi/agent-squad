@@ -16,6 +16,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 # Hooks dir copy with path-resolve.sh alongside, as installed.
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/nojq"
 cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/worktree.sh" "$REPO_ROOT/claude/hooks/squad-session.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks/"
+mkdir -p "$TMPROOT/skills/seed"   # the squad skills ship beside the hooks, as installed
 export SQUAD_SESSION_DIR="$TMPROOT/session-state"
 # PATH without jq: symlink the tools the hook needs, minus jq.
 for t in bash git cat sed awk grep dirname basename tr wc head tail sort date stat ls mkdir cut find; do
@@ -249,6 +250,12 @@ mkdir -p "$LV/projects/${LP##*/}"; printf '# Status\nBASENAMEMARK\n' > "$LV/proj
 o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
 case "$(ctx "$o")" in *BASENAMEMARK*) ok "unmapped but folder exists: orients from basename" ;; *) bad "basename fallback: $o" ;; esac
 case "$(ctx "$o")" in *"lore-config.local.json"*) ok "basename fallback prints a one-line hint" ;; *) bad "basename hint: $o" ;; esac
+# Without the squad skills beside the hooks the hint is /lore start.
+mv "$TMPROOT/skills" "$TMPROOT/skills.off"
+o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$o" in *"run /lore start"*) ok "no seed skill: hint is /lore start" ;; *) bad "lore-only hint: $o" ;; esac
+case "$o" in *"/seed"*) bad "lore-only hint must not mention /seed: $o" ;; *) ok "no seed skill: no /seed mention" ;; esac
+mv "$TMPROOT/skills.off" "$TMPROOT/skills"
 # Truly unknown project still asks for /seed.
 rm -rf "$LV/projects/${LP##*/}"
 o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
