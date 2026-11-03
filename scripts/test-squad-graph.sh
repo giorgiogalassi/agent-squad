@@ -294,5 +294,62 @@ check "H-4 Bitbucket https with user@" "bitbucket https://bitbucket.org/ws/r/com
 check "H-5 unknown host: no links" "none" "$(hostu 'git@git.internal.example:o/r.git')"
 check "H-6 hostile remote: no links" "none" "$(hostu 'https://github.com/o/r"><script>')"
 
+# Single-package repos: nested manifests must not hijack the layout.
+single_pkg() { # $1 dir; $2 = js|py
+  local d="$1"; git init -q -b main "$d"
+  if [ "$2" = js ]; then
+    printf '{"name":"solo"}\n' | w "$d/package.json"
+    printf 'export const a = 1;\n' | w "$d/src/a.ts"
+    printf "import { a } from './a';\nexport const b = a;\n" | w "$d/src/b.ts"
+    for m in test/fixtures/app examples/demo vendor/lib; do printf '{"name":"x"}\n' | w "$d/$m/package.json"; printf 'export const f = 1;\n' | w "$d/$m/f.ts"; done
+  else
+    printf '[project]\nname = "solo"\n' | w "$d/pyproject.toml"
+    printf 'A = 1\n' | w "$d/src/solo/a.py"
+    printf 'from .a import A\n' | w "$d/src/solo/b.py"
+    for m in tests/fixtures/app examples/demo vendor/lib; do printf '[project]\nname = "x"\n' | w "$d/$m/pyproject.toml"; printf 'F = 1\n' | w "$d/$m/f.py"; done
+  fi
+  commit "$d" base
+}
+SJ="$TMPROOT/solo-js"; single_pkg "$SJ" js
+( cd "$SJ" && git checkout -q -b c && echo 'export const a2 = 2;' >> src/a.ts && echo 'export const f2 = 2;' >> test/fixtures/app/f.ts && git add -A && git commit -qm c && git checkout -q main )
+gdiff --root "$SJ" --base main --head c --out "$TMPROOT/out/sj.json" --cache ""
+check "U-1 single-package repo: fixtures/examples/vendor manifests are not units, src is a unit" "folder/True/False" \
+  "$(key UNIT_SOURCE)/$(pj "$TMPROOT/out/sj.json" 'any(g["id"].startswith("src") for g in d["groups"])')/$(pj "$TMPROOT/out/sj.json" 'any("outside" in g["id"] for g in d["groups"])')"
+SP="$TMPROOT/solo-py"; single_pkg "$SP" py
+( cd "$SP" && git checkout -q -b c && echo 'A2 = 2' >> src/solo/a.py && git add -A && git commit -qm c && git checkout -q main )
+gdiff --root "$SP" --base main --head c --out "$TMPROOT/out/sp.json" --cache ""
+check "U-2 python analogue: src stays visible, no fixture unit" "folder/True/False" \
+  "$(key UNIT_SOURCE)/$(pj "$TMPROOT/out/sp.json" 'any(g["id"].startswith("src") for g in d["groups"])')/$(pj "$TMPROOT/out/sp.json" 'any("outside" in g["id"] for g in d["groups"])')"
+# Nested manifests that are not ignorable dirs but cover a small part of the code.
+SK="$TMPROOT/solo-small"; git init -q -b main "$SK"
+printf '{"name":"solo"}\n' | w "$SK/package.json"
+for i in 1 2 3 4 5 6 7 8 9; do printf 'export const v%s = 1;\n' "$i" | w "$SK/src/m$i.ts"; done
+printf '{"name":"tool"}\n' | w "$SK/tools/gen/package.json"; printf 'export const t = 1;\n' | w "$SK/tools/gen/t.ts"
+commit "$SK" base
+( cd "$SK" && git checkout -q -b c && echo 'export const w = 1;' >> src/m1.ts && git add -A && git commit -qm c && git checkout -q main )
+gdiff --root "$SK" --base main --head c --out "$TMPROOT/out/sk.json" --cache ""
+check "U-3 nested manifest covering a minor part of the code is not the layout" "folder" "$(key UNIT_SOURCE)"
+# Cache key, host matching, help, mixed default import.
+pymod() { python3 - "$GRAPH" "$1" <<'EOPY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("sg", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+exec(sys.argv[2])
+EOPY
+}
+check "K-1 extractor version is part of the cache digest" "True" "$(pymod '
+u=[m.Unit("a","a",["a"],"manifest")]
+d1=m.Config("manifest",u,[],{},[]).digest
+m.EXTRACTOR_VERSION="other"
+print(d1!=m.Config("manifest",u,[],{},[]).digest)')"
+check "H-7 lookalike host github.com.evil.io: no links" "none" "$(hostu 'https://github.com.evil.io/o/r.git')"
+check "H-8 lookalike host gitlab.evil.io: no links" "none" "$(hostu 'git@gitlab.evil.io:o/r.git')"
+python3 "$GRAPH" render --help >/dev/null 2>&1
+check "G-16 subcommand --help exits 0" "0" "$?"
+python3 "$GRAPH" diff -h >/dev/null 2>&1
+check "G-17 subcommand -h exits 0" "0" "$?"
+check "I-1 mixed default + named import records the default too" "True True" "$(pymod '
+r=m.imports_in("ts","import D, { a } from \"./x\";\nimport { b } from \"./y\";\n")
+print(("*" in r[0][1] and "a" in r[0][1]), r[1][1]=={"b"})')"
+
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

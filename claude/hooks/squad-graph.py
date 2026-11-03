@@ -124,6 +124,13 @@ EXPORT_LIST_RE = re.compile(r"export\s*(?:type\s*)?\{([^}]*)\}")
 TS_TOP_RE = re.compile(r"^(?:export\s|(?:declare\s+)?(?:abstract\s+)?(?:const|let|var|function|class|interface|type|enum)\s|@\w)")
 PY_TOP_RE = re.compile(r"^(?:(?:async[ \t]+)?def[ \t]+(\w+)|class[ \t]+(\w+)|([A-Za-z_]\w*)[ \t]*(?::[^=\n]+)?=(?!=)|@\w)")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+# Bump when an extractor regex or the unit rules change: it is part of the cache key.
+EXTRACTOR_VERSION = "1"
+# Directories whose manifests are test data or third-party code, never project units.
+NON_UNIT_DIRS = ("node_modules", "vendor", "third_party", "fixtures", "__fixtures__", "examples", "example")
+# Nested manifests in a single-package repo count as its structure only when at
+# most this share of the code lies outside them.
+OUTSIDE_SHARE = 0.1
 MANIFESTS = ("project.json", "package.json", "pyproject.toml", "setup.py", "setup.cfg")
 PY_MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg")
 TS_CONFIGS = ("tsconfig.base.json", "tsconfig.json", "jsconfig.json")
@@ -435,7 +442,7 @@ class Config(object):
                 uid = self.unit_of(t.replace("*", "x"))
                 if uid and a.pattern not in self.units[uid].aliases:
                     self.units[uid].aliases.append(a.pattern)
-        blob = json.dumps([[u.id, u.roots] for u in units] + [[a.pattern, a.targets, a.prefix] for a in aliases]
+        blob = json.dumps([EXTRACTOR_VERSION] + [[u.id, u.roots] for u in units] + [[a.pattern, a.targets, a.prefix] for a in aliases]
                           + [sorted(py_pkgs.items()), base_urls], sort_keys=True)
         self.digest = hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
         self._by_unit = None
@@ -601,14 +608,15 @@ def discover(snap, scout_path=None):
     patterns = workspace_patterns(load_json(texts.get("package.json")), texts.get("pnpm-workspace.yaml"))
     globs = [glob_re(p) for p in patterns if not p.startswith("!")] if patterns else None
     skips = [glob_re(p[1:]) for p in patterns if p.startswith("!")] if patterns else []
-    units, pkg_names = [], {}
+    cands, pkg_names = [], {}
     for d in sorted(mf):
-        if d == "":
+        if d == "" or any(seg in NON_UNIT_DIRS for seg in d.split("/")):
             continue
         ms = mf[d]
-        name = None
+        name, declared = None, False
         if "project.json" in ms:
             name = (load_json(texts.get(ms["project.json"])) or {}).get("name")
+            declared = True
         py = [m for m in PY_MANIFESTS if m in ms]
         if name is None and py:
             m = re.search(r"""(?m)^\s*name\s*=\s*['"]?([\w.-]+)|\bname\s*=\s*['"]([\w.-]+)['"]""", texts.get(ms[py[0]], ""))
@@ -616,9 +624,21 @@ def discover(snap, scout_path=None):
         elif name is None and "package.json" in ms:
             if globs is not None and not (any(g.match(d) for g in globs) and not any(s.match(d) for s in skips)):
                 continue
+            declared = globs is not None
             name = (load_json(texts.get(ms["package.json"])) or {}).get("name")
         elif "project.json" not in ms and not py:
             continue
+        cands.append((d, name, declared))
+    # A single-package repo (own root manifest) keeps its layout unless the nested
+    # manifests that no workspace/project file declares are its actual structure.
+    if any(not dec for _, _, dec in cands) and any(m in mf.get("", {}) for m in ("package.json",) + PY_MANIFESTS):
+        code = [f for f in files if lang_of(f)]
+        inside = [f for f in code if any(f.startswith(d + "/") for d, _, _ in cands)]
+        if len(code) - len(inside) > OUTSIDE_SHARE * len(code):
+            cands = [c for c in cands if c[2]]
+    units = []
+    for d, name, _ in cands:
+        ms = mf[d]
         units.append(Unit(d, name if isinstance(name, str) and name else d, [d], "manifest"))
         pj = load_json(texts.get(ms.get("package.json", ""))) if "package.json" in ms else None
         if isinstance(pj, dict) and isinstance(pj.get("name"), str):
@@ -673,7 +693,10 @@ def imports_in(family, text):
         for m in TS_FROM.finditer(text):
             what = m.group("what")
             br = re.search(r"\{([^}]*)\}", what)
-            out.append((m.group("spec"), names_of(br.group(1)) if br and not re.search(r"\*", what) else {"*"}))
+            names = names_of(br.group(1)) if br and not re.search(r"\*", what) else {"*"}
+            if br and re.sub(r"^type\b", "", what[:br.start()].strip().rstrip(",").strip()).strip():
+                names = names | {"*"}  # `import D, { a }`: the default export is used too
+            out.append((m.group("spec"), names))
         out += [(m.group("spec"), {"*"}) for m in TS_SIDE.finditer(text)]
         for m in TS_DYN.finditer(text):
             out.append((m.group("spec"), {m.group("n")} if m.group("then") else {"*"}))
@@ -1189,11 +1212,11 @@ def host_urls(remote):
     if not re.match(r"^[a-z0-9.-]+$", host) or not re.match(r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$", path):
         return None
     base = "https://%s/%s" % (host, path)
-    if host == "github.com" or host.startswith("github."):
+    if host == "github.com":
         return {"kind": "github", "commit": base + "/commit/", "src": base + "/blob/"}
     if host == "bitbucket.org":
         return {"kind": "bitbucket", "commit": base + "/commits/", "src": base + "/src/"}
-    if host == "gitlab.com" or host.startswith("gitlab."):
+    if host == "gitlab.com":
         return {"kind": "gitlab", "commit": base + "/-/commit/", "src": base + "/-/blob/"}
     return None
 
@@ -1496,10 +1519,16 @@ def cmd_render(argv):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) >= 2 and sys.argv[1] in ("-h", "--help"):
+        sys.stdout.write(__doc__)
+        sys.exit(0)
+    if len(sys.argv) < 2:
         sys.stderr.write(__doc__)
         sys.exit(2)
     verb, rest = sys.argv[1], sys.argv[2:]
+    if any(a in ("-h", "--help") for a in rest):
+        sys.stdout.write(__doc__)
+        sys.exit(0)
     try:
         if verb == "extract":
             cmd_extract(rest)
