@@ -16,7 +16,7 @@ has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1 (missing [$2] in [$3])" ;; es
 lacks() { case "$3" in *"$2"*) bad "$1 (unexpected [$2] in [$3])" ;; *) ok "$1" ;; esac; }
 
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{lore-checkpoint.sh,vault-check.sh,decisions-lint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,lore-checkpoint.sh,vault-check.sh,decisions-lint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 SUT="$TMPROOT/hooks/lore-checkpoint.sh"
 VC="$TMPROOT/hooks/vault-check.sh"
 export SQUAD_INCIDENTS=off

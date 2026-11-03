@@ -40,6 +40,12 @@
 #      state paths come from STATE_DIR / path-resolve.sh --state-name. Exempt:
 #      path-resolve.sh (owns the fallback). Escape for in-repo paths that are
 #      not the vault: `lint:state-dir-ok` on the same line.
+#  13. single vault committer (#422): only claude/hooks/lore may call
+#      squad_vault_commit or run `git commit`/`git push`; squad-common.sh (the
+#      library that owns squad_vault_commit) is exempt. Transitional exceptions
+#      are listed in scripts/lint-allowlist-committer.txt (one basename per
+#      line), which the issues converting those writers empty. Escape:
+#      `lint:committer-ok` on the same line.
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -575,6 +581,24 @@ EOF2
   [ "$VIOLATIONS" -eq "$before" ] && ok "no vault-side script spells the state directory"
 }
 
+check_single_committer() {
+  local before="$VIOLATIONS" f base hit line allow=""
+  section "13. single vault committer"
+  [ -f scripts/lint-allowlist-committer.txt ] && allow="$(grep -vE '^[[:space:]]*(#|$)' scripts/lint-allowlist-committer.txt)"
+  while IFS= read -r f; do
+    base="${f##*/}"
+    case "$base" in lore|squad-common.sh) continue ;; esac
+    printf '%s\n' "$allow" | grep -qxF "$base" && continue
+    hit="$(grep -nE 'squad_vault_commit|(^|[^[:alnum:]_-])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^[:space:]-][^[:space:]]*)?)*[[:space:]]+(commit|push)([[:space:]]|$)' "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -vF 'lint:committer-ok')"
+    [ -n "$hit" ] && while IFS= read -r line; do
+      fail "$f:${line%%:*}: commits to the vault outside claude/hooks/lore (use lore commit) (${line#*:})"
+    done <<EOF2
+$hit
+EOF2
+  done < <(find claude/hooks -maxdepth 1 -type f 2>/dev/null | sort)
+  [ "$VIOLATIONS" -eq "$before" ] && ok "only claude/hooks/lore commits to the vault"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -587,6 +611,7 @@ check_plugin_layout
 check_description_drift
 check_safe_test_tmproot
 check_state_dir_literal
+check_single_committer
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

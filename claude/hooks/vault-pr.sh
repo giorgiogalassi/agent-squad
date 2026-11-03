@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vault-pr.sh -- vault commits and the session-end PR when the vault's main takes
 # changes only through pull requests (#350). Thin wrapper over squad-common.sh
-# (squad_vault_commit, squad_vault_finish). Contract: SCRIPT_CONTRACT.md.
+# (lore commit, squad_vault_finish). Contract: SCRIPT_CONTRACT.md.
 #
 # Usage: vault-pr.sh commit "<message>" <vault-relative path>...
 #        vault-pr.sh finish
@@ -26,7 +26,7 @@ case "$CMD" in
   commit)
     [ $# -ge 2 ] || squad_fail 2 "usage: vault-pr.sh commit \"<message>\" <path>..."
     MSG="$1"; shift
-    squad_vault_commit "$V" "${DISPLAY_NAME:-vault}" "$MSG" "$@" || exit 20
+    bash "$HOOK_DIR/lore" commit --vault "$V" --project "${DISPLAY_NAME:-vault}" --message "$MSG" --paths "$@" >/dev/null || exit 20
     if [ -z "$(git -C "$V" status --porcelain -- "$@" 2>/dev/null)" ]; then
       squad_emit OUTCOME applied; squad_emit CHANGED yes
     else

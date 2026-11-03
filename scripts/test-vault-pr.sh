@@ -15,7 +15,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 export SQUAD_INCIDENTS=off GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
 TODAY="$(date +%Y-%m-%d)"
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/bin"
-cp "$REPO_ROOT"/claude/hooks/{lore-decide.sh,vault-pr.sh,decisions-lint.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,lore-decide.sh,vault-pr.sh,decisions-lint.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 cat > "$TMPROOT/hooks/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
 echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"

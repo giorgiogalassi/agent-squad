@@ -1,0 +1,5 @@
+# Transitional allowlist for lint check 13 (#422): scripts still committing to the vault
+# themselves. Later issues of #420 convert each one and empty this file.
+squad-progress.sh
+cody-checkpoint.sh
+lore-checkpoint.sh

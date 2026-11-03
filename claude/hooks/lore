@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
+#
+#   lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...
+#   lore version
+#
+# `commit` is the single committer: the only code that calls squad_vault_commit
+# (PR mode, session worktree, union merge stay in squad-common.sh; there is no
+# second commit path). It runs synchronously under one vault lock, the
+# directory <git-dir>/lore.lock/ holding `owner` (PID=, AT=<epoch>). The lock is
+# acquired with mkdir; it is stale when its pid is gone or it is older than
+# 10 minutes, and the next caller breaks it with a stderr notice.
+# Stdout: OUTCOME=applied|unchanged, CHANGED=yes|no.
+# Exit: 0 ok, 2 usage, 20 vault not a git repo / lock wait timed out / commit failed.
+# Env: LORE_LOCK_WAIT seconds to wait for a live lock (default 60).
+set -u
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=squad-common.sh
+. "$HOOK_DIR/squad-common.sh"
+
+LOCK_MAX_AGE=600
+LOCK=""  # global: the EXIT trap runs after cmd_commit returns
+
+lock_owner_field() {  # lock_owner_field <file> <KEY>
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
+}
+
+# lock_is_stale <lockdir>: 0 when the owner is gone, malformed or too old.
+lock_is_stale() {
+  local f="$1/owner" pid at now
+  [ -f "$f" ] || return 0
+  pid="$(lock_owner_field "$f" PID)"; at="$(lock_owner_field "$f" AT)"
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  case "$at" in ''|*[!0-9]*) return 0 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 0
+  now="$(date +%s)"
+  [ $((now - at)) -gt "$LOCK_MAX_AGE" ] && return 0
+  return 1
+}
+
+# lock_acquire <lockdir> <wait-seconds>: 0 held, 1 timed out.
+lock_acquire() {
+  local lock="$1" wait="$2" waited=0 gone
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      printf 'PID=%s\nAT=%s\n' "$$" "$(date +%s)" > "$lock/owner"
+      return 0
+    fi
+    if lock_is_stale "$lock"; then
+      # rename is atomic: of several breakers only one moves the directory.
+      gone="$lock.stale.$$"
+      if mv "$lock" "$gone" 2>/dev/null; then
+        echo "lore: broke stale vault lock ($(tr '\n' ' ' < "$gone/owner" 2>/dev/null))" >&2
+        rm -rf "$gone"
+      fi
+      continue
+    fi
+    [ "$waited" -ge "$wait" ] && return 1
+    sleep 1; waited=$((waited + 1))
+  done
+}
+
+cmd_commit() {
+  local vault="" proj="" msg="" p gitdir rc=0 pending
+  local paths=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --message) msg="${2:-}"; shift 2 || break ;;
+      --paths)   shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do paths+=("$1"); shift; done ;;
+      *) squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>..." ;;
+    esac
+  done
+  [ "${#paths[@]}" -gt 0 ] || squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>..."
+  if [ -z "$vault" ]; then
+    squad_resolve || exit 20
+    vault="$VAULT_PATH"
+    [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
+  fi
+  [ -n "$proj" ] || proj=vault
+  [ -n "$msg" ] || msg="[lore] $(squad_public_name "$vault" "$proj") update $(date '+%Y-%m-%d %H:%M')"
+  gitdir="$(git -C "$vault" rev-parse --absolute-git-dir 2>/dev/null)" || squad_fail 20 "$vault is not a git repository"
+  LOCK="$gitdir/lore.lock"
+  lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
+  trap 'rm -rf "$LOCK"' EXIT
+  pending="$(git -C "$vault" status --porcelain -- "${paths[@]}" 2>/dev/null)"
+  if [ -z "$pending" ]; then
+    squad_emit OUTCOME unchanged; squad_emit CHANGED no
+    return 0
+  fi
+  squad_vault_commit "$vault" "$proj" "$msg" "${paths[@]}" || rc=20
+  [ "$rc" = 0 ] || squad_fail 20 "vault commit failed; change left uncommitted"
+  squad_emit OUTCOME applied; squad_emit CHANGED yes
+}
+
+cmd_version() {
+  local pj="$HOOK_DIR/../.claude-plugin/plugin.json" v=""
+  [ -f "$pj" ] || pj="$HOOK_DIR/../plugin.json"
+  [ -f "$pj" ] && v="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n 1)"
+  squad_emit OUTCOME unchanged; squad_emit CHANGED no
+  squad_emit VERSION "${v:-unknown}"
+}
+
+VERB="${1:-}"; [ $# -gt 0 ] && shift
+case "$VERB" in
+  commit)  cmd_commit "$@" ;;
+  version) cmd_version ;;
+  *) squad_fail 2 "usage: lore <commit|version> ..." ;;
+esac

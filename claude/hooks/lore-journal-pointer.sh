@@ -130,7 +130,7 @@ fi
 
 if [ "$(git -C "$VAULT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$VAULT" && pwd -P)" ]; then
   # shellcheck disable=SC2086
-  squad_vault_commit "$VAULT" "$NAME" "[lore] $(squad_public_name "$VAULT" "$NAME") journal pointer" $WROTE
+  bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$NAME" --message "[lore] $(squad_public_name "$VAULT" "$NAME") journal pointer" --paths $WROTE >/dev/null || true
 fi
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit JOURNAL "$STATE"
 exit 0
