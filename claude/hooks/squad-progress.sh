@@ -40,7 +40,7 @@ case "$VERB" in append|log|run-write|run-row|run-status|where) ;; *) squad_fail 
 
 squad_resolve || squad_fail 20 "path resolution failed"
 V="$VAULT_PATH"; PROJ="${DISPLAY_NAME:-$(basename "$PROJECT_ROOT")}"
-REL_DIR="projects/$PROJ/.squad"
+REL_DIR="projects/$PROJ/$(squad_state_name "$V")"
 
 relof() {
   case "$1" in

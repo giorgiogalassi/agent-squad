@@ -42,7 +42,7 @@ check() {
   mode="$(printf '%s\n' "$OUT" | sed -n 's/^TRACKER_MODE=//p')"
   lines="$(printf '%s\n' "$OUT" | grep -c '^[A-Z_]*=')"
   errn="$(printf '%s' "$ERR" | grep -c .)"
-  if [ "$mode" = "$2" ] && [ "$lines" = "5" ] && [ "$errn" = "$3" ]; then
+  if [ "$mode" = "$2" ] && [ "$lines" = "6" ] && [ "$errn" = "$3" ]; then
     ok "$1"
   else
     bad "$1 (mode=$mode lines=$lines stderr_lines=$errn)"
@@ -80,7 +80,7 @@ if command -v jq >/dev/null 2>&1; then
   run ""
   [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local-only mapping -> DISPLAY_NAME" || bad "local-only mapping: $OUT"
   [ "$(val SQUAD_DIR)" = "$PROJ/.squad" ] && ok "local-only context repo -> SQUAD_DIR" || bad "local context: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c '=')" = 5 ] && ok "still five output lines" || bad "output shape: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c '=')" = 6 ] && ok "six output lines (incl. STATE_DIR)" || bad "output shape: $OUT"
   printf '{"projects":{"%s":"tracked-name"}}\n' "$PROJ" > "$MAIN"
   run ""
   [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local mapping wins over tracked" || bad "merge precedence: $OUT"

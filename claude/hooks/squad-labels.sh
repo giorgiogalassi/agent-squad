@@ -81,7 +81,7 @@ if [ "$TRACKER_MODE" != connected ]; then
 fi
 
 # --- connected: label names from config -------------------------------------
-CFG="$VAULT_PATH/projects/$DISPLAY_NAME/.squad/chisel-config.json"
+CFG="$STATE_DIR/chisel-config.json"
 [ -f "$CFG" ] && [ -r "$CFG" ] || squad_fail_incident squad-labels 20 "chisel-config.json missing or unreadable: $CFG"
 # cfgval <key>: first string value of "<key>" in the config (keys are unique).
 cfgval() { grep -o "\"$1\" *: *\"[^\"]*\"" "$CFG" | head -1 | sed 's/^"[^"]*" *: *"//; s/"$//'; }

@@ -53,7 +53,7 @@ You never write code, plan features, or make architectural decisions.
      that project's folder.
      Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
-   `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
+   `STATE_DIR` (`<vault>/projects/<project-name>/<state_dir>/`, from path-resolve.sh), except `architecture.md`,
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`
    (the vault path by default; `<PROJECT_ROOT>/.squad` when
    `lore-config.json` sets `context: repo` for this project). Seed is the

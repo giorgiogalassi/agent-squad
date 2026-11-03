@@ -60,7 +60,17 @@
 # where Reven reads the project's issue and PR: that comes from the
 # `## Issue tracker and PR host` section of architecture.md.
 #
-# Output: five KEY=VALUE lines on stdout, always in this order. Read
+# STATE_DIR is the per-project vault state directory:
+# <vault>/projects/<name>/<state_dir>. The directory name comes only from
+# the top-level `state_dir` key of lore-config.local.json / lore-config.json
+# (a single path segment; the local file wins). Key absent: `.squad` when any
+# projects/*/.squad/ already exists in the vault (existing vaults keep working,
+# nothing moves), else `.lore`. No env var or client flag changes the name.
+# STATE_DIR is always in the vault, also for `context: repo` projects.
+# `path-resolve.sh --state-name` prints just the directory name (for scripts
+# that hold a vault and a project name but no project root).
+#
+# Output: six KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
 # Ships in the plugin's hooks/ directory; skills and agents call it as
@@ -69,6 +79,32 @@
 # as its first step instead of re-deriving the algorithm inline.
 
 VAULT="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+
+# state_name: the state directory name for this vault (see STATE_DIR above).
+state_name() {
+  local f v=""
+  for f in "$VAULT/lore-config.local.json" "$VAULT/lore-config.json"; do
+    [ -f "$f" ] || continue
+    if command -v jq >/dev/null 2>&1; then
+      v="$(jq -r '.state_dir // empty | strings' "$f" 2>/dev/null)"
+    else
+      v="$(sed -n 's/.*"state_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -n 1)"
+    fi
+    case "$v" in
+      ""|.|..|*/*) v="" ;;
+      *) printf '%s' "$v"; return 0 ;;
+    esac
+  done
+  # Fallback for vaults without the key: keep `.squad` when it is already there.
+  for f in "$VAULT"/projects/*/.squad; do
+    if [ -d "$f" ]; then printf '.squad'; return 0; fi
+  done
+  printf '.lore'
+}
+if [ "${1:-}" = "--state-name" ]; then
+  state_name; echo
+  exit 0
+fi
 
 ROOT=""
 SUPERPROJECT="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
@@ -121,8 +157,10 @@ else
   SQUAD_DIR="$VAULT/projects/$NAME/.squad"
 fi
 
+STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
+
 TRACKER_MODE="detached"
-CHISEL_CONFIG="$VAULT/projects/$NAME/.squad/chisel-config.json"
+CHISEL_CONFIG="$STATE_DIR/chisel-config.json"
 if [ ! -f "$CHISEL_CONFIG" ]; then
   echo "path-resolve: $CHISEL_CONFIG not found; TRACKER_MODE=detached" >&2
 elif ! command -v jq >/dev/null 2>&1; then
@@ -142,3 +180,4 @@ echo "PROJECT_ROOT=$ROOT"
 echo "DISPLAY_NAME=$DISPLAY"
 echo "SQUAD_DIR=$SQUAD_DIR"
 echo "TRACKER_MODE=$TRACKER_MODE"
+echo "STATE_DIR=$STATE_DIR"

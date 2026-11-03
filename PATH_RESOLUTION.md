@@ -97,7 +97,7 @@ not attempt to resolve.
 ## The script
 
 `claude/hooks/path-resolve.sh` implements the algorithm above plus the
-`lore-config.json` lookup, and prints five lines to stdout:
+`lore-config.json` lookup, and prints six lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
@@ -105,6 +105,7 @@ PROJECT_ROOT=<resolved project root, correct even inside a linked worktree>
 DISPLAY_NAME=<mapped display name, or empty if none exists yet>
 SQUAD_DIR=<where project knowledge lives>
 TRACKER_MODE=<connected|detached>
+STATE_DIR=<vault>/projects/<name>/<state_dir>
 ```
 
 `DISPLAY_NAME` and the `context` map are read from `<vault>/lore-config.local.json`
@@ -131,7 +132,19 @@ those from the `## Issue tracker and PR host` section of `architecture.md`
 (read-only), whatever `TRACKER_MODE` is; without the section it falls back
 to the prompt, local files and, when connected, `gh`.
 
-`SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default, or
+`STATE_DIR` is the per-project vault state directory. Its name comes only
+from the top-level `state_dir` key of `lore-config.local.json` /
+`lore-config.json` (a single path segment; the local file wins). Key absent:
+`.squad` when any `<vault>/projects/*/.squad/` already exists (existing vaults
+keep working, nothing moves), else `.lore`. No env var or client flag changes
+the name, so two clients resolving the same project agree. `STATE_DIR` is always
+in the vault, also for `context: repo` projects, and `squad-env.sh` exports it as
+`SQUAD_STATE_DIR` and `LORE_STATE_DIR`. `path-resolve.sh --state-name` prints
+just the name (for scripts that hold a vault and a project name but no
+project root). Vault-side scripts build state paths from `STATE_DIR`;
+`squad-lint.sh` check 12 fails on a literal `.squad` in `claude/hooks`.
+
+`SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default (unchanged by `state_dir`), or
 `<PROJECT_ROOT>/.squad` when `lore-config.json` has
 `"context": {"<project root>": "repo"}` (a top-level map keyed by project
 root, like `projects`; absent or any other value means `vault`). Only
@@ -158,7 +171,7 @@ protocol block: use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`,
 `squad-env.sh`); if `$SQUAD_PROJECT_ROOT` is unset (headless `claude -p`,
 evals), run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its
 `KEY=value` lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`,
-`SQUAD_DIR`, `TRACKER_MODE`; parse by key, not position). `squad-lint.sh`
+`SQUAD_DIR`, `TRACKER_MODE`, `STATE_DIR`; parse by key, not position). `squad-lint.sh`
 forbids the full block and requires the fallback.
 
 ## What does NOT change

@@ -57,8 +57,8 @@ projects/<n>/status.md` succeeds) or `lore start --local` writes its
 mapping there; never into `lore-config.json` (`lore-map.sh set` enforces it).
 Exit codes and `TRACKED_FILES` handling: see `lore start` step 3.
 
-**Paths.** `.squad/` below always means
-`<vault>/projects/<project-name>/.squad/` — never a directory inside the
+**Paths.** `<STATE_DIR>/` below always means
+`<vault>/projects/<project-name>/<state_dir>/` (`$LORE_STATE_DIR`, or `STATE_DIR` from path-resolve.sh) — never a directory inside the
 project workspace.
 
 **Loading discipline.** Never load the full vault: INDEX.md + active
@@ -111,7 +111,7 @@ when explicitly requested or named by a context ref.
      starts from the same path never prompt again.
 4. Open the session log: append
    `[YYYY-MM-DD HH:MM] [lore] start — session opened (<branch>)` to
-   `.squad/session.log` (create if missing), `<branch>` from
+   `<STATE_DIR>/session.log` (create if missing), `<branch>` from
    `git branch --show-current` (`detached` if empty). Never truncate or
    overwrite: concurrent sessions (main checkout plus worktrees) share
    the log. Only if it already exceeds 200 lines, first rename it to
@@ -121,7 +121,7 @@ when explicitly requested or named by a context ref.
 5. Migration check (only on first encounter of this cwd, i.e. step 3
    created a mapping): if `<cwd_path>/.squad/` exists, ask
    `Found .squad/ in this project. Move it to the vault? [Y/n]`. Y →
-   move it to `<vault>/projects/<project-name>/.squad/` and remove the
+   move it to `<STATE_DIR>/` and remove the
    original. n → proceed; note the local `.squad/` is ignored and name
    the vault path.
 6. Update INDEX.md's active project (full overwrite, always), except a
@@ -351,7 +351,7 @@ than Last updated, or Last updated older than 7 days; current time via
 1. `git log --oneline -20`; `git diff HEAD`; `git stash list`;
    `gh pr list --state open 2>/dev/null || echo "gh unavailable"`.
 2. Read any open PR descriptions.
-3. Also read the tails of `.squad/progress.txt` and `session.log` and
+3. Also read the tails of `<STATE_DIR>/progress.txt` and `session.log` and
    `git branch --show-current`. Done ← commits + progress.txt; Next ←
    last open thread; checkpoint ← most recent evidence. Reconstruct per
    the schema; explicit about inferred vs confirmed; preserve `## Blocked`

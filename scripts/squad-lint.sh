@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Eleven checks, each independent and each able to fail
+# done") into a gate. Twelve checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -35,6 +35,11 @@
 #      `trap 'rm -rf ...'`; they source scripts/lib/test-tmp.sh instead (an
 #      empty mktemp result otherwise turns the EXIT trap into rm -rf of the
 #      working directory). Escape: `# lint:tmp-ok` on the same line.
+#  12. state dir literal: no vault-side script in claude/hooks may spell the
+#      per-project state directory (a literal `.squad` on a non-comment line);
+#      state paths come from STATE_DIR / path-resolve.sh --state-name. Exempt:
+#      path-resolve.sh (owns the fallback). Escape for in-repo paths that are
+#      not the vault: `lint:state-dir-ok` on the same line.
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -555,6 +560,21 @@ check_safe_test_tmproot() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "every test script uses the guarded temp root helper"
 }
 
+check_state_dir_literal() {
+  local before="$VIOLATIONS" f hit
+  section "12. no literal state directory in vault-side scripts"
+  while IFS= read -r f; do
+    [ "${f##*/}" = path-resolve.sh ] && continue
+    hit="$(grep -nF '.squad' "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -vF 'lint:state-dir-ok')"
+    [ -n "$hit" ] && while IFS= read -r line; do
+      fail "$f:${line%%:*}: literal .squad; build the path from STATE_DIR (${line#*:})"
+    done <<EOF2
+$hit
+EOF2
+  done < <(find claude/hooks -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null | sort)
+  [ "$VIOLATIONS" -eq "$before" ] && ok "no vault-side script spells the state directory"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -566,6 +586,7 @@ check_hook_refs_exist
 check_plugin_layout
 check_description_drift
 check_safe_test_tmproot
+check_state_dir_literal
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

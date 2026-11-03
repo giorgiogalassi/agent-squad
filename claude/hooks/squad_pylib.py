@@ -8,6 +8,7 @@ Python 3.8+ standard library only.
 
 import os
 import re
+import subprocess
 
 ID = r"([A-Za-z]+-\d+|\d+)"
 REVIEW_RE = re.compile(r"^\[#?" + ID + r"\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)\b(.*)$")
@@ -78,3 +79,25 @@ def write_if_changed(path, text):
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     return True
+
+
+def state_name(vault):
+    """The vault's state directory name, as decided by path-resolve.sh."""
+    env = dict(os.environ, SECOND_BRAIN_PATH=vault)
+    try:
+        out = subprocess.run(
+            ["bash", os.path.join(os.path.dirname(os.path.abspath(__file__)), "path-resolve.sh"),
+             "--state-name"], capture_output=True, text=True, timeout=30, env=env).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    return out or ".lore"
+
+
+def state_dir(paths):
+    """<vault>/projects/<name>/<state_dir> from resolved paths (STATE_DIR when
+    present, else built from the vault's state directory name)."""
+    if paths.get("STATE_DIR"):
+        return paths["STATE_DIR"]
+    vault = paths.get("VAULT_PATH") or ""
+    name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
+    return os.path.join(vault, "projects", name, state_name(vault))

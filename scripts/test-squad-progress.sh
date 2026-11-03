@@ -16,9 +16,10 @@ mkdir -p "$TMPROOT/hooks"
 cp "$REPO_ROOT"/claude/hooks/{squad-progress.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 cat > "$TMPROOT/hooks/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
+[ "${1:-}" = "--state-name" ] && { echo .squad; exit 0; }
 echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"
 echo "DISPLAY_NAME=proj"; echo "SQUAD_DIR=$SECOND_BRAIN_PATH/projects/proj/.squad"
-echo "TRACKER_MODE=connected"
+echo "TRACKER_MODE=connected"; echo "STATE_DIR=$SECOND_BRAIN_PATH/projects/proj/.squad"
 EOP
 
 mkvault() {  # mkvault <name> [config-json]

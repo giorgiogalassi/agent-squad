@@ -47,7 +47,7 @@ cat > "$TMPROOT/hooks-conn/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
 echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"
 echo "DISPLAY_NAME=fixture"; echo "SQUAD_DIR=$SECOND_BRAIN_PATH/projects/fixture/.squad"
-echo "TRACKER_MODE=connected"
+echo "TRACKER_MODE=connected"; echo "STATE_DIR=$SECOND_BRAIN_PATH/projects/fixture/.squad"
 EOP
 # nojq: every tool on the system PATH dirs except jq.
 for d in /bin /usr/bin; do

@@ -19,7 +19,7 @@ run() { OUT="$(python3 "$SUT" "$@" 2>"$TMPROOT/err")"; RC=$?; }
 # The script must sit next to path-resolve.sh, as it does in the plugin hooks/ dir.
 HOOKS="$TMPROOT/hooks"; mkdir -p "$HOOKS"
 cp "$SUT" "$HOOKS/squad-stats.py"
-cp "$REPO_ROOT/claude/hooks/path-resolve.sh" "$HOOKS/"
+cp "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/squad_pylib.py" "$HOOKS/"
 SUT="$HOOKS/squad-stats.py"
 
 export SECOND_BRAIN_PATH="$TMPROOT/vault"; mkdir -p "$SECOND_BRAIN_PATH"

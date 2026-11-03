@@ -33,14 +33,21 @@ if [ -n "$HOOK_INPUT" ]; then
 fi
 # The session's own directory (a worktree session starts inside the worktree).
 [ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null
+# state_name <vault>: the vault's state directory name (path-resolve.sh decides).
+state_name() {
+  local n
+  n="$(SECOND_BRAIN_PATH="$1" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/path-resolve.sh" --state-name 2>/dev/null)"
+  printf '%s' "${n:-.lore}"
+}
 # record_start_head <proj-dir>: first write wins, so a compact or clear in the
 # same session (same session_id) never moves the starting HEAD that SessionEnd
 # counts commits from. Consumed by lore-checkpoint.sh at SessionEnd.
 record_start_head() {
   [ -n "$HOOK_SESSION" ] || return 0
-  [ -f "$1/.squad/sessions/$HOOK_SESSION" ] && return 0
-  mkdir -p "$1/.squad/sessions" 2>/dev/null \
-    && git rev-parse HEAD > "$1/.squad/sessions/$HOOK_SESSION" 2>/dev/null
+  local _sd; _sd="$1/$(state_name "${1%/projects/*}")"
+  [ -f "$_sd/sessions/$HOOK_SESSION" ] && return 0
+  mkdir -p "$_sd/sessions" 2>/dev/null \
+    && git rev-parse HEAD > "$_sd/sessions/$HOOK_SESSION" 2>/dev/null
 }
 if [ "$HOOK_SOURCE" = "resume" ]; then
   # No orientation, but a resumed worktree session (`claude -w <b> --resume`)
@@ -73,7 +80,7 @@ if [ -n "${SQUAD_PROJECT_ROOT:-}" ] && [ -n "${SQUAD_VAULT_PATH:-}" ]; then
   # Values already exported by squad-env.sh earlier in this session (clear,
   # compact): reuse them instead of resolving a second time.
   VAULT="$SQUAD_VAULT_PATH"; ROOT="$SQUAD_PROJECT_ROOT"; DISPLAY="${SQUAD_DISPLAY_NAME:-}"
-  SQUAD_DIR="${SQUAD_DIR:-}"; TRACKER_MODE="${SQUAD_TRACKER_MODE:-}"
+  SQUAD_DIR="${SQUAD_DIR:-}"; TRACKER_MODE="${SQUAD_TRACKER_MODE:-}"; STATE_DIR="${SQUAD_STATE_DIR:-}"
 elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
   while IFS='=' read -r _key _value; do
     case "$_key" in
@@ -82,6 +89,7 @@ elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       DISPLAY_NAME) DISPLAY="$_value" ;;
       SQUAD_DIR) SQUAD_DIR="$_value" ;;
       TRACKER_MODE) TRACKER_MODE="$_value" ;;
+      STATE_DIR) STATE_DIR="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else
@@ -173,9 +181,10 @@ if [ -z "$DISPLAY" ]; then
 fi
 
 PROJ="$VAULT/projects/$DISPLAY"
+STATE="${STATE_DIR:-$PROJ/$(state_name "$VAULT")}"
 # Project knowledge location (vault or repo); progress.txt and session.log
-# stay under the vault .squad/ regardless.
-[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$PROJ/.squad"
+# stay under the vault state directory regardless.
+[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$STATE"
 STATUS="$PROJ/status.md"
 
 NL=$'\n'
@@ -236,7 +245,7 @@ fi
 # JOURNAL tail (#330): a `context: repo` project keeps its decisions in the
 # repository's JOURNAL.md, so show the last 40 lines (at most 2400 chars, the
 # same budget as the context refs). Silent when the file is absent.
-if [ "$SQUAD_DIR" != "$PROJ/.squad" ] && [ -f "$ROOT/JOURNAL.md" ]; then
+if [ "${SQUAD_DIR#"$PROJ"/}" = "$SQUAD_DIR" ] && [ -f "$ROOT/JOURNAL.md" ]; then
   _jt="$(tail -n 40 "$ROOT/JOURNAL.md" | tail -c 2400)"
   [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
 fi
@@ -264,8 +273,8 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
       WT_BASE="$(head -n 1 "$_bf" 2>/dev/null)"; rm -f "$_bf"
       [ -n "$WT_BASE" ] && WT_BASE_SRC="open PR"
     fi
-    if [ -z "$WT_BASE" ] && [ -f "$PROJ/.squad/progress.txt" ]; then
-      WT_BASE="$(grep -F "[$WT_BRANCH]" "$PROJ/.squad/progress.txt" 2>/dev/null | tail -n 1 | sed -n 's/.*[Bb]ase[: ]*\([A-Za-z0-9._\/-][A-Za-z0-9._\/-]*\).*/\1/p')"
+    if [ -z "$WT_BASE" ] && [ -f "$STATE/progress.txt" ]; then
+      WT_BASE="$(grep -F "[$WT_BRANCH]" "$STATE/progress.txt" 2>/dev/null | tail -n 1 | sed -n 's/.*[Bb]ase[: ]*\([A-Za-z0-9._\/-][A-Za-z0-9._\/-]*\).*/\1/p')"
       [ -n "$WT_BASE" ] && WT_BASE_SRC="progress.txt"
     fi
     if [ -z "$WT_BASE" ]; then WT_BASE="main"; WT_BASE_SRC="default, no PR or progress.txt entry names one"; fi
@@ -352,7 +361,7 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
     # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
     if [ -n "$HOOK_SESSION" ]; then
       record_start_head "$PROJ"
-      find "$PROJ/.squad/sessions" -type f -mtime +14 -delete 2>/dev/null
+      find "$STATE/sessions" -type f -mtime +14 -delete 2>/dev/null
     fi
   else
     OUTPUT="${OUTPUT}Detached HEAD in $WT_TOP; no branch name to show.${NL}"
@@ -417,12 +426,12 @@ while IFS= read -r _l; do
 done < <(git worktree list --porcelain 2>/dev/null)
 [ -n "$DIRTY_WT" ] && OUTPUT="${OUTPUT}Open worktrees:${NL}${DIRTY_WT}"
 
-if [ -f "$PROJ/.squad/progress.txt" ]; then
-  OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$PROJ/.squad/progress.txt")${NL}"
+if [ -f "$STATE/progress.txt" ]; then
+  OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$STATE/progress.txt")${NL}"
 fi
 
-if [ -f "$PROJ/.squad/session.log" ]; then
-  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$PROJ/.squad/session.log")${NL}"
+if [ -f "$STATE/session.log" ]; then
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$STATE/session.log")${NL}"
 fi
 
 # Staleness and budget signals. Each line is omitted when not applicable.
@@ -448,7 +457,7 @@ fi
 HEALTH=""
 if [ -x "$HOOK_DIR/vault-check.sh" ]; then
   _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
-  [ "$SQUAD_DIR" != "$PROJ/.squad" ] && _vc_args+=(--context repo)
+  [ "${SQUAD_DIR#"$PROJ"/}" = "$SQUAD_DIR" ] && _vc_args+=(--context repo)
   _projs=("$VAULT"/projects/*/)
   [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
   HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"

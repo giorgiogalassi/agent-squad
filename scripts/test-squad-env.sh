@@ -50,7 +50,7 @@ rc="$(run "$PROJ" "$E")"
 printf 'export OTHER=keepme\n' >> "$E"
 run "$PROJ" "$E" >/dev/null; run "$PROJ" "$E" >/dev/null
 n="$(grep -c '^export SQUAD_' "$E")"
-[ "$n" = 5 ] && ok "clear/compact: still exactly 5 SQUAD_ lines" || bad "clear/compact: $n SQUAD_ lines"
+[ "$n" = 6 ] && ok "clear/compact: still exactly 6 SQUAD_ lines" || bad "clear/compact: $n SQUAD_ lines"
 grep -q '^export OTHER=keepme$' "$E" && ok "clear/compact: foreign lines kept" || bad "clear/compact: foreign line lost"
 
 # Resume: the hook input says source=resume; the values are written the same.
@@ -73,7 +73,7 @@ run "$QP" "$Q" >/dev/null
 [ "$(val "$Q" SQUAD_PROJECT_ROOT)" = "$(cd "$QP" && pwd -P)" ] || [ "$(val "$Q" SQUAD_PROJECT_ROOT)" = "$QP" ] \
   && ok "quoting: quote and \$() in a path round-trip" || bad "quoting: '$(val "$Q" SQUAD_PROJECT_ROOT)'"
 [ ! -e "$TMPROOT/pwned" ] && ok "quoting: nothing executed" || bad "quoting: command substitution ran"
-grep -Evq '^export SQUAD_(VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|DIR|TRACKER_MODE)=' "$Q" \
+grep -Evq '^export (SQUAD_(VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|DIR|TRACKER_MODE|STATE_DIR)|LORE_STATE_DIR)=' "$Q" \
   && bad "quoting: unexpected key in env file" || ok "quoting: only well-formed SQUAD_ keys written"
 
 # Missing CLAUDE_ENV_FILE: no-op, exit 0, nothing written.

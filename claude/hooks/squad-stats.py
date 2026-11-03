@@ -59,6 +59,9 @@ import statistics
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import squad_pylib as lib  # noqa: E402  (state directory name)
+
 SQUAD_SKILLS = {
     "forge", "archy", "chisel", "ralph", "reven", "lore", "seed",
     "sidecar", "challenge", "stats",
@@ -706,7 +709,7 @@ def cmd_branch(args):
     wall = 0
     unclosed = 0
     fmt = "%Y-%m-%d %H:%M"
-    for log in sorted(glob.glob(os.path.join(vault_dir(), "projects", "*", ".squad", "session.log"))):
+    for log in sorted(glob.glob(os.path.join(vault_dir(), "projects", "*", lib.state_name(vault_dir()), "session.log"))):
         for start, end, _tag, branch, closure in log_pairs(log):
             if branch != name:
                 continue
@@ -869,7 +872,7 @@ def pr_outcomes(since, paths):
     if paths.get("TRACKER_MODE") != "connected":
         return "skipped-detached", None
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    progress = os.path.join(paths.get("VAULT_PATH") or "", "projects", name, ".squad", "progress.txt")
+    progress = os.path.join(lib.state_dir(paths), "progress.txt")
     prs = {}
     try:
         with open(progress, encoding="utf-8") as f:
