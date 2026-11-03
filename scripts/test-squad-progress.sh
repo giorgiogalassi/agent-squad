@@ -177,5 +177,40 @@ check "run dirty: one row per issue" 1 "$(git -C "$V" show "$B:projects/proj/.sq
 check "run dirty: row updated" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 .*merged')"
 check "run dirty: notice on stderr" 1 "$(grep -c 'ralph-run.md' "$TMPROOT/err")"
 
+# 10. Vault checkout off its default branch (#422): another session's branch.
+mkdir -p "$TMPROOT/bin"; printf '#!/bin/sh\nexit 0\n' > "$TMPROOT/bin/gh"; chmod +x "$TMPROOT/bin/gh"
+PRCFG='{"vault_main": "pr"}'
+D="$(date +%Y-%m-%d)"
+mkvault o "$PRCFG"; V="$TMPROOT/o"; RUNREL=projects/proj/.squad/ralph-run.md
+printf '%s\n' "$RUN" > "$V/$RUNREL"; git -C "$V" add -A; git -C "$V" commit -qm run; git -C "$V" push -q origin main 2>/dev/null
+git -C "$V" switch -qc lore/other-2026-11-03
+printf 'other session wip\n' >> "$V/projects/proj/.squad/progress.txt"   # dirty, same path
+sp "$V" where --file run
+WT="$V/.claude/worktrees/lore-proj-$D"
+check "off main: where returns the session worktree path" "$WT/$RUNREL" "$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+sp "$V" run-row --issue '#5' --set 'State=building'
+check "off main: run-row applied" "OUTCOME=applied" "$(printf '%s\n' "$OUT" | sed -n 1p)"
+sp "$V" where --file run
+check "off main: row reads back from where's path" 1 "$(grep -c '^| #5 .*building' "$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')")"
+check "off main: row committed on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:$RUNREL" | grep -c '^| #5 .*building')"
+check "off main: checkout run file untouched" 0 "$(grep -c building "$V/$RUNREL")"
+sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
+sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
+check "off main: append dedupes on the session copy" "unchanged" "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
+check "off main: other session's uncommitted edit survives" 1 "$(grep -c 'other session wip' "$V/projects/proj/.squad/progress.txt")"
+check "off main: other session's edit not in our commit" 0 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c 'other session wip')"
+check "off main: our line on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c '^\[#30\]')"
+check "off main: our line not in the checkout" 0 "$(grep -c '^\[#30\]' "$V/projects/proj/.squad/progress.txt")"
+check "off main: other branch has no new commit" "run" "$(git -C "$V" log -1 --format=%s lore/other-2026-11-03)"
+# finish pushes the session branch although the checkout is off main
+(PATH="$TMPROOT/bin:$PATH"; . "$TMPROOT/hooks/squad-common.sh"; squad_vault_finish "$V" >/dev/null 2>&1)
+check "off main: finish pushed the session branch" 1 "$(git -C "$TMPROOT/o-origin.git" branch --list "lore/proj-$D" | wc -l | tr -d ' ')"
+# direct mode off main: exit 10, never "applied"
+mkvault od '{"vault_main": "direct"}'; V="$TMPROOT/od"; git -C "$V" switch -qc feature/x
+sp "$V" append --issue '#40' --line 'resolved. PR: #41 (base: main). Notes: n'
+check "off main direct: append exits 10" 10 "$RC"
+check "off main direct: no applied outcome" 0 "$(printf '%s\n' "$OUT" | grep -c 'OUTCOME=applied')"
+check "off main direct: nothing written" "" "$(git -C "$V" status --porcelain)"
+
 echo "---"; echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

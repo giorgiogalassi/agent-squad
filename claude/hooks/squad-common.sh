@@ -163,6 +163,16 @@ squad_vault_default_branch() {
   return 1
 }
 
+# squad_vault_offdefault <vault>: 0 when the vault checkout sits on a branch other
+# than the default (or a detached HEAD): another session's branch. 1 when on the
+# default branch, or when no default branch can be told.
+squad_vault_offdefault() {
+  local cur def
+  def="$(squad_vault_default_branch "$1")" || return 1
+  cur="$(git -C "$1" symbolic-ref -q --short HEAD 2>/dev/null)"
+  [ "$cur" != "$def" ]
+}
+
 # squad_vault_pr_mode_any <vault>: like squad_vault_pr_mode, but valid on any
 # checkout branch (#422): the config key works regardless of the branch, and a
 # detected pre-push hook is evaluated against the default branch, not the current one.
@@ -327,16 +337,24 @@ squad_vault_wt_existing() {
 # restores them in the main checkout and commits there, so main stays level with
 # origin. Never fails the caller; on a worktree failure the change stays uncommitted.
 squad_vault_commit() {
-  local v="$1" proj="$2" msg="$3" root="$1" wt p base ours cur _id=""
+  local v="$1" proj="$2" msg="$3" root="$1" wt p base ours bref cur off=0 _id=""
   shift 3
   git -C "$v" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  squad_vault_offdefault "$v" && off=1
   if ! squad_local_only "$v" "$proj" && squad_vault_pr_mode_any "$v"; then
     wt="$(squad_vault_wt "$v" "$proj")" || { echo "squad: vault worktree failed; change left uncommitted" >&2; return 1; }
+    # Off the default branch (#422) the checkout belongs to another session: the merge
+    # base is the default branch, never the checkout's HEAD, and a path the caller
+    # already wrote in the session worktree (squad_vault_wroot) is committed as is,
+    # leaving the checkout's copy alone. Only a path written in the checkout itself
+    # (lore commit, an interactive writer) is moved over and restored there.
+    bref=HEAD; [ "$off" = 1 ] && bref="$(squad_vault_default_branch "$v")"
     base="$wt.base.$$"; ours="$wt.ours.$$"
     for p in "$@"; do
+      git -C "$v" show "$bref:$p" > "$base" 2>/dev/null || : > "$base"
+      if [ "$off" = 1 ] && [ -n "$(git -C "$wt" status --porcelain -- "$p" 2>/dev/null)" ]; then continue; fi
       [ -f "$v/$p" ] || continue
       mkdir -p "$(dirname "$wt/$p")"
-      git -C "$v" show "HEAD:$p" > "$base" 2>/dev/null || : > "$base"
       if [ -f "$wt/$p" ] && ! cmp -s "$wt/$p" "$base" && ! cmp -s "$wt/$p" "$v/$p"; then
         cp "$wt/$p" "$ours"
         if ! git merge-file -p "$ours" "$base" "$v/$p" > "$wt/$p" 2>/dev/null; then
@@ -354,14 +372,11 @@ squad_vault_commit() {
     done
     rm -f "$base" "$ours"
     root="$wt"
-  elif ! squad_local_only "$v" "$proj"; then
+  elif [ "$off" = 1 ] && ! squad_local_only "$v" "$proj"; then
     # Direct mode never commits on another session's branch (#422): exit 10.
     cur="$(git -C "$v" symbolic-ref -q --short HEAD 2>/dev/null)"
-    case "$cur" in
-      main|master) ;;
-      *) echo "squad: vault checkout is on ${cur:-a detached HEAD}, not its default branch, and the vault is in direct mode; nothing committed" >&2
-         return 10 ;;
-    esac
+    echo "squad: vault checkout is on ${cur:-a detached HEAD}, not its default branch ($(squad_vault_default_branch "$v")), and the vault is in direct mode; nothing committed" >&2
+    return 10
   fi
   git -C "$root" add -- "$@" >/dev/null 2>&1
   # No git identity (fresh CI runner) would fail the commit silently.
@@ -370,6 +385,20 @@ squad_vault_commit() {
   # shellcheck disable=SC2086
   git -C "$root" $_id commit -q -m "$msg" -- "$@" >/dev/null 2>&1 || true
   return 0
+}
+
+# squad_vault_wroot <vault> <project>: the directory a writer must edit before
+# squad_vault_commit: the session worktree when the checkout is off its default
+# branch in a PR-mode vault, else the vault itself. Rc 10 (nothing printed) when
+# the checkout is off its default branch in a direct-mode vault: do not write.
+squad_vault_wroot() {
+  local v="$1" proj="$2"
+  if git -C "$v" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$v" "$proj" && squad_vault_offdefault "$v"; then
+    squad_vault_pr_mode_any "$v" || return 10
+    squad_vault_wt "$v" "$proj" || return 1
+    return 0
+  fi
+  printf '%s' "$v"
 }
 
 # squad_vault_finish <vault>: push each lore/* session branch that is ahead of main
@@ -385,9 +414,9 @@ squad_vault_finish() {
   local v="$1" wt b bproj br0 base n open tip rtip rc=0 hasgh=1 url
   SQUAD_VAULT_PUSHED=0
   command -v gh >/dev/null 2>&1 || hasgh=0
-  squad_vault_pr_mode "$v" || return 0
+  squad_vault_pr_mode_any "$v" || return 0
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
-  br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 0
+  br0="$(squad_vault_default_branch "$v")" || return 0
   git -C "$v" fetch -q --prune origin >/dev/null 2>&1
   base="$br0"; git -C "$v" rev-parse -q --verify "origin/$br0" >/dev/null 2>&1 && base="origin/$br0"
   for wt in "$v"/.claude/worktrees/lore-*; do
