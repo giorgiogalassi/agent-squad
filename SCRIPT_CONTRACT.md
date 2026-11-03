@@ -64,8 +64,9 @@ verbs (`summary`, `resolve`) follow the contract above.
   default branch), 20 resolution or I/O failure. `--create-vault` creates the vault with
   `"state_dir": ".lore"`. Every `NEED` check runs before anything is created, so an exit 10
   leaves the vault untouched. `--adopt --name <existing>` re-attaches an existing
-  `projects/<name>/` no other root maps (moved checkout); `NEED=name` when another root maps
-  it, exit 2 when the folder does not exist.
+  `projects/<name>/` (moved checkout). A mapping whose root no longer exists on disk is stale and
+  is replaced (`REPLACED=<old root>`); when the old root still exists, exit 10 `NEED=owner` +
+  `OWNER=<root>`, nothing written. Exit 2 when the folder does not exist.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ## Exception: `squad-stats.py report`

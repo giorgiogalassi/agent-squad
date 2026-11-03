@@ -108,13 +108,30 @@ check "adopt exits 0" 0 "$rc"
 has "adopt applied" "OUTCOME=applied" "$out"
 has "adopt NAME" "NAME=demo" "$out"
 check "adopt maps the root" demo "$(jq -r '.projects[]|select(.=="demo")' "$V/lore-config.json")"
-# adopt refuses a folder another root maps
+# adopt refuses a folder whose old root still exists (distinct NEED=owner)
 V="$TMP/v10"; mkvault "$V"; mkdir -p "$V/projects/other"; R="$TMP/moved/x"; mkrepo "$R"
+mkrepo "$TMP/live/other"
+jq --arg k "$TMP/live/other" '.projects[$k]="other"' "$V/lore-config.json" > "$TMP/c.json" && mv "$TMP/c.json" "$V/lore-config.json"
+git -C "$V" commit -qam live
 cp "$V/lore-config.json" "$TMP/cfg.before"
 out="$(map "$V" --root "$R" --adopt --name other)"; rc=$?
-check "adopt of owned project exits 10" 10 "$rc"
-has "adopt of owned project NEED=name" "NEED=name" "$out"
+check "adopt with live old root exits 10" 10 "$rc"
+has "adopt with live old root NEED=owner" "NEED=owner" "$out"
+has "adopt with live old root OWNER" "OWNER=$TMP/live/other" "$out"
+case "$out" in *NEED=name*) bad "owner refusal must not be NEED=name" ;; *) ok "owner refusal is not NEED=name" ;; esac
 cmp -s "$V/lore-config.json" "$TMP/cfg.before" && ok "adopt refusal writes nothing" || bad "adopt refusal wrote config"
+# adopt replaces a stale mapping whose old root is gone from disk
+V="$TMP/v11"; mkvault "$V"; mkdir -p "$V/projects/gone"; R="$TMP/moved/gone2"; mkrepo "$R"
+jq '.projects["/no/such/old/root"]="gone"' "$V/lore-config.json" > "$TMP/c.json" && mv "$TMP/c.json" "$V/lore-config.json"
+git -C "$V" commit -qam stale
+out="$(map "$V" --root "$R" --adopt --name gone)"; rc=$?
+check "adopt over stale root exits 0" 0 "$rc"
+has "adopt over stale root applied" "OUTCOME=applied" "$out"
+has "adopt over stale root REPLACED" "REPLACED=/no/such/old/root" "$out"
+check "stale entry removed" "" "$(jq -r '.projects["/no/such/old/root"] // empty' "$V/lore-config.json")"
+check "new root mapped" gone "$(jq -r --arg k "$(cd "$R" && pwd -P)" '.projects[$k]' "$V/lore-config.json")"
+check "other mappings kept" other "$(jq -r '.projects["/other"]' "$V/lore-config.json")"
+check "vault clean after stale replace" "" "$(git -C "$V" status --porcelain)"
 # adopt of a missing folder is a usage error
 out="$(map "$V" --root "$R" --adopt --name nothere)"; rc=$?
 check "adopt of missing folder exits 2" 2 "$rc"

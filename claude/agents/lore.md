@@ -112,8 +112,9 @@ when explicitly requested or named by a context ref.
    path, `pwd -P`). Moved checkout (the project already has a vault folder
    under its old name; the user confirms the name): rerun
    `lore map --adopt --name <existing>`, which re-attaches `projects/<name>/`
-   to this root; `NEED=name` means another root already maps it, so ask for a
-   new name instead. Ambiguous/failed
+   to this root; A stale old root (gone from disk) is replaced and reported as
+   `REPLACED=<old root>`; `NEED=owner` means the old root still exists, so
+   ask for a new name or have the user unmap it. Ambiguous/failed
    resolution: read INDEX.md active project and ask
    `Use last active project <name>? [Y/n]`.
 4. Open the session log: append

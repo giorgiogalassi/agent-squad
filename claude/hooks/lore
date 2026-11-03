@@ -6,7 +6,9 @@
 #   lore version
 #
 # `map --adopt --name <existing>` re-attaches an existing projects/<name>/ that
-# no other root maps (a moved checkout); NEED=name when another root maps it.
+# no live root maps (a moved checkout). A mapping whose root is gone from disk is
+# stale and replaced (REPLACED=<old root>); NEED=owner (+OWNER=) when the old
+# root still exists.
 # `map` is first contact: it never prompts. It resolves vault and root, records
 # the mapping through lore-map.sh set (which commits through `commit`) and
 # creates projects/<name>/. Exit 10 with NEED=vault|name|migrate|jq (plus
@@ -147,7 +149,7 @@ cmd_commit() {
 }
 
 cmd_map() {
-  local root="" name="" local_flag="" create=no adopt=no resolved cand vault pr_root disp ctx f n
+  local root="" name="" local_flag="" create=no adopt=no resolved cand vault pr_root disp ctx f n old olds stale=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --root) [ $# -ge 2 ] || squad_fail 2 "--root needs a value"; root="$2"; shift 2 ;;
@@ -211,15 +213,35 @@ cmd_map() {
   fi
   if [ "$adopt" = yes ]; then
     [ -d "$vault/projects/$cand" ] || squad_fail 2 "nothing to adopt: $vault/projects/$cand does not exist"
+    # Other roots mapping this name: one that still exists on disk is a live
+    # owner (refuse, NEED=owner); one that is gone is stale (moved checkout) and
+    # is replaced below. Nothing is written until every root has been judged.
     for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
       [ -f "$f" ] || continue
-      if [ -n "$(jq -r --arg n "$cand" --arg k "$pr_root" '.projects | to_entries[]? | select(.value == $n and .key != $k) | .key' "$f" 2>/dev/null)" ]; then
-        n=2
-        while [ -e "$vault/projects/$cand-$n" ]; do n=$((n + 1)); done
-        squad_emit NEED name; squad_emit SUGGESTED "$cand-$n"
-        squad_fail 10 "projects/$cand is mapped to another root; nothing adopted"
-      fi
+      olds="$(jq -r --arg n "$cand" --arg k "$pr_root" '.projects | to_entries[]? | select(.value == $n and .key != $k) | .key' "$f" 2>/dev/null)"
+      while IFS= read -r old; do
+        [ -n "$old" ] || continue
+        if [ -e "$old" ]; then
+          squad_emit NEED owner; squad_emit OWNER "$old"
+          squad_fail 10 "projects/$cand is still mapped to $old, which exists; nothing adopted (use a new --name or unmap that root)"
+        fi
+        stale="$stale$old
+"
+      done <<STALE_EOF
+$olds
+STALE_EOF
     done
+    if [ -n "$stale" ]; then
+      while IFS= read -r old; do
+        [ -n "$old" ] || continue
+        for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
+          [ -f "$f" ] || continue
+          jq --arg k "$old" 'del(.projects[$k])' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; squad_fail 20 "cannot drop stale mapping from $f"; }
+        done
+      done <<STALE_EOF
+$stale
+STALE_EOF
+    fi
   elif [ -e "$vault/projects/$cand" ]; then
     n=2
     while [ -e "$vault/projects/$cand-$n" ]; do n=$((n + 1)); done
@@ -232,12 +254,18 @@ cmd_map() {
   local out rc=0
   out="$(bash "$HOOK_DIR/lore-map.sh" set --vault "$vault" --root "$pr_root" --name "$cand" $local_flag)" || rc=$?
   [ "$rc" = 0 ] || exit "$rc"
+  # A stale root dropped from the tracked config must land in a commit even when
+  # the new mapping went to the local file (set only commits its own change).
+  if [ -n "$stale" ] && [ -d "$vault/.git" ] && ! git -C "$vault" diff --quiet -- lore-config.json 2>/dev/null; then
+    bash "$HOOK_DIR/lore" commit --vault "$vault" --project "$cand" --message "[lore] drop stale mapping for $cand" --paths lore-config.json >/dev/null || exit $?
+  fi
   mkdir -p "$vault/projects/$cand" || squad_fail 20 "cannot create projects/$cand"
   squad_emit OUTCOME "$(printf '%s\n' "$out" | sed -n 's/^OUTCOME=//p')"
   squad_emit CHANGED "$(printf '%s\n' "$out" | sed -n 's/^CHANGED=//p')"
   squad_emit NAME "$cand"
   squad_emit TARGET "$(printf '%s\n' "$out" | sed -n 's/^TARGET=//p')"
   squad_emit ROOT "$pr_root"
+  [ -z "$stale" ] || squad_emit REPLACED "$(printf '%s' "$stale" | sed -n '1p')"
   squad_emit TRACKED_FILES "$(printf '%s\n' "$out" | sed -n 's/^TRACKED_FILES=//p')"
 }
 
