@@ -2,7 +2,13 @@
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
 #   lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...
+#   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
+#   lore fold [--project <p>] [--vault <dir>]
 #   lore version
+#
+# `event` drops one event file into <state>/inbox/; `fold` claims the inbox
+# events, applies them under the same lock and commits once through the same
+# committer internal as `commit` (#423). Event file: SCRIPT_CONTRACT.md.
 #
 # `commit` is the single committer: the only code that calls squad_vault_commit
 # (PR mode, session worktree, union merge stay in squad-common.sh; there is no
@@ -12,7 +18,8 @@
 # 10 minutes, and the next caller breaks it with a stderr notice.
 # Stdout: OUTCOME=applied|unchanged, CHANGED=yes|no.
 # Exit: 0 ok, 2 usage, 20 vault not a git repo / lock wait timed out / commit failed.
-# Env: LORE_LOCK_WAIT seconds to wait for a live lock (default 60).
+# Env: LORE_LOCK_WAIT seconds to wait for a live lock (default 60; hooks pass a short one).
+#      SECOND_BRAIN_PATH vault for event/fold (default ~/second-brain).
 set -u
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=squad-common.sh
@@ -101,7 +108,7 @@ lock_release() {
 }
 
 cmd_commit() {
-  local vault="" proj="" msg="" p gitdir rc=0 pending
+  local vault="" proj="" msg="" p gitdir
   local paths=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -126,14 +133,298 @@ cmd_commit() {
   LOCK="$gitdir/lore.lock"
   lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
   trap lock_release EXIT
-  pending="$(git -C "$vault" status --porcelain -- "${paths[@]}" 2>/dev/null)"
-  if [ -z "$pending" ]; then
-    squad_emit OUTCOME unchanged; squad_emit CHANGED no
-    return 0
+  commit_locked "$vault" "$proj" "$msg" "${paths[@]}" || squad_fail 20 "vault commit failed; change left uncommitted"
+  squad_emit OUTCOME "$COMMIT_OUTCOME"; squad_emit CHANGED "$([ "$COMMIT_OUTCOME" = applied ] && echo yes || echo no)"
+}
+
+# commit_locked <vault> <project> <msg> <path>...: the committer internal; the
+# caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed.
+COMMIT_OUTCOME=unchanged
+commit_locked() {
+  local vault="$1" proj="$2" msg="$3" pending rc=0
+  shift 3
+  COMMIT_OUTCOME=unchanged
+  pending="$(git -C "$vault" status --porcelain -- "$@" 2>/dev/null)"
+  [ -n "$pending" ] || return 0
+  squad_vault_commit "$vault" "$proj" "$msg" "$@" || rc=1
+  [ "$rc" = 0 ] && COMMIT_OUTCOME=applied
+  return "$rc"
+}
+
+# --- event / fold (#423) -----------------------------------------------------
+# Event file `<state>/inbox/<id>.ev`, KEY=value lines: V=1, ID, SOURCE,
+# KIND=log|checkpoint|progress|note, optional KEY, TS, LINE. Written through a
+# dot-prefixed temp file and mv, so a reader never sees a partial event.
+
+EVENT_KINDS="log checkpoint progress note"
+EVENT_USAGE="usage: lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]"
+
+# one_line <text>: newlines and CRs become spaces.
+one_line() { printf '%s' "$1" | tr '\n\r' '  '; }
+
+# ev_field <file> <KEY>: first value of KEY (no sourcing, no eval).
+ev_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1; }
+
+# fine_stamp <file>: <epoch seconds><9 digit fraction> from the file's mtime, so
+# events written in the same second still sort in write order (seconds when the
+# platform has no sub-second stat).
+fine_stamp() {
+  local m s f
+  m="$(stat -c %.9Y "$1" 2>/dev/null)"
+  case "$m" in [0-9]*.[0-9]*) ;; *) m="$(stat -f %Fm "$1" 2>/dev/null)" ;; esac
+  case "$m" in
+    [0-9]*.[0-9]*) s="${m%%.*}"; f="${m#*.}" ;;
+    *) s="$(date +%s)"; f="" ;;
+  esac
+  f="${f}000000000"
+  printf '%s%s' "$s" "${f:0:9}"
+}
+
+# ensure_exclude <vault> <state-name>: inboxes stay local (info/exclude, never tracked).
+ensure_exclude() {
+  local ex pat="projects/*/$2/inbox/"
+  ex="$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 0
+  [ -n "$ex" ] || return 0
+  case "$ex" in /*) ;; *) ex="$1/$ex" ;; esac
+  grep -qxF "$pat" "$ex" 2>/dev/null && return 0
+  mkdir -p "$(dirname "$ex")" 2>/dev/null
+  printf '%s\n' "$pat" >> "$ex" 2>/dev/null
+  return 0
+}
+
+cmd_event() {
+  local vault="" proj="" source="" kind="" line="" key="" sn inbox tmp stamp id
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --source)  source="${2:-}"; shift 2 || break ;;
+      --kind)    kind="${2:-}"; shift 2 || break ;;
+      --line)    line="${2:-}"; shift 2 || break ;;
+      --key)     key="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "$EVENT_USAGE" ;;
+    esac
+  done
+  source="$(one_line "$source")"; line="$(one_line "$line")"; key="$(one_line "$key")"
+  [ -n "$proj" ] && [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] || squad_fail 2 "$EVENT_USAGE"
+  case "$proj" in */*|.*) squad_fail 2 "invalid project name: $proj" ;; esac
+  case " $EVENT_KINDS " in *" $kind "*) ;; *) squad_fail 2 "unknown kind '$kind' (log|checkpoint|progress|note)" ;; esac
+  [ -n "$vault" ] || vault="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+  [ -d "$vault/projects/$proj" ] || squad_fail 10 "no vault or unmapped project: $proj (nothing written)"
+  sn="$(squad_state_name "$vault")"; [ -n "$sn" ] || squad_fail 20 "cannot resolve the state directory name"
+  inbox="$vault/projects/$proj/$sn/inbox"
+  mkdir -p "$inbox" 2>/dev/null || squad_fail 20 "cannot create $inbox"
+  ensure_exclude "$vault" "$sn"
+  tmp="$inbox/.tmp-$$-$RANDOM"
+  : > "$tmp" 2>/dev/null || squad_fail 20 "cannot write in $inbox"
+  stamp="$(fine_stamp "$tmp")"
+  id="$stamp-$$-$RANDOM"
+  {
+    printf 'V=1\nID=%s\nSOURCE=%s\nKIND=%s\n' "$id" "$source" "$kind"
+    [ -n "$key" ] && printf 'KEY=%s\n' "$key"
+    printf 'TS=%s\nLINE=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line"
+  } > "$tmp" 2>/dev/null && mv "$tmp" "$inbox/$id.ev" 2>/dev/null || { rm -f "$tmp"; squad_fail 20 "cannot write the event in $inbox"; }
+  squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ID "$id"
+}
+
+# section_body <file> <heading>: the lines under "## heading" up to the next "## ".
+section_body() {
+  awk -v h="$2" '$0 == h { f = 1; next } /^## / { f = 0 } f' "$1" 2>/dev/null
+}
+
+# section_set <file> <heading> <bodyfile>: file with the section body replaced
+# (created before "## Context refs" when missing, else appended).
+section_set() {
+  awk -v h="$2" -v bf="$3" '
+    function emit(   l) { print h; while ((getline l < bf) > 0) print l; close(bf) }
+    $0 == h { emit(); skip = 1; found = 1; next }
+    /^## / { if (skip) { print ""; skip = 0 }
+             if (!found && index($0, "## Context refs") == 1) { emit(); print ""; found = 1 } }
+    skip { next }
+    { print }
+    END { if (!found) { print ""; emit() } }' "$1"
+}
+
+QUARANTINED=0
+quarantine() {  # quarantine <file> <inbox> <reason>
+  mkdir -p "$2/quarantine" 2>/dev/null
+  local n="${1##*/}"
+  mv "$1" "$2/quarantine/$n" 2>/dev/null && printf '%s\n' "$3" > "$2/quarantine/$n.why"
+  QUARANTINED=$((QUARANTINED + 1))
+}
+
+# append_line <file> <line> <dedupe>: append; dedupe=1 skips a line already present.
+append_line() {
+  [ "$3" = 1 ] && grep -qxF -- "$2" "$1" 2>/dev/null && return 0
+  printf '%s\n' "$2" >> "$1"
+}
+
+# set_section_lines <status> <heading> <bodyfile>
+set_section_lines() {
+  section_set "$1" "$2" "$3" > "$1.new.$$" && mv "$1.new.$$" "$1"
+}
+
+apply_checkpoint() {  # apply_checkpoint <status> <line>
+  local body="$1.body.$$"
+  [ -f "$1" ] || printf '# Status\n\n## Last checkpoint\n' > "$1"
+  { section_body "$1" "## Last checkpoint" | grep '^\['; printf '%s\n' "$2"; } \
+    | sort -r | awk '!seen[$0]++' | head -n 3 > "$body"
+  set_section_lines "$1" "## Last checkpoint" "$body"
+  rm -f "$body"
+}
+
+apply_note() {  # apply_note <status> <source> <key> <line>
+  local body="$1.body.$$" rendered
+  [ -f "$1" ] || printf '# Status\n' > "$1"
+  if [ -n "$3" ]; then rendered="[$2] $3: $4"; else rendered="[$2] $4"; fi
+  { section_body "$1" "## Other sources" | grep -v '^$'; printf '%s\n' "$rendered"; } \
+    | NOTE_SRC="[$2] " NOTE_KEY="${3:+[$2] $3: }" NOTE_MAX=10 awk '
+        BEGIN { src = ENVIRON["NOTE_SRC"]; key = ENVIRON["NOTE_KEY"] }
+        { line[NR] = $0 }
+        END {
+          last = NR
+          for (i = 1; i <= NR; i++) {   # a keyed line is replaced by the newer one
+            if (key != "" && i < last && index(line[i], key) == 1) drop[i] = 1
+          }
+          for (i = NR; i >= 1; i--) if (!drop[i] && index(line[i], src) == 1) {
+            if (++n > ENVIRON["NOTE_MAX"] + 0) drop[i] = 1
+          }
+          for (i = 1; i <= NR; i++) if (!drop[i]) print line[i]
+        }' > "$body"
+  set_section_lines "$1" "## Other sources" "$body"
+  rm -f "$body"
+}
+
+FOLD_APPLIED=0
+FOLD_COMMITS=0
+
+# fold_project <vault> <project> <state-name> <lock>: claim, lock, apply, commit.
+# 0 done, 1 failed (claimed events stay in .claimed-<pid>/ for the next fold).
+fold_project() {
+  local vault="$1" proj="$2" sn="$3" lock="$4"
+  local state="$vault/projects/$proj/$sn" inbox claimed f d pid evs rev seen skip
+  local kind source key line ts adopted dedupe status paths rel msg
+  inbox="$state/inbox"; claimed="$inbox/.claimed-$$"
+  status="$vault/projects/$proj/status.md"
+  [ -d "$inbox" ] && ensure_exclude "$vault" "$sn"
+  if [ -d "$inbox" ]; then
+    for f in "$inbox"/*.ev; do
+      [ -f "$f" ] || continue
+      mkdir -p "$claimed" 2>/dev/null || return 1
+      mv "$f" "$claimed/" 2>/dev/null
+    done
+    # A dead folder's claim is adopted by one rename: of several folds only one wins.
+    for d in "$inbox"/.claimed-*; do
+      [ -d "$d" ] || continue
+      pid="${d##*.claimed-}"
+      [ "$pid" = "$$" ] && continue
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      kill -0 "$pid" 2>/dev/null && continue
+      mkdir -p "$claimed" 2>/dev/null || return 1
+      mv "$d" "$claimed/adopt-$pid" 2>/dev/null
+    done
   fi
-  squad_vault_commit "$vault" "$proj" "$msg" "${paths[@]}" || rc=20
-  [ "$rc" = 0 ] || squad_fail 20 "vault commit failed; change left uncommitted"
-  squad_emit OUTCOME applied; squad_emit CHANGED yes
+  LOCK="$lock"
+  lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "lore: vault lock busy: $LOCK" >&2; return 1; }
+  mkdir -p "$state" 2>/dev/null
+  evs=""
+  if [ -d "$claimed" ]; then
+    evs="$(find "$claimed" -type f -name '*.ev' 2>/dev/null | awk -F/ '{ print $NF "\t" $0 }' | sort | cut -f2-)"
+  fi
+  # Same SOURCE+KIND+KEY inside one batch: only the newest applies.
+  skip=""; seen=""
+  rev="$(printf '%s\n' "$evs" | awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }')"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    key="$(ev_field "$f" KEY)"; [ -n "$key" ] || continue
+    d="$(ev_field "$f" KIND)|$(ev_field "$f" SOURCE)|$key"
+    if printf '%s\n' "$seen" | grep -qxF -- "$d"; then
+      skip="$skip
+$f"
+    else
+      seen="$seen
+$d"
+    fi
+  done <<EOF2
+$rev
+EOF2
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if printf '%s\n' "$skip" | grep -qxF -- "$f"; then rm -f "$f"; FOLD_APPLIED=$((FOLD_APPLIED + 1)); continue; fi
+    kind="$(ev_field "$f" KIND)"; source="$(ev_field "$f" SOURCE)"; key="$(ev_field "$f" KEY)"
+    line="$(ev_field "$f" LINE)"; ts="$(ev_field "$f" TS)"
+    adopted=0; case "$f" in */adopt-*) adopted=1 ;; esac
+    if [ "$(ev_field "$f" V)" != 1 ]; then quarantine "$f" "$inbox" "unsupported or missing V"; continue; fi
+    if [ -z "$source" ] || [ -z "$line" ]; then quarantine "$f" "$inbox" "missing SOURCE or LINE"; continue; fi
+    [ -n "$ts" ] || ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    case "$kind" in
+      log)        append_line "$state/session.log" "[$ts] [$source] $line" "$adopted" ;;
+      progress)   append_line "$state/progress.txt" "$line" "$adopted" ;;
+      checkpoint) apply_checkpoint "$status" "[$ts] [$source] $line" ;;
+      note)       apply_note "$status" "$source" "$key" "$line" ;;
+      *) quarantine "$f" "$inbox" "unknown kind: $kind"; continue ;;
+    esac
+    rm -f "$f"
+    FOLD_APPLIED=$((FOLD_APPLIED + 1))
+  done <<EOF2
+$evs
+EOF2
+  # Working-state files are snapshotted with the events, in the same commit.
+  paths=""
+  for rel in "projects/$proj/status.md" "projects/$proj/$sn/session.log" "projects/$proj/$sn/progress.txt" \
+             "projects/$proj/$sn/ralph-run.md" "projects/$proj/$sn/cody-checkpoint.env"; do
+    [ -f "$vault/$rel" ] && paths="$paths
+$rel"
+  done
+  msg="[lore] $(squad_public_name "$vault" "$proj") fold $(date '+%Y-%m-%d %H:%M')"
+  local rc=0
+  if [ -n "$paths" ]; then
+    # shellcheck disable=SC2046
+    set -f; IFS='
+'; set -- $paths; unset IFS; set +f
+    commit_locked "$vault" "$proj" "$msg" "$@" || rc=1
+    [ "$COMMIT_OUTCOME" = applied ] && FOLD_COMMITS=$((FOLD_COMMITS + 1))
+  fi
+  lock_release; MY_OWNER=""
+  [ "$rc" = 0 ] && rm -rf "$claimed"
+  return "$rc"
+}
+
+cmd_fold() {
+  local vault="" proj="" gitdir sn d p rc=0 projects
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "usage: lore fold [--project <p>] [--vault <dir>]" ;;
+    esac
+  done
+  [ -n "$vault" ] || vault="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+  [ -d "$vault" ] || squad_fail 10 "no vault: $vault"
+  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
+  sn="$(squad_state_name "$vault")"; [ -n "$sn" ] || squad_fail 20 "cannot resolve the state directory name"
+  trap lock_release EXIT
+  if [ -n "$proj" ]; then
+    [ -d "$vault/projects/$proj" ] || squad_fail 10 "unmapped project: $proj"
+    projects="$proj"
+  else
+    projects="$(for d in "$vault"/projects/*/; do
+      [ -d "${d}$sn/inbox" ] || continue
+      p="${d%/}"; printf '%s\n' "${p##*/}"
+    done)"
+  fi
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    fold_project "$vault" "$p" "$sn" "$gitdir/lore.lock" || rc=20
+  done <<EOF2
+$projects
+EOF2
+  squad_emit OUTCOME "$([ "$FOLD_COMMITS" -gt 0 ] && echo applied || echo unchanged)"
+  squad_emit CHANGED "$([ "$FOLD_COMMITS" -gt 0 ] && echo yes || echo no)"
+  squad_emit APPLIED "$FOLD_APPLIED"; squad_emit QUARANTINED "$QUARANTINED"
+  [ "$rc" = 0 ] || echo "lore: fold incomplete; unapplied events stay claimed for the next fold" >&2
+  exit "$rc"
 }
 
 cmd_version() {
@@ -147,6 +438,8 @@ cmd_version() {
 VERB="${1:-}"; [ $# -gt 0 ] && shift
 case "$VERB" in
   commit)  cmd_commit "$@" ;;
+  event)   cmd_event "$@" ;;
+  fold)    cmd_fold "$@" ;;
   version) cmd_version ;;
-  *) squad_fail 2 "usage: lore <commit|version> ..." ;;
+  *) squad_fail 2 "usage: lore <commit|event|fold|version> ..." ;;
 esac
