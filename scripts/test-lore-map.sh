@@ -189,5 +189,12 @@ check "post-check rerun: exit 20" 20 "$rc"
 EXC="$(git -C "$V" rev-parse --git-path info/exclude)"; case "$EXC" in /*) ;; *) EXC="$V/$EXC" ;; esac
 check "post-check rerun: entry once" 1 "$(grep -cxF 'projects/neg/' "$EXC")"
 
+# Off the default branch (#422): a tracked-config write is refused, not reported applied.
+V="$TMPROOT/voff"; mkvault "$V"; git -C "$V" switch -qc feature/x
+out="$(bash "$LM" set --vault "$V" --root /w/shared --name shared 2>/dev/null)"; rc=$?
+check "off main (direct): lore-map exits 10" 10 "$rc"
+check "off main (direct): not reported applied" 0 "$(printf '%s' "$out" | grep -c 'OUTCOME=applied')"
+check "off main (direct): no commit on the feature branch" 1 "$(git -C "$V" rev-list --count feature/x)"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -109,7 +109,7 @@ fi
 _paths="projects/$NAME/decisions.md"
 [ -f "$(dirname "$FILE")/decisions-archive.md" ] && _paths="$_paths projects/$NAME/decisions-archive.md"
 # shellcheck disable=SC2086
-bash "$HOOK_DIR/lore" commit --vault "$VAULT_PATH" --project "$NAME" --message "[lore] $(squad_public_name "$VAULT_PATH" "$NAME") decide $(date '+%Y-%m-%d %H:%M')" --paths $_paths >/dev/null || true
+bash "$HOOK_DIR/lore" commit --vault "$VAULT_PATH" --project "$NAME" --message "[lore] $(squad_public_name "$VAULT_PATH" "$NAME") decide $(date '+%Y-%m-%d %H:%M')" --paths $_paths >/dev/null || squad_commit_fail $?
 
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ENTRY "$ENTRY"; squad_emit ARCHIVED "$ARCHIVED"
 bash "$LINT" check "$FILE" | grep -E '^DECISIONS_(OVER_CAP|OVER_RULE_CAP|BULLETS)=' || true

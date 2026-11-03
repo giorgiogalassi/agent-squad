@@ -280,5 +280,15 @@ printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
 o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks-inline/lore-orient.sh" 2>/dev/null)"
 case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "inline fallback: local-only mapping" ;; *) bad "inline fallback local-only: $o" ;; esac
 
+# Vault checkout off its default branch (#422): one orientation line, no action.
+cp -R "$F_VAULT" "$TMPROOT/ov"; git -C "$TMPROOT/ov" init -q -b main 2>/dev/null
+git -C "$TMPROOT/ov" add -A >/dev/null 2>&1; git -C "$TMPROOT/ov" -c user.name=t -c user.email=t@t commit -qm init >/dev/null 2>&1
+o="$(cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$TMPROOT/ov" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *"Vault checkout is on"*) bad "on main: no off-branch line";; *) ok "on main: no off-branch line";; esac
+git -C "$TMPROOT/ov" switch -qc lore/other-2026-11-03
+o="$(cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$TMPROOT/ov" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
+case "$(ctx "$o")" in *"Vault checkout is on lore/other-2026-11-03, not main: vault writes are refused until it is back on main"*) ok "off main: orientation says writes are refused";; *) bad "off main: orientation line missing";; esac
+[ "$(git -C "$TMPROOT/ov" symbolic-ref --short HEAD)" = lore/other-2026-11-03 ] && ok "off main: orientation took no action" || bad "off main: orientation took no action"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -151,5 +151,16 @@ ACTION: invented
 CONTEXT: i"
 grep -q 'rebuilt' "$STATUS" && bad "added Next item bails" || ok "added Next item bails"
 
+# Vault checkout off its default branch (#422): no fold, no write; the skip reason is logged.
+printf '#!/bin/sh\necho "$@" >> "%s/fold.log"\nexit 0\n' "$TMPROOT" > "$TMPROOT/hooks/lore"; chmod +x "$TMPROOT/hooks/lore"
+rm -f "$TMPROOT/fold.log"; run_hook
+check "on default branch: fold is called" 1 "$(grep -c '^fold' "$TMPROOT/fold.log" 2>/dev/null)"
+DEF="$(git -C "$F_VAULT" symbolic-ref --short HEAD)"
+git -C "$F_VAULT" switch -qc lore/other-2026-11-03
+rm -f "$TMPROOT/fold.log" "$F_VAULT/projects/fixture/.lore-checkpoint.log"; run_hook
+check "off default branch: no fold" "" "$(cat "$TMPROOT/fold.log" 2>/dev/null)"
+check "off default branch: skip reason logged" 1 "$(grep -c 'not on its default branch' "$F_VAULT/projects/fixture/.lore-checkpoint.log" 2>/dev/null)"
+git -C "$F_VAULT" switch -q "$DEF"
+
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

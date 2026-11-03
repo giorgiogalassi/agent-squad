@@ -65,7 +65,7 @@ if [ "$VERB" = ignore ]; then
   rc=0; ensure_ignore || rc=$?
   [ "$rc" = 20 ] && squad_fail 20 "cannot write $VAULT/.gitignore"
   if [ "$rc" = 1 ]; then squad_emit OUTCOME unchanged; squad_emit CHANGED no; exit 0; fi
-  is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] ignore local config" --paths .gitignore >/dev/null || true; }
+  is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] ignore local config" --paths .gitignore >/dev/null || squad_commit_fail $?; }
   squad_emit OUTCOME applied; squad_emit CHANGED yes
   exit 0
 fi
@@ -115,7 +115,7 @@ if [ "$TARGET" = local ]; then
   [ "$rc" = 20 ] && squad_fail 20 "cannot write $VAULT/.gitignore"
   if [ "$rc" = 0 ]; then
     CHANGED=yes
-    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] ignore local config" --paths .gitignore >/dev/null || true; }
+    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] ignore local config" --paths .gitignore >/dev/null || squad_commit_fail $?; }
   fi
 fi
 
@@ -132,7 +132,7 @@ else
   mv "$TMP" "$FILE" || squad_fail 20 "cannot write $FILE"
   CHANGED=yes
   if [ "$TARGET" = tracked ]; then
-    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$NAME" --message "[lore] map project $NAME" --paths lore-config.json >/dev/null || true; }
+    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$NAME" --message "[lore] map project $NAME" --paths lore-config.json >/dev/null || squad_commit_fail $?; }
   fi
 fi
 
@@ -146,7 +146,7 @@ if [ "$TARGET" = local ]; then
     jq --arg k "$ROOT" 'del(.projects[$k])' "$TRK" > "$TTMP" || squad_fail 20 "jq failed; lore-config.json was not touched"
     mv "$TTMP" "$TRK" || squad_fail 20 "cannot write $TRK"
     # Message and project argument are name-free on purpose: no branch, worktree or PR title.
-    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] unmap project from shared config" --paths lore-config.json >/dev/null || true; }
+    is_git_vault && { bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project vault --message "[lore] unmap project from shared config" --paths lore-config.json >/dev/null || squad_commit_fail $?; }
     echo "lore-map: the project name is still in the vault git history; history was not rewritten" >&2
     CHANGED=yes
   fi
