@@ -152,6 +152,20 @@ squad_vault_pr_mode() {
   _squad_vault_pr_mode_on "$1" "$br"
 }
 
+# squad_vault_main_local <vault>: 0 when the vault has no remote workflow (#427):
+# `"vault_main": "local-only"` in lore-config.json, or (no explicit "pr"/"direct")
+# no `origin` remote. Such a vault commits on whatever branch is checked out and
+# never pushes, opens a PR or calls gh.
+squad_vault_main_local() {
+  local cfg="$1/lore-config.json"
+  if [ -f "$cfg" ]; then
+    grep -Eq '"vault_main"[[:space:]]*:[[:space:]]*"local-only"' "$cfg" && return 0
+    grep -Eq '"vault_main"[[:space:]]*:[[:space:]]*"(pr|direct)"' "$cfg" && return 1
+  fi
+  git -C "$1" remote get-url origin >/dev/null 2>&1 && return 1
+  return 0
+}
+
 # squad_vault_default_branch <vault>: the vault's default branch: origin/HEAD's
 # target, else a local main, else master. Empty (rc 1) when none exists.
 squad_vault_default_branch() {
@@ -184,6 +198,7 @@ squad_vault_pr_mode_any() {
 
 _squad_vault_pr_mode_on() {
   local v="$1" br="$2" cfg="$1/lore-config.json" hook sha url key hk cf cached rc=0 day
+  squad_vault_main_local "$v" && return 1
   if [ -f "$cfg" ]; then
     grep -Eq '"vault_main"[[:space:]]*:[[:space:]]*"direct"' "$cfg" && return 1
     grep -Eq '"vault_main"[[:space:]]*:[[:space:]]*"pr"' "$cfg" && return 0
@@ -437,6 +452,7 @@ squad_vault_wroot() {
 squad_vault_finish() {
   local v="$1" wt b bproj br0 base n open tip rtip rc=0 hasgh=1 url
   SQUAD_VAULT_PUSHED=0
+  squad_vault_main_local "$v" && return 0
   command -v gh >/dev/null 2>&1 || hasgh=0
   squad_vault_pr_mode_any "$v" || return 0
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
@@ -470,6 +486,54 @@ squad_vault_finish() {
       && SQUAD_VAULT_PUSHED=$((SQUAD_VAULT_PUSHED+1)) || rc=20
   done
   return "$rc"
+}
+
+# squad_vault_push_pending <vault>: 0 when a `lore push` is worth running: the last
+# push failed (<git-common-dir>/lore-push-status), or a lore/* session branch holds
+# commits ahead of the default branch and its tip is not the remote's. Always 1 for
+# a local-only vault.
+squad_vault_push_pending() {
+  local v="$1" cd st b base def wt _wtb
+  squad_vault_main_local "$v" && return 1
+  git -C "$v" remote get-url origin >/dev/null 2>&1 || return 1
+  cd="$(git -C "$v" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  case "$cd" in /*) ;; *) cd="$v/$cd" ;; esac
+  st="$(sed -n 's/^OUTCOME=//p' "$cd/lore-push-status" 2>/dev/null | head -n 1)"
+  [ "$st" = failed ] && return 0
+  def="$(squad_vault_default_branch "$v")" || return 1
+  base="$def"; git -C "$v" rev-parse -q --verify "origin/$def" >/dev/null 2>&1 && base="origin/$def"
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    # what squad_vault_finish skips: branches without a session worktree, local-only projects
+    ls -d "$v"/.claude/worktrees/lore-* >/dev/null 2>&1 || break
+    _wtb=0
+    for wt in "$v"/.claude/worktrees/lore-*; do
+      [ "$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)" = "$b" ] && _wtb=1
+    done
+    [ "$_wtb" = 1 ] || continue
+    squad_local_only "$v" "$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')" && continue
+    [ "$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)" -gt 0 ] || continue
+    [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] || return 0
+  done <<EOL
+$(git -C "$v" for-each-ref --format='%(refname:short)' 'refs/heads/lore/*')
+EOL
+  return 1
+}
+
+# squad_vault_push_detached <vault>: start `lore push` in its own process group,
+# detached from this process's stdio, and return at once: the caller (SessionEnd,
+# SessionStart) never waits on the network. A killed push is retried by
+# squad_vault_push_pending at the next start.
+squad_vault_push_detached() {
+  local v="$1" self
+  self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lore"
+  [ -f "$self" ] || return 0
+  if command -v setsid >/dev/null 2>&1; then
+    nohup setsid bash "$self" push --vault "$v" </dev/null >/dev/null 2>&1 &
+  else
+    ( set -m; nohup bash "$self" push --vault "$v" </dev/null >/dev/null 2>&1 & )
+  fi
+  return 0
 }
 
 # squad_emit KEY value: print KEY=value on stdout. KEY must match

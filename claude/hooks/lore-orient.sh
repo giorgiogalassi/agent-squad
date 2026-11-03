@@ -448,6 +448,22 @@ if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/d
     SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
   fi
 fi
+# Vault push (#427): show a failed last push, and retry in the background when the
+# last push failed or a lore/* session branch is ahead of its remote tip (a push killed
+# at SessionEnd). Detached: orientation never waits on the network.
+if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
+  if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
+    _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
+    _vfail="Last vault push failed${_vreason:+: $_vreason}"
+  else _vfail=""
+  fi
+  if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
+  else
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
+  fi
+fi
 if [ -f "$SQUAD_DIR/architecture.md" ]; then
   ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"
   NEWEST_F=""; NEWEST_M=0

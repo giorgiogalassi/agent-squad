@@ -84,6 +84,17 @@ verbs (`summary`, `resolve`) follow the contract above.
   `## Other sources`. Unparsable events and unknown kinds move to
   `inbox/quarantine/` with a `.why` file and are never committed. `inbox/` is
   listed in the vault's `.git/info/exclude`.
+- `push [--vault <dir>]`: pushes each `lore/*` session branch of the vault and
+  opens or updates its PR (wraps `squad_vault_finish`). Started detached by
+  SessionEnd and retried by SessionStart; never run it where a wait matters.
+  The vault lock is held only around the local worktree-drop step, never across
+  the network. Emits `OUTCOME=applied|unchanged|failed` and `CHANGED=yes|no`.
+  `unchanged` also for a local-only vault (`"vault_main": "local-only"`, or no
+  `origin`), which never calls gh. Exit 0 done or nothing to push, 2 usage, 20
+  not a git repository or a push or PR failure (`OUTCOME=failed`). Every run
+  writes `<git-common-dir>/lore-push-status` with the keys `AT=<epoch>`,
+  `OUTCOME=applied|unchanged|failed` and `REASON=<one line, empty unless failed>`;
+  the next SessionStart orientation shows a `failed` status and retries.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ## Exception: `squad-stats.py report`

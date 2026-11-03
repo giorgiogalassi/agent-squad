@@ -159,7 +159,7 @@ STATUS="$VAULT/projects/$DISPLAY/status.md"
 # to write, so nothing is folded, written or committed here. Only the session
 # branches already written are pushed.
 if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_offdefault "$VAULT"; then
-  [ "$MODE" = hook ] && squad_vault_finish "$VAULT" >/dev/null 2>&1
+  [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"
   bail "vault checkout is not on its default branch, skipped"
 fi
 
@@ -287,8 +287,9 @@ sync_index() {
     squad_vault_commit "$VAULT" "$DISPLAY" "lore: index $DISPLAY" INDEX.md
   fi
 }
-# Session end (#350): push the vault's lore/* branches and open or update their PR.
-trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_finish "$VAULT" >/dev/null 2>&1' EXIT
+# Session end (#350, #427): start `lore push` detached after the local commit; it pushes
+# the vault's lore/* branches and opens or updates their PR without this hook waiting.
+trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended
