@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""squad-graph.py -- the project's structure graph: extract, diff, render (DRAFT).
+"""squad-graph.py -- the project's structure graph: extract, diff, check, event, render (DRAFT).
 
 One script owns the graph; no skill extracts or compares on its own. Seed
-runs `extract` then `render`; Atlas runs `diff` (through this module) and
-draws its result with `change_graph_fragment`. Changing how graphs are
-built or drawn means changing this file only.
+runs `extract` then `render`; Forge writes the planned graph and validates it
+with `check --validate`; Reven runs `check`; Ralph (or Cody) runs `diff` then
+`event` after each issue; Atlas runs `diff` (through this module), compares
+with `compute_drift` and draws the result. Changing how graphs are built,
+compared or drawn means changing this file only.
 
 Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
@@ -20,6 +22,32 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
       The structural change between merge-base(base, head) and head, scoped
       to the changed units plus the units that use something they changed.
       Default out: <SQUAD_DIR>/graph-diff.json.
+  check --plan <planned-graph.json> (--diff <graph.json> | --base <ref> --head <ref>)
+        [--root <dir>] [--out <drift.json>] [--scout <file>] [--cache <file>]
+  check --plan <planned-graph.json> --validate
+      Actual versus planned. The actual side is a `diff` graph (given, or
+      built from --base/--head). Drift never changes the exit code: 0 with
+      DRIFT_COUNT=n, so a caller reports it and asks for a reason, it does not
+      block. Writes <drift.json> (default <SQUAD_DIR>/graph-drift.json).
+      Keys: DRIFT (file), DRIFT_COUNT, DRIFT_UNITS, DRIFT_DEPENDENCIES,
+      DRIFT_BOUNDARIES, UNREALIZED, one DRIFT_ITEM=<kind>:<subject> per item.
+      `--validate` only checks the plan (exit 10 when malformed) and prints
+      PLANNED_UNITS, PLANNED_EDGES, PLANNED_BOUNDARIES.
+  event (--diff <graph.json> | --base <ref> --head <ref>)
+        [--plan <planned-graph.json> | --drift <drift.json>] [--branch <name>]
+        [--issue <n>] [--note <text>] [--timeline <file.jsonl>]
+        [--root <dir>] [--remote <git url>] [--scout <file>] [--cache <file>]
+      With --base/--head the diff is built here, and an empty net diff (a
+      change fully reverted) is an empty graph, not an error: that is what
+      turns "added, then removed" into a `dep_removed` event. --plan (or a
+      --drift file written by `check`) adds the drift events. Append the structural events the `diff` graph shows and the timeline
+      does not yet know for the branch (default: the diff's head ref). Each
+      call compares the diff with the branch's earlier events, so an edge
+      added by one issue and removed by a later one is recorded twice even
+      though the net diff shows neither. Idempotent: the same diff appends
+      nothing. Default timeline: <vault>/projects/<name>/.squad/
+      graph-timeline.jsonl. Keys: TIMELINE, BRANCH, EVENTS (appended now),
+      EVENTS_TOTAL (for the branch), one EVENT=<type>:<subject> per new event.
   render --graph <graph.json> --out <file.html|file.svg>
          [--overlay <atlas.json>] [--title <text>]
       Draw the file-level graph grouped by unit (SVG plus a drill-down table).
@@ -76,6 +104,33 @@ against the names importers pull in (static and dynamic imports; a namespace
 import counts as `*`). New, deleted and cross-unit moved files change every
 name they export; barrel files (index.*, __init__.py) are not declarations.
 
+Planned graph (written by Forge, read by `check`; intent, never truth), JSON:
+  {"version": 1, "kind": "planned", "generated": "YYYY-MM-DD",
+   "units":      [{"id": "<unit id>", "note": "<why>"}],     units expected to change
+   "edges":      [{"from": "<unit id>", "to": "<unit id>"}], new dependencies expected
+   "boundaries": [{"from": "<unit id|glob>", "to": "<unit id|glob>", "reason": "<why>"}]}
+`boundaries` are dependencies that must not exist (`*` globs allowed). Drift
+kinds: unplanned_unit (a changed unit not in `units`), unplanned_dependency (an
+added edge not in `edges`), broken_boundary (an added edge matching a
+boundary; reported instead of unplanned_dependency). The `(workspace)` and
+`(root)` nodes are never drift. Planned items the change did not realise are
+listed under "unrealized" in the drift file, not as drift.
+
+Drift file: {"version": 1, "kind": "drift", "generated", "head_sha", "merge_base",
+"items": [{"kind", "subject": "<unit>|<from>><to>", "uses"?, "reason"?}],
+"unrealized": {"units": [...], "edges": ["<from>><to>"]}}.
+
+Timeline (vault, JSON Lines, append-only, one event per line, never recomputed
+by a reader):
+  {"v": 1, "ts": "<UTC ISO>", "branch", "issue": "<n>|", "type", "subject",
+   "commit": "<sha>", "url": "<commit link or empty>", "note", ...}
+  type unit_touched    subject = unit id (first touch on the branch)
+  type dep_added       subject = "<from>><to>", "net": added|removed|none, "uses"
+  type dep_removed     same fields; "net" says what the diff shows now, so an
+                       edge added then removed carries net "none"
+  type drift_raised | drift_resolved | boundary_broken | boundary_restored
+                       subject as in the drift file, "drift" = drift kind
+
 Cache: unit-to-unit edges are cached per unit by the git tree id of its
 folder (and a digest of the unit/alias configuration), so a run only reads the
 units that changed since the last one. Default <vault>/projects/<name>/.squad/
@@ -88,6 +143,7 @@ git error. Python 3.8+ standard library only.
 """
 
 import datetime as dt
+import fnmatch
 import hashlib
 import html
 import json
@@ -181,6 +237,14 @@ def default_cache(paths):
         return ""
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
     return os.path.join(paths["VAULT_PATH"], "projects", name, ".squad", "graph-cache.json") if name else ""
+
+
+def default_state_file(paths, name):
+    """A file in the vault's run-state folder (never the repo's .squad)."""
+    if not paths.get("VAULT_PATH"):
+        return ""
+    proj = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
+    return os.path.join(paths["VAULT_PATH"], "projects", proj, ".squad", name) if proj else ""
 
 
 def read_text(path):
@@ -1203,6 +1267,252 @@ def cmd_diff(argv):
     emit("CACHE", st["cache"])
 
 
+# ------------------------------------------------------- check and event
+
+SKIP_DRIFT = (WORKSPACE, ROOT_GROUP)
+DRIFT_KINDS = ("unplanned_unit", "unplanned_dependency", "broken_boundary")
+
+
+def load_plan(path):
+    """Read and validate a planned graph (exit 10 when absent or malformed)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            plan = json.load(f)
+    except OSError:
+        fail(10, "no planned graph at %s" % path)
+    except ValueError:
+        fail(10, "planned graph %s is not JSON" % path)
+    if not isinstance(plan, dict) or plan.get("kind") != "planned":
+        fail(10, "%s is not a planned graph (kind must be 'planned')" % path)
+    for key, fields in (("units", ("id",)), ("edges", ("from", "to")), ("boundaries", ("from", "to"))):
+        rows = plan.setdefault(key, [])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) and all(isinstance(r.get(x), str) and r[x] for x in fields) for r in rows):
+            fail(10, "planned graph %s: '%s' must be a list of objects with %s" % (path, key, ", ".join(fields)))
+    return plan
+
+
+def compute_drift(doc, plan):
+    """-> (items, unrealized) of a `diff` graph against a planned graph."""
+    planned_units = set(u["id"] for u in plan["units"])
+    planned_edges = set((e["from"], e["to"]) for e in plan["edges"])
+    changed = sorted(g["id"] for g in doc["groups"] if g.get("state") == "changed" and g["id"] not in SKIP_DRIFT)
+    added = [e for e in doc["edges"] if e["kind"] == "added" and e["from"] not in SKIP_DRIFT and e["to"] not in SKIP_DRIFT]
+    items = [{"kind": "unplanned_unit", "subject": uid} for uid in changed if uid not in planned_units]
+    for e in added:
+        subject = "%s>%s" % (e["from"], e["to"])
+        broken = next((b for b in plan["boundaries"]
+                       if fnmatch.fnmatchcase(e["from"], b["from"]) and fnmatch.fnmatchcase(e["to"], b["to"])), None)
+        if broken:
+            items.append({"kind": "broken_boundary", "subject": subject, "uses": e.get("uses", []),
+                          "reason": broken.get("reason", "")})
+        elif (e["from"], e["to"]) not in planned_edges:
+            items.append({"kind": "unplanned_dependency", "subject": subject, "uses": e.get("uses", [])})
+    realised = set((e["from"], e["to"]) for e in added)
+    touched = set(g["id"] for g in doc["groups"] if g.get("state") == "changed")
+    unrealized = {"units": sorted(u for u in planned_units if u not in touched),
+                  "edges": sorted("%s>%s" % p for p in planned_edges if p not in realised)}
+    return items, unrealized
+
+
+def diff_from_opts(o, paths):
+    """The `diff` graph named by --diff, or built from --base/--head."""
+    if o.get("diff"):
+        try:
+            with open(o["diff"], encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            fail(10, "no diff graph at %s" % o["diff"])
+        if not isinstance(doc, dict) or doc.get("kind") != "diff":
+            fail(10, "%s is not a diff graph" % o["diff"])
+        return doc
+    root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
+    if not root or not os.path.isdir(root):
+        fail(10, "no root: pass --root or resolve the project")
+    squad_dir = paths.get("DIR") or ""
+    scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
+    cache = o["cache"] if "cache" in o else default_cache(paths)
+    return build_diff(root, o["base"], o["head"], None, scout, cache)[0]
+
+
+def cmd_check(argv):
+    usage = "usage: check --plan <planned-graph.json> (--diff <graph.json> | --base <ref> --head <ref>) [--out <drift.json>] | check --plan <file> --validate"
+    o = parse_opts(argv, ("--plan", "--diff", "--base", "--head", "--root", "--out", "--scout", "--cache"), ("--validate",))
+    paths = resolve_paths()
+    squad_dir = paths.get("DIR") or ""
+    plan_path = o.get("plan") or (os.path.join(squad_dir, "forge", "planned-graph.json") if squad_dir else None)
+    if not plan_path:
+        fail(2, usage)
+    plan = load_plan(plan_path)
+    if o.get("validate"):
+        emit("OUTCOME", "unchanged")
+        emit("CHANGED", "no")
+        emit("PLAN", plan_path)
+        emit("PLANNED_UNITS", len(plan["units"]))
+        emit("PLANNED_EDGES", len(plan["edges"]))
+        emit("PLANNED_BOUNDARIES", len(plan["boundaries"]))
+        return
+    if not o.get("diff") and not (o.get("base") and o.get("head")):
+        fail(2, usage)
+    doc = diff_from_opts(o, paths)
+    out = o.get("out") or (os.path.join(squad_dir, "graph-drift.json") if squad_dir else None)
+    if not out:
+        fail(10, "no --out and no squad dir")
+    items, unrealized = compute_drift(doc, plan)
+    drift = {"version": 1, "kind": "drift", "generated": dt.date.today().isoformat(),
+             "head_sha": doc.get("head_sha", ""), "merge_base": doc.get("merge_base", ""),
+             "items": items, "unrealized": unrealized}
+    emit_head("DRIFT", out, write_graph(out, drift))
+    emit("DRIFT_COUNT", len(items))
+    emit("DRIFT_UNITS", sum(1 for i in items if i["kind"] == "unplanned_unit"))
+    emit("DRIFT_DEPENDENCIES", sum(1 for i in items if i["kind"] == "unplanned_dependency"))
+    emit("DRIFT_BOUNDARIES", sum(1 for i in items if i["kind"] == "broken_boundary"))
+    emit("UNREALIZED", len(unrealized["units"]) + len(unrealized["edges"]))
+    for i in items:
+        emit("DRIFT_ITEM", "%s:%s" % (i["kind"], i["subject"]))
+
+
+def read_timeline(path):
+    """-> list of event dicts (bad lines skipped); [] when the file is absent."""
+    events = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(ev, dict) and ev.get("type") and ev.get("subject"):
+                    events.append(ev)
+    except OSError:
+        pass
+    return events
+
+
+def replay(events):
+    """-> (units seen, {edge: net state}, set of active (drift kind, subject))."""
+    units, edges, active = set(), {}, set()
+    for ev in events:
+        t, s = ev["type"], ev["subject"]
+        if t == "unit_touched":
+            units.add(s)
+        elif t in ("dep_added", "dep_removed"):
+            edges[s] = ev.get("net") or ("added" if t == "dep_added" else "removed")
+        elif t in ("drift_raised", "boundary_broken"):
+            active.add((ev.get("drift", ""), s))
+        elif t in ("drift_resolved", "boundary_restored"):
+            active.discard((ev.get("drift", ""), s))
+    return units, edges, active
+
+
+def new_events(doc, drift_items, prior):
+    """-> [(type, subject, extra)] that the diff adds to the branch's earlier events."""
+    seen_units, prev_edges, active = replay(prior)
+    out = []
+    for g in doc["groups"]:
+        if g.get("state") == "changed" and g["id"] not in seen_units:
+            commits = g.get("commits") or []
+            sha = commits[-1]["sha"] if commits and g.get("commits_total", len(commits)) == len(commits) else ""
+            out.append(("unit_touched", g["id"], {"commit": sha}))
+    cur = {}
+    uses = {}
+    for e in doc["edges"]:
+        if e["kind"] in ("added", "removed"):
+            key = "%s>%s" % (e["from"], e["to"])
+            cur[key] = e["kind"]
+            uses[key] = e.get("uses", [])
+    for key in sorted(set(cur) | set(prev_edges)):
+        now, before = cur.get(key, "none"), prev_edges.get(key, "none")
+        if now == before:
+            continue
+        if now == "added" or (now == "none" and before == "removed"):
+            kind = "dep_added"
+        else:
+            kind = "dep_removed"
+        note = ""
+        if now == "none":
+            note = "reverts an earlier %s on this branch" % ("addition" if before == "added" else "removal")
+        out.append((kind, key, {"net": now, "uses": uses.get(key, []), "note": note}))
+    if drift_items is not None:
+        now = set((i["kind"], i["subject"]) for i in drift_items)
+        for kind, subject in sorted(now - active):
+            out.append(("boundary_broken" if kind == "broken_boundary" else "drift_raised", subject, {"drift": kind}))
+        for kind, subject in sorted(active - now):
+            out.append(("boundary_restored" if kind == "broken_boundary" else "drift_resolved", subject, {"drift": kind}))
+    return out
+
+
+def cmd_event(argv):
+    usage = "usage: event (--diff <graph.json> | --base <ref> --head <ref>) [--plan <file> | --drift <drift.json>] [--branch <name>] [--issue <n>] [--note <text>] [--timeline <file>]"
+    o = parse_opts(argv, ("--diff", "--base", "--head", "--plan", "--drift", "--branch", "--issue", "--note",
+                          "--timeline", "--root", "--remote", "--scout", "--cache"))
+    if not o.get("diff") and not (o.get("base") and o.get("head")):
+        fail(2, usage)
+    paths = resolve_paths()
+    try:
+        doc = diff_from_opts(o, paths)
+    except GraphError as e:
+        if o.get("diff") or e.code != 10 or not e.reason.startswith("no changes under"):
+            raise
+        root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
+        sha = git_text(root, ["rev-parse", "--verify", o["head"] + "^{commit}"]).strip()
+        doc = {"kind": "diff", "head": o["head"], "head_sha": sha, "groups": [], "edges": []}
+    drift_items = None
+    if o.get("plan"):
+        drift_items = compute_drift(doc, load_plan(o["plan"]))[0]
+    elif o.get("drift"):
+        try:
+            with open(o["drift"], encoding="utf-8") as f:
+                drift = json.load(f)
+            drift_items = [i for i in drift["items"] if i.get("kind") in DRIFT_KINDS and i.get("subject")]
+        except (OSError, ValueError, KeyError, TypeError):
+            fail(10, "no drift file at %s" % o["drift"])
+    timeline = o.get("timeline") or default_state_file(paths, "graph-timeline.jsonl")
+    if not timeline:
+        fail(10, "no --timeline and no vault to hold it")
+    branch = o.get("branch") or doc.get("head") or ""
+    if not branch:
+        fail(2, usage)
+    host = None
+    remote = o.get("remote")
+    if remote is None:
+        root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or ".")
+        try:
+            remote = git_text(root, ["remote", "get-url", "origin"], ok=(0, 1, 2, 128)).strip() if os.path.isdir(root) else ""
+        except GraphError:
+            remote = ""
+    host = host_urls(remote or "")
+    prior = [e for e in read_timeline(timeline) if e.get("branch") == branch]
+    head_sha = doc.get("head_sha", "")
+    stamp = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines, shown = [], []
+    for kind, subject, extra in new_events(doc, drift_items, prior):
+        sha = extra.pop("commit", "") or head_sha
+        url = safe_url(host["commit"] + quote(sha)) if host and sha else None
+        ev = {"v": 1, "ts": stamp, "branch": branch, "issue": o.get("issue", ""), "type": kind,
+              "subject": subject, "commit": sha, "url": url or ""}
+        ev.update(extra)
+        if o.get("note"):
+            ev["note"] = (ev.get("note") + "; " if ev.get("note") else "") + o["note"]
+        ev.setdefault("note", "")
+        lines.append(json.dumps(ev, sort_keys=True))
+        shown.append("%s:%s" % (kind, subject))
+    if lines:
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(timeline)), exist_ok=True)
+            with open(timeline, "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        except OSError as e:
+            fail(20, "cannot write timeline: %s" % e)
+    emit("OUTCOME", "applied" if lines else "unchanged")
+    emit("CHANGED", "yes" if lines else "no")
+    emit("TIMELINE", timeline)
+    emit("BRANCH", branch)
+    emit("EVENTS", len(lines))
+    emit("EVENTS_TOTAL", len(prior) + len(lines))
+    for e in shown:
+        emit("EVENT", e)
+
+
 # -------------------------------------------------------------- hosts
 
 def host_urls(remote):
@@ -1539,6 +1849,10 @@ def main():
             cmd_extract(rest)
         elif verb == "diff":
             cmd_diff(rest)
+        elif verb == "check":
+            cmd_check(rest)
+        elif verb == "event":
+            cmd_event(rest)
         elif verb == "render":
             cmd_render(rest)
         else:

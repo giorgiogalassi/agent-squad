@@ -67,7 +67,9 @@ Read `OUTCOME`, `CHANGED` (`unchanged` when `atlas.json` is identical
 to the previous run), `ATLAS_DIR`, `ID`, `TITLE`, `BASE`, `HEAD`, `COMMITS`, `FILES`,
 `ADDED`, `DELETED`, `MODULES` (the changed units), `UNITS`, `UNIT_SOURCE`
 (`manifest`, `scout` or `folder`), `EDGES_ADDED`, `EDGES_REMOVED`,
-`AFFECTED`, `BRIEF_HEADER` (`new`, `refreshed`, `current` or
+`AFFECTED`, `DRIFT` (drift items against Forge's planned graph, `none`
+without one), `TIMELINE_EVENTS` (structural events recorded for the branch),
+`BRIEF_HEADER` (`new`, `refreshed`, `current` or
 `unrecognised`: on a re-gather the title and Range line of an existing
 brief are refreshed and its text kept), `TESTS`, `CRITERIA`, `VERDICTS`,
 `SOURCE` (`vcs` or `git-only`). With `--batch` the keys repeat per row;
@@ -146,7 +148,13 @@ and a node lists its files and commits), the file list with a path
 filter, the tests and the verdict trail. Files and commits link to the
 PR host, built from the origin remote (GitHub, GitLab and Bitbucket
 Cloud shapes; without a known host the page says it has no links). It
-has no inline diffs and no commit list: the host has them.
+has no inline diffs and no commit list: the host has them. Below the files
+it shows "Plan and timeline": planned versus actual (drift items, planned
+units not realised) and the timeline of structural events with commit
+links, including an edge added and removed within the branch. Both come
+from files that Forge and Ralph wrote (`forge/planned-graph.json`, the
+vault's `graph-timeline.jsonl`); Atlas extracts and records nothing
+itself, and a drift item is a question for the author, not a defect.
 
 ## Step 4: show
 

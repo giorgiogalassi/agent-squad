@@ -127,6 +127,16 @@ Read every issue in the batch file. A first-line
 `Blocked by: [ISSUE-ID] ...` declares an edge. Build the graph from
 these lines only.
 
+### Coupled issues (both modes)
+
+An issue body may carry `Units: <unit id>[, <unit id>]` (Chisel's planned
+units). Two issues in the batch whose `Units:` lines share a unit are
+coupled: they edit the same code. Make sure they run in sequence, never
+side by side and never on sibling branches: when the graph above has no
+path between them yet, add an edge from the lower issue number to the
+higher one (skip the edge if it would close a cycle, and say so in the
+report). Coupled issues in sequence stack on each other like any chain.
+
 ### Resolve execution order (both modes)
 
 Topological sort: queue in-degree-0 issues, remove their edges, repeat.
@@ -370,6 +380,30 @@ Tests still red after the retries are an escalation (no PR).
 
 **Not a failure:** pre-existing failures on main (note via
 `squad-progress.sh append` and in the PR body).
+
+#### Structural trail (best-effort)
+
+After each issue that classified as success, record what it did to the
+project's structure. This never fails the issue and never fails the batch:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py event --base <base ref of the issue's branch> --head <branch> --issue <n> [--plan <SQUAD_DIR>/forge/planned-graph.json]
+```
+
+Pass `--plan` only when that file exists. The script builds the diff itself
+and appends to the vault timeline what is new for the branch (unit first
+touched, dependency added or removed, boundary broken or restored, drift
+raised or resolved); an edge a later issue reverts is recorded even though
+the net diff no longer shows it. Read `OUTCOME`, `EVENTS` and each `EVENT`;
+add `structure: <EVENTS> events` to the issue's report line. Run it again
+after each review fix round, with `--note "<the reason the fix round gave>"`
+when Reven raised drift, so the timeline says how the drift was resolved. Act on the exit
+code:
+
+| Exit | Action |
+|---|---|
+| 0 | Continue. |
+| 2, 10, 20 | Log `structural trail skipped for #<n>: <stderr reason>` and continue. |
 
 ### 2c. Escalation
 

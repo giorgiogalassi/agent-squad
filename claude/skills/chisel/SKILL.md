@@ -144,6 +144,28 @@ details (Cody's call), micro-tasks that belong as checklist items, or
 anything out of scope in the PRD. A good issue: clear title, what and
 why, the criteria it covers, explicit dependencies.
 
+## Slicing and coupling from the planned graph
+
+When `forge/output.yaml` has `planned_graph` (or `<SQUAD_DIR>/forge/planned-graph.json`
+exists), read it; with a PRD, still use it when present. It is read, never
+recomputed: Chisel runs no graph command.
+
+- **Slice** by planned unit: one issue per unit, or per tight cluster of
+  units joined by a planned edge, each with the criteria that unit serves.
+- **Units line.** Each issue carries `Units: <unit id>[, <unit id>]` under the
+  description, the planned units its work touches.
+- **Coupled.** Issues whose `Units:` lines share a unit are coupled: they
+  edit the same code and must not run side by side. Add a second line,
+  `Coupled with: <issue key or title>` (one entry per coupled issue), and
+  order them: the one nearer the dependencies first, then by creation
+  order. Connected mode records the order as `--blocked-by` too; detached
+  mode as the first-line `Blocked by:`.
+- **Order** by the planned edges: an edge `a>b` means `a` depends on `b`, so
+  the issue on `b` comes first (a blocker of the issue on `a`). A cycle in
+  the planned edges is a planning defect: say so, keep one issue for the
+  cluster.
+- No planned graph: nothing changes; no `Units:` or `Coupled with:` lines.
+
 ## Test specs
 
 Every issue gets a `Test specs` section (given/when/then):

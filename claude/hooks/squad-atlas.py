@@ -26,6 +26,14 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
                                 shapes; no link when unknown). No inline
                                 diffs, no commit list.
 
+Plan and timeline: gather also reads (never extracts) Forge's
+forge/planned-graph.json from $SQUAD_DIR, compares it with the change graph
+through squad-graph.py's compute_drift, and copies the branch's events from
+the vault's graph-timeline.jsonl (written by `squad-graph.py event`) into
+atlas.json as planned/drift/unrealized/timeline; render draws "Plan and
+timeline". Without a plan or events the sections say so. Keys DRIFT (count or
+`none`) and TIMELINE_EVENTS.
+
 Range resolution:
   pr number   connected mode: `gh pr view` for head/base/title/body
               (reads only; moves onto squad-vcs.sh after #397). Else
@@ -422,6 +430,7 @@ def gather_one(spec, paths, sd, base_override=None):
             "graph": doc, "files": files, "commits": commits, "criteria": criteria,
             "verdicts": verdicts_for(sd, spec["issue"]),
             "body": spec.get("body", "")}
+    data.update(trail_for(doc, kd, sd, spec["head"]))
     out = os.path.join(sd, "atlas", spec["id"])
     fresh = not os.path.exists(out)
     wrote = []
@@ -468,11 +477,61 @@ def gather_one(spec, paths, sd, base_override=None):
     emit("EDGES_ADDED", sum(1 for e in doc["edges"] if e["kind"] == "added"))
     emit("EDGES_REMOVED", sum(1 for e in doc["edges"] if e["kind"] == "removed"))
     emit("AFFECTED", ",".join(g["id"] for g in doc["groups"] if g["state"] == "affected"))
+    emit("DRIFT", len(data["drift"]) if data["drift"] is not None else "none")
+    emit("TIMELINE_EVENTS", len(data["timeline"]))
     emit("BRIEF_HEADER", header)
     emit("TESTS", sum(1 for x in files if x["test"]))
     emit("CRITERIA", len(criteria))
     emit("VERDICTS", sum(1 for v in data["verdicts"] if v["obs"]))
     emit("SOURCE", spec["source"])
+
+
+def trail_for(doc, kd, sd, branch):
+    """Planned graph, drift against it and the branch's timeline, read from the
+    files Forge and `squad-graph.py event` wrote. Nothing is extracted here."""
+    mod = _graph_module()
+    out = {"planned": None, "drift": None, "unrealized": None, "timeline": []}
+    plan_path = os.path.join(kd, "forge", "planned-graph.json")
+    if os.path.exists(plan_path):
+        try:
+            plan = mod.load_plan(plan_path)
+            out["planned"] = {"units": plan["units"], "edges": plan["edges"], "boundaries": plan["boundaries"]}
+            out["drift"], out["unrealized"] = mod.compute_drift(doc, plan)
+        except mod.GraphError:
+            pass   # a malformed plan hides the comparison; Forge's validate step reports it
+    out["timeline"] = [e for e in mod.read_timeline(os.path.join(sd, "graph-timeline.jsonl")) if e.get("branch") == branch]
+    return out
+
+
+def trail_html(data, host):
+    """Planned versus actual, and the timeline, from atlas.json (no extraction)."""
+    mod = _graph_module()
+    planned, tl = data.get("planned"), data.get("timeline") or []
+    parts = []
+    if planned:
+        drift, unreal = data.get("drift") or [], data.get("unrealized") or {"units": [], "edges": []}
+        rows = "".join("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (
+            html.escape(i["kind"].replace("_", " ")), html.escape(i["subject"]),
+            html.escape(i.get("reason") or ", ".join(i.get("uses") or []))) for i in drift)
+        parts.append("<h3>Planned versus actual</h3><p class=\"mut\">%d units, %d dependencies and %d boundaries planned; %d drift items. "
+                     "Drift is a signal that needs a stated reason, not a block.</p>%s%s" % (
+                         len(planned["units"]), len(planned["edges"]), len(planned["boundaries"]), len(drift),
+                         "<table><tr><th>drift</th><th>subject</th><th>detail</th></tr>%s</table>" % rows if rows else "<p>The change matches the plan.</p>",
+                         ("<p class=\"mut\">Planned, not realised: %s</p>" % html.escape(", ".join(unreal["units"] + unreal["edges"]))) if unreal["units"] or unreal["edges"] else ""))
+    else:
+        parts.append("<h3>Planned versus actual</h3><p class=\"mut\">No planned graph (Forge wrote none for this project).</p>")
+    rows = []
+    for e in tl:
+        url = mod.safe_url(e.get("url") or "")
+        sha = html.escape((e.get("commit") or "")[:7])
+        link = "<a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a>" % (html.escape(url, quote=True), sha) if url else sha
+        rows.append("<tr><td>%s</td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            html.escape((e.get("ts") or "")[:10]), html.escape(e["type"].replace("_", " ")), html.escape(e["subject"]),
+            link, html.escape(("#" + e["issue"]) if e.get("issue") else ""), html.escape(e.get("note") or "")))
+    parts.append("<h3>Timeline of structural events (%d)</h3>%s" % (
+        len(tl), "<table><tr><th>date</th><th>event</th><th>subject</th><th>commit</th><th>issue</th><th>note</th></tr>%s</table>" % "".join(rows)
+        if rows else "<p class=\"mut\">No event recorded for this branch (Ralph writes them after each issue).</p>"))
+    return "<section id=\"trail\"><h2>Plan and timeline</h2>%s</section>" % "".join(parts)
 
 
 def cmd_gather(argv):
@@ -676,7 +735,7 @@ def cmd_render(argv):
          % (html.escape(data["title"]), html.escape(data.get("project") or ""), html.escape(data["base"]),
             html.escape(data["head"]), len(data["commits"]), len(files), added, deleted,
             html.escape(data["generated"]), html.escape(data["source"])),
-         "<nav><a href=\"#brief\">Brief</a><a href=\"#graph\">Graph</a><a href=\"#files\">Files</a>"
+         "<nav><a href=\"#brief\">Brief</a><a href=\"#graph\">Graph</a><a href=\"#files\">Files</a><a href=\"#trail\">Plan</a>"
          "<a href=\"#tests\">Tests</a><a href=\"#criteria\">Criteria</a><a href=\"#reven\">Reven</a></nav>",
          "<main>",
          "<section id=\"brief\" class=\"brief\">%s</section>" % md_to_html(brief),
@@ -687,6 +746,7 @@ def cmd_render(argv):
          "<section id=\"files\"><h2>Files (%d)</h2><input id=\"q\" type=\"search\" placeholder=\"filter by path\" aria-label=\"filter files\">"
          "<table><tr><th>unit</th><th></th><th>file</th><th>lines</th></tr>%s</table>%s</section>"
          % (len(files), "".join(rows), "" if host else "<p class=\"mut\">No links: the origin remote is missing or on a host without known URL shapes.</p>")]
+    H.append(trail_html(data, host))
     tests = [x["path"] for x in files if x["test"]]
     H.append("<section id=\"tests\"><h2>Tests touched (%d)</h2>%s</section>" % (
         len(tests), "<ul>%s</ul>" % "".join("<li><code>%s</code></li>" % html.escape(t) for t in tests) if tests

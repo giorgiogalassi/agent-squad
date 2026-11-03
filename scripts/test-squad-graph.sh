@@ -367,5 +367,81 @@ python3 "$GRAPH" extract --root "$D" --ref HEAD --level unit --out "$TMPROOT/out
 check "DU-1 declared units under examples/ are manifest units, undeclared fixtures/ is not" "manifest ['examples/demo', 'examples/nxp']" \
   "$(pj "$TMPROOT/out/decl.json" 'd["unit_source"]+" "+str(sorted(g["id"] for g in d["groups"]))')"
 
+# ------------------------------------------------------- check and event
+# Planned graphs are intent (Forge); `check` compares them with a `diff`.
+# On main..feat above: changed units apps/shell, libs/core, libs/ui; libs/ui
+# gains a dependency on libs/util, apps/shell loses one.
+gcheck() { OUT="$(python3 "$GRAPH" check "$@" 2>"$TMPROOT/err")"; RC=$?; }
+items() { printf '%s\n' "$OUT" | sed -n 's/^DRIFT_ITEM=//p' | tr '\n' ' '; }
+PA="$TMPROOT/plan-a.json"; PB="$TMPROOT/plan-b.json"; PC="$TMPROOT/plan-c.json"
+printf '{"version":1,"kind":"planned","units":[{"id":"apps/shell"},{"id":"libs/core"},{"id":"libs/ui"}],"edges":[{"from":"libs/ui","to":"libs/util"}],"boundaries":[]}\n' > "$PA"
+printf '{"version":1,"kind":"planned","units":[{"id":"apps/shell"},{"id":"libs/core"},{"id":"libs/gone"}],"edges":[],"boundaries":[]}\n' > "$PB"
+printf '{"version":1,"kind":"planned","units":[{"id":"apps/shell"},{"id":"libs/core"},{"id":"libs/ui"}],"edges":[],"boundaries":[{"from":"libs/ui","to":"libs/*","reason":"ui stays leaf"}]}\n' > "$PC"
+DR="$TMPROOT/out/drift.json"
+gcheck --plan "$PA" --diff "$DJ" --out "$DR"
+check "X-1 plan matched: no drift, exit 0" "0/applied/0/0" "$RC/$(key OUTCOME)/$(key DRIFT_COUNT)/$(key UNREALIZED)"
+gcheck --plan "$PB" --diff "$DJ" --out "$DR"
+check "X-2 unplanned unit and unplanned dependency; drift is not a failure" "0/2/1/1/0/libs/gone" \
+  "$RC/$(key DRIFT_COUNT)/$(key DRIFT_UNITS)/$(key DRIFT_DEPENDENCIES)/$(key DRIFT_BOUNDARIES)/$(pj "$DR" 'd["unrealized"]["units"][0]')"
+check "X-3 items name the unit and the dependency" "unplanned_unit:libs/ui unplanned_dependency:libs/ui>libs/util " "$(items)"
+gcheck --plan "$PC" --diff "$DJ" --out "$DR"
+check "X-4 broken boundary replaces the unplanned dependency, with its reason" "0/1/1/ui stays leaf" \
+  "$RC/$(key DRIFT_COUNT)/$(key DRIFT_BOUNDARIES)/$(pj "$DR" 'd["items"][0]["reason"]')"
+gcheck --plan "$PC" --diff "$DJ" --out "$DR"
+check "X-5 check re-run unchanged" "unchanged/no" "$(key OUTCOME)/$(key CHANGED)"
+gcheck --plan "$PA" --root "$N" --base main --head feat --out "$TMPROOT/out/drift2.json" --cache ""
+check "X-6 check builds the diff itself from --base/--head" "0/0" "$RC/$(key DRIFT_COUNT)"
+gcheck --plan "$PA" --validate
+check "X-7 --validate counts the plan" "0/3/1/0" "$RC/$(key PLANNED_UNITS)/$(key PLANNED_EDGES)/$(key PLANNED_BOUNDARIES)"
+printf '{"kind":"planned","units":[{"name":"x"}]}\n' > "$TMPROOT/bad.json"
+gcheck --plan "$TMPROOT/bad.json" --validate
+check "X-8 malformed plan: rc 10" "10" "$RC"
+gcheck --plan "$TMPROOT/none.json" --diff "$DJ"
+check "X-9 missing plan: rc 10" "10" "$RC"
+gcheck --plan "$PA"
+check "X-10 no diff and no refs: rc 2" "2" "$RC"
+
+# event: an edge added by one issue and removed by the next is on the timeline
+# although the net diff shows neither.
+TL="$TMPROOT/tl.jsonl"
+gevent() { OUT="$(python3 "$GRAPH" event --timeline "$TL" --remote 'https://github.com/o/r.git' "$@" 2>"$TMPROOT/err")"; RC=$?; }
+tl() { python3 -c 'import json,sys
+for l in open(sys.argv[1]): e=json.loads(l); print(e["type"]+":"+e["subject"], end=" ")' "$TL"; }
+( cd "$N" && git checkout -q main && git checkout -q -b tlbr )
+printf "import { Button } from '@demo/ui';\nimport { add } from '@demo/core';\nexport const o = add + Button.length;\n" | w "$N/libs/other/src/index.ts"
+commit "$N" "other uses ui"
+C1="$( cd "$N" && git rev-parse HEAD )"
+printf '{"version":1,"kind":"planned","units":[{"id":"libs/other"}],"edges":[],"boundaries":[{"from":"libs/other","to":"libs/ui","reason":"other must not use ui"}]}\n' > "$TMPROOT/plan-e.json"
+D1="$TMPROOT/out/d1.json"; R1="$TMPROOT/out/r1.json"
+gdiff --root "$N" --base main --head tlbr --out "$D1" --cache ""
+gcheck --plan "$TMPROOT/plan-e.json" --diff "$D1" --out "$R1"
+gevent --diff "$D1" --drift "$R1" --issue 7
+check "E-1 first issue: unit, dependency, boundary events" "0/applied/yes/3/tlbr" "$RC/$(key OUTCOME)/$(key CHANGED)/$(key EVENTS)/$(key BRANCH)"
+check "E-2 events in order" "unit_touched:libs/other dep_added:libs/other>libs/ui boundary_broken:libs/other>libs/ui " "$(tl)"
+check "E-3 events carry the commit link and the issue" "https://github.com/o/r/commit/$C1/7" \
+  "$(python3 -c 'import json,sys; e=[json.loads(l) for l in open(sys.argv[1])][1]; print(e["url"]+"/"+e["issue"])' "$TL")"
+gevent --diff "$D1" --drift "$R1" --issue 7
+check "E-4 same diff again appends nothing" "unchanged/no/0/3" "$(key OUTCOME)/$(key CHANGED)/$(key EVENTS)/$(key EVENTS_TOTAL)"
+printf "import { add } from '@demo/core';\nexport const o = add;\n" | w "$N/libs/other/src/index.ts"
+commit "$N" "other drops ui"
+D2="$TMPROOT/out/d2.json"; R2="$TMPROOT/out/r2.json"
+gdiff --root "$N" --base main --head tlbr --out "$D2" --cache ""
+check "E-5 the net diff is empty (rc 10): nothing is left to show" "10" "$RC"
+gevent --root "$N" --base main --head tlbr --plan "$TMPROOT/plan-e.json" --cache "" --issue 8 --note "reverted in review"
+check "E-6 removal and restored boundary are recorded" "2/dep_removed:libs/other>libs/ui" "$(key EVENTS)/$(printf '%s\n' "$OUT" | sed -n 's/^EVENT=//p' | head -1)"
+check "E-7 the timeline keeps the whole story" "unit_touched:libs/other dep_added:libs/other>libs/ui boundary_broken:libs/other>libs/ui dep_removed:libs/other>libs/ui boundary_restored:libs/other>libs/ui " "$(tl)"
+check "E-8 revert is marked, net is none, note kept" "none/reverts an earlier addition on this branch; reverted in review/8" \
+  "$(python3 -c 'import json,sys; e=[json.loads(l) for l in open(sys.argv[1])][3]; print(e["net"]+"/"+e["note"]+"/"+e["issue"])' "$TL")"
+gevent --root "$N" --base main --head tlbr --plan "$TMPROOT/plan-e.json" --cache "" --issue 8
+check "E-9 re-run after the revert appends nothing" "unchanged/0" "$(key OUTCOME)/$(key EVENTS)"
+gevent --diff "$D1" --branch other-branch
+check "E-10 events are per branch" "2" "$(key EVENTS)"
+python3 "$GRAPH" event --timeline "$TL" >/dev/null 2>&1
+check "E-11 event without --diff: rc 2" "2" "$?"
+python3 "$GRAPH" event --timeline "$TL" --diff "$TMPROOT/none.json" >/dev/null 2>&1
+check "E-12 event with a missing diff: rc 10" "10" "$?"
+python3 "$GRAPH" check --help | grep -q 'planned-graph.json'
+check "E-13 help documents check" "0" "$?"
+
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

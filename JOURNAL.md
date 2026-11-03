@@ -1496,6 +1496,54 @@ whole PR landed in one module.
 > project's own declarations; Atlas, and later Forge, Chisel and Reven
 > (#411), read its output and never extract anything themselves.
 
+### Iteration 41: Atlas leftovers (#416)
+
+- *Ralph `--atlas`.* Opt-in; after an `APPROVED` review Ralph runs the Atlas
+  flow for the PR and lists the page in the report. An Atlas failure is
+  reported and never fails the batch.
+- *Declared units win.* `discover()` dropped an Nx `project.json` or a
+  workspace-glob package under `examples/`; `NON_UNIT_DIRS` now only filters
+  manifests nothing declares.
+- *No partial output.* A `gather --batch` row that fails while writing removes
+  what it created.
+- *Live run (PR #412, merged, base = first parent of the merge):* gather and
+  render in under a second, page 24.7 KB (was about 270 KB), all nine brief
+  sections filled, no external resource. It surfaced one bug: `gather` took a
+  stale local branch over a newer `origin/<head>` and compared 1 commit
+  instead of 7; origin now wins when the local branch is strictly behind. A
+  merged PR needs `--base <merge>^1`, since its head is already in the base.
+
+### Iteration 42: one change graph across the squad (#411)
+
+**Problem:** structural problems (a boundary broken by a barrel import, two
+branches editing the same unit, a dependency nobody planned) surfaced late,
+from an outside reviewer. The squad knew the intent at Forge and Chisel but
+never stated it as structure, so nothing could compare intent with what was
+built, and the net diff hid anything introduced and reverted inside one PR.
+
+**Change (#411, on the #410 graph):**
+
+- *Two more verbs on the one script.* `squad-graph.py check` compares a
+  `diff` graph with a planned graph and reports drift (unplanned unit,
+  unplanned dependency, broken boundary) with exit 0: it is a signal.
+  `event` appends structural events to a vault JSON Lines timeline, by
+  comparing the diff with the branch's earlier events, so "added by one
+  issue, removed by the next" is two events although the net diff is empty.
+  An empty net diff is an empty graph for `event`, not an error.
+- *Planned graph.* Forge writes `forge/planned-graph.json` (units, new
+  dependencies, boundaries) from the real unit graph plus the analysis and
+  validates it with `check --validate`. Format documented in the script.
+- *Chisel and Ralph.* Chisel slices by planned unit, writes `Units:` and
+  `Coupled with:` lines and orders by the planned edges; Ralph sequences
+  issues sharing a unit and runs `event` after each issue (best-effort).
+- *Reven and Atlas.* Reven reports `## Structure drift` as questions needing
+  a reason, never a block. Atlas reads the plan, the drift and the branch's
+  timeline from files and draws them; it extracts nothing.
+
+> **Key decision:** drift and the timeline are signals recorded by one
+> script; no skill extracts, compares or recomputes the graph, and nothing
+> enforces the plan.
+
 ---
 
 ## 3. Final Architecture
@@ -1798,20 +1846,3 @@ claude/
 
 `PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no
 longer documents an active second tree.
-
-### Iteration 41: Atlas leftovers (#416)
-
-- *Ralph `--atlas`.* Opt-in; after an `APPROVED` review Ralph runs the Atlas
-  flow for the PR and lists the page in the report. An Atlas failure is
-  reported and never fails the batch.
-- *Declared units win.* `discover()` dropped an Nx `project.json` or a
-  workspace-glob package under `examples/`; `NON_UNIT_DIRS` now only filters
-  manifests nothing declares.
-- *No partial output.* A `gather --batch` row that fails while writing removes
-  what it created.
-- *Live run (PR #412, merged, base = first parent of the merge):* gather and
-  render in under a second, page 24.7 KB (was about 270 KB), all nine brief
-  sections filled, no external resource. It surfaced one bug: `gather` took a
-  stale local branch over a newer `origin/<head>` and compared 1 commit
-  instead of 7; origin now wins when the local branch is strictly behind. A
-  merged PR needs `--base <merge>^1`, since its head is already in the base.
