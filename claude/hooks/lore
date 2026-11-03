@@ -131,7 +131,8 @@ cmd_commit() {
     squad_emit OUTCOME unchanged; squad_emit CHANGED no
     return 0
   fi
-  squad_vault_commit "$vault" "$proj" "$msg" "${paths[@]}" || rc=20
+  squad_vault_commit "$vault" "$proj" "$msg" "${paths[@]}" || rc=$?
+  [ "$rc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing committed (see stderr above)"
   [ "$rc" = 0 ] || squad_fail 20 "vault commit failed; change left uncommitted"
   squad_emit OUTCOME applied; squad_emit CHANGED yes
 }

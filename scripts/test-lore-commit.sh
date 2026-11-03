@@ -118,7 +118,9 @@ kill "$HOLDER2" 2>/dev/null
 
 # one lock for every checkout of the vault (linked worktree)
 V="$TMP/v8"; mkvault "$V"
-git -C "$V" worktree add -q "$TMP/v8wt" -b side
+# the worktree sits on the default branch (a direct-mode vault refuses other branches, #422)
+dflt="$(git -C "$V" symbolic-ref --short HEAD)"; git -C "$V" switch -qc side
+git -C "$V" worktree add -q "$TMP/v8wt" "$dflt"
 mkdir -p "$TMP/v8wt/projects/p"; echo x > "$TMP/v8wt/projects/p/a.md"
 mkdir "$V/.git/lore.lock"
 sleep 30 & HOLDER3=$!
@@ -163,6 +165,57 @@ bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$TMP/l2" >/dev/null 2>&1 &&
 fixture "$TMP/l3"
 printf '#!/usr/bin/env bash\nsquad_vault_commit "$V" p msg f\n' > "$TMP/l3/claude/hooks/rogue2.sh"
 c13 "$TMP/l3" | grep -q 'rogue2.sh' && ok "squad_vault_commit caller is reported" || bad "squad_vault_commit caller is reported"
+
+# vault checkout on another session's branch (#422): never commit there
+D="$(date +%Y-%m-%d)"
+mkvault_pr() {  # mkvault_pr <dir> <branch-to-checkout>
+  mkvault "$1"; git -C "$1" branch -M main
+  printf '{"vault_main": "pr"}\n' > "$1/lore-config.json"
+  git -C "$1" add -A; git -C "$1" commit -qm cfg
+  echo base > "$1/projects/p/progress.txt"; git -C "$1" add -A; git -C "$1" commit -qm prog
+  git -C "$1" switch -qc "$2"
+}
+V="$TMP/o1"; mkvault_pr "$V" lore/other-2026-11-03
+other="$(git -C "$V" rev-parse HEAD)"
+echo more >> "$V/projects/p/progress.txt"
+out="$(bash "$LORE" commit --vault "$V" --project p --message "[lore] off main" --paths projects/p/progress.txt 2>&1)"; rc=$?
+check "off-main PR vault: exit 0" 0 "$rc"
+check "off-main PR vault: checkout branch unchanged" "$other" "$(git -C "$V" rev-parse lore/other-2026-11-03)"
+check "off-main PR vault: still on the other branch" "lore/other-2026-11-03" "$(git -C "$V" symbolic-ref --short HEAD)"
+check "off-main PR vault: commit on the project session branch" "[lore] off main" "$(git -C "$V" log -1 --format=%s "lore/p-$D")"
+check "off-main PR vault: session branch based on main" "prog" "$(git -C "$V" log -1 --skip=1 --format=%s "lore/p-$D")"
+check "off-main PR vault: checkout working copy matches its branch" "" "$(git -C "$V" status --porcelain --untracked-files=no)"
+
+V="$TMP/o2"; mkvault "$V"; git -C "$V" branch -M main
+printf '{"vault_main": "direct"}\n' > "$V/lore-config.json"; git -C "$V" add -A; git -C "$V" commit -qm cfg
+git -C "$V" switch -qc feature/x; head1="$(git -C "$V" rev-parse HEAD)"
+echo x > "$V/projects/p/a.md"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] no" --paths projects/p/a.md >/dev/null 2>"$TMP/err"; rc=$?
+check "off-main direct vault: exit 10" 10 "$rc"
+has "off-main direct vault: reason names the branch" "feature/x" "$(cat "$TMP/err")"
+check "off-main direct vault: no commit on the branch" "$head1" "$(git -C "$V" rev-parse HEAD)"
+check "off-main direct vault: no lore branch" "" "$(git -C "$V" branch --list 'lore/*')"
+
+# detect via pre-push hook evaluates the default branch, not the current one
+V="$TMP/o3"; mkvault "$V"; git -C "$V" branch -M main
+printf '#!/bin/sh\nwhile read l s r t; do [ "$r" = refs/heads/main ] && exit 1; done\nexit 0\n' > "$V/.git/hooks/pre-push"; chmod +x "$V/.git/hooks/pre-push"
+git -C "$V" switch -qc lore/other-2026-11-03
+echo x > "$V/projects/p/a.md"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] detect" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
+check "off-main detected PR vault: exit 0" 0 "$rc"
+check "off-main detected PR vault: committed on session branch" "[lore] detect" "$(git -C "$V" log -1 --format=%s "lore/p-$D")"
+check "off-main detected PR vault: other branch untouched" "init" "$(git -C "$V" log -1 --format=%s lore/other-2026-11-03)"
+
+# on main: unchanged (PR mode commits on the session branch, direct on main)
+V="$TMP/o4"; mkvault_pr "$V" main-tmp; git -C "$V" switch -q main
+echo y >> "$V/projects/p/progress.txt"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] on main pr" --paths projects/p/progress.txt >/dev/null 2>&1
+check "on main PR vault: session branch commit" "[lore] on main pr" "$(git -C "$V" log -1 --format=%s "lore/p-$D")"
+check "on main PR vault: main untouched" "prog" "$(git -C "$V" log -1 --format=%s main)"
+V="$TMP/o5"; mkvault "$V"; git -C "$V" branch -M main
+echo y > "$V/projects/p/a.md"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] on main direct" --paths projects/p/a.md >/dev/null 2>&1
+check "on main direct vault: commit on main" "[lore] on main direct" "$(git -C "$V" log -1 --format=%s main)"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
