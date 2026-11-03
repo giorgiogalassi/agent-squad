@@ -78,7 +78,7 @@ SELF="$HOOK_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
 # --- Denial pass (detached) ------------------------------------------------
 # Auto-mode classifier denial; user rejections ("The user doesn't want...") do not match.
 DENIAL_PATTERN="Permission for this action was denied by the Claude Code auto mode classifier"
-SQUAD_PATHS='claude/skills|claude/agents|claude/hooks|\.claude/hooks/squad-|\.squad/'
+SQUAD_PATHS='claude/skills|claude/agents|claude/hooks|\.claude/hooks/squad-|\.squad/' # lint:state-dir-ok (in-repo paths, not the vault)
 
 # scan_transcript <jsonl> <component> <all|squad>: record denials. For "squad",
 # only denials whose tool input references squad paths count.
@@ -145,6 +145,7 @@ while IFS='=' read -r _key _value; do
 done < <("$HOOK_DIR/path-resolve.sh")
 
 [ -d "${VAULT:-}" ] || bail "no vault, skipped"
+STATE_NAME="$(squad_state_name "$VAULT")"
 [ -n "${ROOT:-}" ] || bail "not a git project, skipped"
 # Same fallback as lore-orient.sh: an unmapped checkout uses projects/<basename>
 # only when that folder exists; otherwise there is nowhere to write.
@@ -190,7 +191,7 @@ fi
 # are already paired, so no duplicate end is written. Only session.log is
 # committed, by pathspec, and only when it changed.
 close_session_log() {
-  local log="$VAULT/projects/$DISPLAY/.squad/session.log" first epoch since br n
+  local log="$VAULT/projects/$DISPLAY/$STATE_NAME/session.log" first epoch since br n
   [ -f "$log" ] && [ -f "$HOOK_DIR/vault-check.sh" ] && [ -f "$TRANSCRIPT" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   first="$(jq -r '.timestamp // empty' "$TRANSCRIPT" 2>/dev/null | head -n 1)"
@@ -203,7 +204,7 @@ close_session_log() {
   n="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; close_session_starts "$log" "$since" "$br" 2>/dev/null )"
   [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/session.log"
+    squad_vault_commit "$VAULT" "$DISPLAY" "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/session.log"
   fi
 }
 [ "$MODE" = hook ] && close_session_log
@@ -319,7 +320,7 @@ if [ "$TOP" != "$ROOT" ]; then
   # One progress.txt line per worktree session with committed work, counted
   # from the HEAD that SessionStart recorded (lore-orient.sh). Notes come from
   # the commit subjects, no model call. The record is consumed either way.
-  SESSION_REC="$VAULT/projects/$DISPLAY/.squad/sessions/$SESSION_ID"
+  SESSION_REC="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID"
   if [ -n "$SESSION_ID" ] && [ -f "$SESSION_REC" ]; then
     START_HEAD="$(cat "$SESSION_REC" 2>/dev/null)"
     rm -f "$SESSION_REC"

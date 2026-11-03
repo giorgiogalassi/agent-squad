@@ -50,7 +50,7 @@ squad_fail_incident() {
 }
 
 # squad_resolve: run path-resolve.sh and export VAULT_PATH, PROJECT_ROOT,
-# DISPLAY_NAME, SQUAD_DIR, TRACKER_MODE. Returns 0, or 20 if resolution fails.
+# DISPLAY_NAME, SQUAD_DIR, TRACKER_MODE, STATE_DIR. Returns 0, or 20 if resolution fails.
 squad_resolve() {
   local out line key val
   unset TRACKER_MODE
@@ -61,7 +61,7 @@ squad_resolve() {
   while IFS= read -r line; do
     key="${line%%=*}"; val="${line#*=}"
     case "$key" in
-      VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|SQUAD_DIR|TRACKER_MODE)
+      VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|SQUAD_DIR|TRACKER_MODE|STATE_DIR)
         export "$key=$val" ;;
     esac
   done <<EOF2
@@ -72,6 +72,12 @@ EOF2
     return 20
   fi
   return 0
+}
+
+# squad_state_name <vault>: the per-project state directory name of that vault
+# (path-resolve.sh --state-name; the only place the name is decided).
+squad_state_name() {
+  SECOND_BRAIN_PATH="$1" bash "$SQUAD_HOOKS_DIR/path-resolve.sh" --state-name 2>/dev/null
 }
 
 # squad_gh_write <argv...>: the ONLY place a mutating gh verb may run.

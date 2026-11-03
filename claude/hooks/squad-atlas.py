@@ -10,7 +10,7 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
                                 observations, and the change graph from
                                 `squad-graph.py diff` (units, added and
                                 removed dependencies, affected units) into
-                                .squad/atlas/<id>/atlas.json. Writes
+                                <STATE_DIR>/atlas/<id>/atlas.json. Writes
                                 brief.md from the section template when it
                                 does not exist yet; an existing brief keeps
                                 its text and gets its title and Range line
@@ -51,10 +51,10 @@ Range resolution:
               BASE= prints the ref actually compared against.
 
 Where files live: scout-cache.md and forge/output.yaml are read from
-$SQUAD_DIR (the repo's .squad for `context: repo` projects);
+$SQUAD_DIR (the repo's own state folder for `context: repo` projects);
 progress.txt, ralph-run.md, graph-cache.json (the incremental cache of
 unit edges) and the atlas/ output stay in the vault's
-projects/<name>/.squad. A head that exists only as origin/<head> is
+projects/<name>/<state_dir>. A head that exists only as origin/<head> is
 resolved like the base. In --batch a row that cannot be gathered is
 reported (ROW_ERROR) and the other rows still run.
 
@@ -142,7 +142,7 @@ def fail(code, reason):
 
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
-           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "TRACKER_MODE", "DIR")}
+           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "TRACKER_MODE", "DIR", "STATE_DIR")}
     if env["VAULT_PATH"] and env["PROJECT_ROOT"]:
         return env
     try:
@@ -158,13 +158,12 @@ def resolve_paths():
 
 
 def squad_dir(paths):
-    name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths.get("VAULT_PATH") or "", "projects", name, ".squad")
+    return lib.state_dir(paths)
 
 
 def knowledge_dir(paths):
     """$SQUAD_DIR: where scout-cache.md, forge/output.yaml and graph.json
-    live (the repo's .squad for `context: repo`, else the vault's). Run
+    live (the repo's own state folder for `context: repo`, else the vault's). Run
     state (progress.txt, ralph-run.md) and atlas/ output stay in squad_dir."""
     return paths.get("DIR") or squad_dir(paths)
 

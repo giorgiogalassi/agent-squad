@@ -200,7 +200,7 @@ emit() { printf '%s=%s\n' "$1" "$2"; }
 check_project() {
   local vault="$1" name="$2" ctx="$3" fix="$4"
   local proj="$vault/projects/$name" idx="$vault/INDEX.md"
-  local status="$proj/status.md" log="$proj/.squad/session.log" today out="" r line
+  local status="$proj/status.md" log="$proj/$STATE_NAME/session.log" today out="" r line
   today="$(now_ts)"; today="${today%% *}"
   local fixed="" findings=""
 
@@ -231,7 +231,7 @@ check_project() {
       r="$(close_orphans "$log" "$today")"
       if [ "${r:-0}" -gt 0 ]; then
         fixed="${fixed}FIXED_SESSION_CLOSED=$r $name${NL}"
-        FIXED_FILES="${FIXED_FILES}projects/$name/.squad/session.log${NL}"
+        FIXED_FILES="${FIXED_FILES}projects/$name/$STATE_NAME/session.log${NL}"
       fi
     fi
     if [ -s "$proj/decisions.md" ]; then
@@ -397,9 +397,10 @@ main() {
     while IFS='=' read -r k v; do
       case "$k" in VAULT_PATH) vault="$v" ;; DISPLAY_NAME) [ -z "$name" ] && name="$v" ;; SQUAD_DIR) sq="$v" ;; esac
     done < <("$HERE/path-resolve.sh" 2>/dev/null)
-    [ -n "$sq" ] && [ -n "$name" ] && [ "$sq" != "$vault/projects/$name/.squad" ] && ctx=repo
+    [ -n "$sq" ] && [ -n "$name" ] && [ "${sq#"$vault/projects/$name/"}" = "$sq" ] && ctx=repo
   fi
   [ -d "$vault" ] || die "vault-check.sh: no vault at $vault" 2
+  STATE_NAME="$(squad_state_name "$vault")"
   if [ "$all" = 1 ]; then
     local d
     for d in "$vault"/projects/*/; do

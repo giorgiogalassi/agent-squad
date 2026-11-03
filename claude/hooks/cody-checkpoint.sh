@@ -18,7 +18,7 @@
 # Writes: one `lore-checkpoint.sh --note` line; for STATE=pr also one
 # progress.txt line `[#N] YYYY-MM-DD resolved. PR: #N (base: B). Notes: <subject>`
 # (the `(base: ...)` token is what Reven reads). Both idempotent per sha / PR.
-# Summary for Ralph 2b: <vault>/projects/<name>/.squad/cody-checkpoint.env
+# Summary for Ralph 2b: <vault>/projects/<name>/<state_dir>/cody-checkpoint.env
 # (KEY=value, overwritten each run, never committed). Log: .cody-checkpoint.log in the project dir.
 
 [ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
@@ -45,8 +45,9 @@ done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -d "${VAULT:-}" ] && [ -n "${ROOT:-}" ] || exit 0
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
 PROJ="$VAULT/projects/$DISPLAY"
+STATE_NAME="$(squad_state_name "$VAULT")"
 LOG="$PROJ/.cody-checkpoint.log"
-ENVF="$PROJ/.squad/cody-checkpoint.env"
+ENVF="$PROJ/$STATE_NAME/cody-checkpoint.env"
 skip() { rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
 [ -d "$PROJ" ] || exit 0
 
@@ -102,28 +103,28 @@ if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
   bash "$HOOK_DIR/lore-checkpoint.sh" --note "$LINE" >/dev/null 2>&1
 fi
 
-PROGRESS="$PROJ/.squad/progress.txt"
+PROGRESS="$PROJ/$STATE_NAME/progress.txt"
 # PR-mode vault: the current progress.txt may be a session worktree's copy (vault main is
 # reset after each scripted commit), so the dedupe also reads any already existing worktree
 # copy, read-only (squad_vault_wt_existing never creates one). A line in either copy counts.
 _seen() {  # _seen <file>: is this issue's PR line in the file
   grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$1" 2>/dev/null | grep -qE "PR: #$PR( |$)"
 }
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ]; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ]; then
   _present=0
   _seen "$PROGRESS" && _present=1
   if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
     while IFS= read -r _wt; do
-      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/.squad/progress.txt" && _present=1
+      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/$STATE_NAME/progress.txt" && _present=1
     done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
   fi
 fi
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && [ "$_present" = 0 ]; then
+if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ] && [ "$_present" = 0 ]; then
   printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
-  squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
+  squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/progress.txt"
 fi
 
-if [ -d "$PROJ/.squad" ]; then
+if [ -d "$PROJ/$STATE_NAME" ]; then
   printf 'STATE=%s\nISSUE=%s\nBRANCH=%s\nSHA=%s\nTREE=%s\nPR=%s\nBASE=%s\nAT=%s\n' \
     "$STATE" "$ISSUE" "$BRANCH" "$SHA" "$TREE" "$PR" "$BASE" "$NOW" > "$ENVF"
 fi

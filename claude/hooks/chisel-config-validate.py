@@ -11,7 +11,7 @@ and this script follows, with no code edit.
 
 Usage: chisel-config-validate.py [--prune]
 No positional arguments. Discovers every
-<vault>/projects/*/.squad/chisel-config.json via path-resolve.sh (the
+<vault>/projects/*/<state_dir>/chisel-config.json via path-resolve.sh (the
 vault is never assumed to be CWD, never hardcoded).
 
 By default the script is strictly read-only: it only reports violations
@@ -48,6 +48,7 @@ Exit codes:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -61,7 +62,7 @@ SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
 
 
 def resolve_paths():
-    """Run path-resolve.sh and return (vault_path, project_root)."""
+    """Run path-resolve.sh and return (vault_path, project_root, state_dir_name)."""
     script = Path.home() / ".claude" / "hooks" / "path-resolve.sh"
     if not script.exists():
         fail(f"path-resolve.sh not found at {script}; cannot resolve vault path.")
@@ -82,7 +83,14 @@ def resolve_paths():
     root = values.get("PROJECT_ROOT")
     if not vault:
         fail("path-resolve.sh did not report VAULT_PATH.")
-    return vault, root
+    try:
+        state = subprocess.run(
+            ["bash", str(script), "--state-name"], capture_output=True, text=True,
+            env={**os.environ, "SECOND_BRAIN_PATH": vault},
+        ).stdout.strip() or ".lore"
+    except OSError:
+        state = ".lore"
+    return vault, root, state
 
 
 def fail(message):
@@ -435,11 +443,11 @@ def parse_args(argv):
 def main():
     args = parse_args(sys.argv[1:])
 
-    vault, project_root = resolve_paths()
+    vault, project_root, state = resolve_paths()
     skill_md_path = find_skill_md(project_root)
     schema = parse_schema(skill_md_path)
 
-    configs = sorted(Path(vault).glob("projects/*/.squad/chisel-config.json"))
+    configs = sorted(Path(vault).glob(f"projects/*/{state}/chisel-config.json"))
 
     if not configs:
         print("No chisel-config.json files found in the vault.")

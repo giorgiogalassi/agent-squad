@@ -7,7 +7,7 @@
 #                                [--context repo]
 #
 # Without flags the project is resolved with path-resolve.sh; it is
-# `context: repo` when SQUAD_DIR is not <vault>/projects/<name>/.squad.
+# `context: repo` when SQUAD_DIR is outside <vault>/projects/<name>/.
 # Writes exactly two lines, both idempotent:
 #   decisions.md  `Decisions for this project live in <root>/JOURNAL.md
 #                 (context: repo); this file holds vault-only rules.`
@@ -49,7 +49,7 @@ if [ -z "$VAULT" ] || [ -z "$NAME" ] || [ -z "$ROOT" ]; then
   [ -z "$NAME" ] && NAME="$DISPLAY_NAME"
   [ -z "$ROOT" ] && ROOT="$PROJECT_ROOT"
   if [ -z "$CTX" ] && [ -n "${SQUAD_DIR:-}" ] && [ -n "$NAME" ] \
-     && [ "$SQUAD_DIR" != "$VAULT/projects/$NAME/.squad" ]; then
+     && [ "${SQUAD_DIR#"$VAULT/projects/$NAME/"}" = "$SQUAD_DIR" ]; then
     CTX=repo
   fi
 fi

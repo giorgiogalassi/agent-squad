@@ -45,7 +45,7 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
       call compares the diff with the branch's earlier events, so an edge
       added by one issue and removed by a later one is recorded twice even
       though the net diff shows neither. Idempotent: the same diff appends
-      nothing. Default timeline: <vault>/projects/<name>/.squad/
+      nothing. Default timeline: <STATE_DIR>/
       graph-timeline.jsonl. Keys: TIMELINE, BRANCH, EVENTS (appended now),
       EVENTS_TOTAL (for the branch), one EVENT=<type>:<subject> per new event.
   render --graph <graph.json> --out <file.html|file.svg>
@@ -133,7 +133,7 @@ by a reader):
 
 Cache: unit-to-unit edges are cached per unit by the git tree id of its
 folder (and a digest of the unit/alias configuration), so a run only reads the
-units that changed since the last one. Default <vault>/projects/<name>/.squad/
+units that changed since the last one. Default <STATE_DIR>/
 graph-cache.json; `--cache ""` turns it off. A cache that cannot be written
 is reported on stderr and the run goes on.
 
@@ -213,7 +213,7 @@ def fail(code, reason):
 
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
-           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "DIR")}
+           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "DIR", "STATE_DIR")}
     if env["PROJECT_ROOT"] and env["DIR"]:
         return env
     try:
@@ -226,25 +226,22 @@ def resolve_paths():
             k, v = line.split("=", 1)
             env[k] = v
     if not env.get("DIR") and env.get("VAULT_PATH"):
-        name = env.get("DISPLAY_NAME") or os.path.basename(env.get("PROJECT_ROOT") or "")
-        env["DIR"] = os.path.join(env["VAULT_PATH"], "projects", name, ".squad")
+        env["DIR"] = lib.state_dir(env)
     return env
 
 
 def default_cache(paths):
-    """The vault's run-state folder (never the repo's .squad)."""
+    """The vault's run-state folder (never the repo's)."""
     if not paths.get("VAULT_PATH"):
         return ""
-    name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths["VAULT_PATH"], "projects", name, ".squad", "graph-cache.json") if name else ""
+    return os.path.join(lib.state_dir(paths), "graph-cache.json")
 
 
 def default_state_file(paths, name):
-    """A file in the vault's run-state folder (never the repo's .squad)."""
+    """A file in the vault's run-state folder (never the repo's)."""
     if not paths.get("VAULT_PATH"):
         return ""
-    proj = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths["VAULT_PATH"], "projects", proj, ".squad", name) if proj else ""
+    return os.path.join(lib.state_dir(paths), name)
 
 
 def read_text(path):
