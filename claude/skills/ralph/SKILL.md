@@ -224,12 +224,14 @@ Detached mode uses the same file (branch = chain branch).
 ## Vault writes: `squad-progress.sh`
 
 Ralph never edits `progress.txt`, `session.log` or `ralph-run.md` itself;
-every write is one call, committed through the vault write path (the lore
-branch in a PR-mode vault). Reads use the same current copy.
+every write is one call. Working state (`progress.txt`, `ralph-run.md`) is
+written directly and is readable at once; the next `lore fold` snapshot-commits
+it. `log` is an event the fold applies. Reads use the same current copy.
+`append` takes the line with or without its `[<ID>] ` prefix; it is never doubled.
 
 ```bash
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh append --issue <ID> --line "<text>"
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --line "<text>"
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source ralph --line "<text>"
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-write --from <file>
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-row --issue <ID> --set <Column>=<value> [--set ...]
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-status --value <Status>
@@ -611,7 +613,7 @@ its last 30 lines into Cody; the file itself is never truncated):
 
 ## Session log
 
-Append to `.squad/session.log` with `squad-progress.sh log --line "<text>"`
+Append to `.squad/session.log` with `squad-progress.sh log --source ralph --line "<text>"`
 (the script adds the timestamp and `[ralph]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs], branch: <branch>

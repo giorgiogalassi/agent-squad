@@ -190,7 +190,7 @@ else: the author opens the page.
 ## Session log
 
 Append to `.squad/session.log` through the progress script
-(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --skill atlas --line "<text>"`):
+(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source atlas --line "<text>"`):
 
   start — target: <target>
   end — <ID>: <FILES> files, brief <words> words

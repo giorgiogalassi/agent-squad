@@ -344,8 +344,9 @@ delete it and omit `planned_graph`.
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source forge --line "<text>"`;
+the script adds the timestamp and `[forge]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [forge] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>, rounds: <N>

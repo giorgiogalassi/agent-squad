@@ -15,11 +15,11 @@
 #
 # STATE: pr (open PR) | committed (connected, commit but no PR) |
 #        detached (detached mode, commit ready for manual push).
-# Writes: one `lore-checkpoint.sh --note` line; for STATE=pr also one
+# Writes: one `checkpoint` event (lore event, folded later; no commit); for STATE=pr also one
 # progress.txt line `[#N] YYYY-MM-DD resolved. PR: #N (base: B). Notes: <subject>`
 # (the `(base: ...)` token is what Reven reads). Both idempotent per sha / PR.
 # Summary for Ralph 2b: <vault>/projects/<name>/<state_dir>/cody-checkpoint.env
-# (KEY=value, overwritten each run, never committed). Log: .cody-checkpoint.log in the project dir.
+# (KEY=value, overwritten each run, written directly, snapshot-committed by the fold). Log: .cody-checkpoint.log in the project dir.
 
 [ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -98,42 +98,22 @@ case "$STATE" in
   *) LINE="[$NOW] [claude-code] Branch $BRANCH committed @ $SHA, no PR yet. $SUBJECT" ;;
 esac
 
+# Durable history is an event (folded into status.md later); nothing is committed here.
+# A pending event for the same branch @ sha is not repeated either.
 STATUS="$PROJ/status.md"
-if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
-  bash "$HOOK_DIR/lore-checkpoint.sh" --note "$LINE" >/dev/null 2>&1
+_evline="${LINE#\[$NOW\] \[claude-code\] }"
+if ! grep -qF "$BRANCH @ $SHA" "$STATUS" 2>/dev/null \
+   && ! grep -qF "$BRANCH @ $SHA" "$PROJ/$STATE_NAME/inbox"/*.ev 2>/dev/null; then
+  SECOND_BRAIN_PATH="$VAULT" LORE_LOCK_WAIT=5 bash "$HOOK_DIR/lore" event --vault "$VAULT" --project "$DISPLAY" \
+    --source claude-code --kind checkpoint --line "$_evline" >/dev/null 2>&1
 fi
 
-PROGRESS="$PROJ/$STATE_NAME/progress.txt"
-# PR-mode vault: the current progress.txt may be a session worktree's copy (vault main is
-# reset after each scripted commit), so the dedupe also reads any already existing worktree
-# copy, read-only (squad_vault_wt_existing never creates one). A line in either copy counts.
-_seen() {  # _seen <file>: is this issue's PR line in the file
-  grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$1" 2>/dev/null | grep -qE "PR: #$PR( |$)"
-}
+# Working state: the progress.txt line is written directly through squad-progress.sh
+# (current copy, idempotent per issue and PR, off-default-branch rules); the fold commits it.
 if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ]; then
-  _present=0
-  squad_vault_offdefault "$VAULT" || { _seen "$PROGRESS" && _present=1; }
-  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode_any "$VAULT"; then
-    while IFS= read -r _wt; do
-      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/$STATE_NAME/progress.txt" && _present=1
-    done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
-  fi
-fi
-if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ] && [ "$_present" = 0 ]; then
-  # Off the vault's default branch the checkout is another session's: write the
-  # session worktree (or nothing, direct mode) and never report a write that did not happen.
-  _wr="$(squad_vault_wroot "$VAULT" "$DISPLAY")"; _wrc=$?
-  if [ "$_wrc" = 0 ]; then
-    _wp="$_wr/projects/$DISPLAY/$STATE_NAME/progress.txt"
-    if [ "$_wr" != "$VAULT" ]; then
-      mkdir -p "$(dirname "$_wp")"
-      [ -f "$_wp" ] || : > "$_wp"
-    fi
-    printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$_wp"
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/progress.txt" || echo "cody-checkpoint: progress line not committed (vault checkout off its default branch)" >&2
-  else
-    echo "cody-checkpoint: vault checkout off its default branch in a direct-mode vault; progress line not written" >&2
-  fi
+  bash "$HOOK_DIR/squad-progress.sh" append --issue "$ISSUE" \
+    --line "$(date +%Y-%m-%d) resolved. PR: #$PR (base: $BASE). Notes: $SUBJECT" >/dev/null 2>&1 \
+    || echo "cody-checkpoint: progress line not written" >&2
 fi
 
 if [ -d "$PROJ/$STATE_NAME" ]; then

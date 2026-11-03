@@ -381,6 +381,8 @@ EOF2
   paths=""
   for rel in "projects/$proj/status.md" "projects/$proj/$sn/session.log" "projects/$proj/$sn/progress.txt" \
              "projects/$proj/$sn/ralph-run.md" "projects/$proj/$sn/cody-checkpoint.env"; do
+    # An ignored path (status.md of a local-only project) would fail the whole `git add`.
+    git -C "$vault" check-ignore -q "$rel" 2>/dev/null && continue
     [ -f "$vault/$rel" ] && paths="$paths
 $rel"
   done

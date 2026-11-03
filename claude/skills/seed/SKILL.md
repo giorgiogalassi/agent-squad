@@ -443,9 +443,10 @@ reflecting only what actually changed):
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append; create it if
-missing; timestamp via `date "+%Y-%m-%d %H:%M"`) a start line before
-phase 1 and an end line when all phases complete:
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source seed --line "<text>"`;
+the script adds the timestamp and `[seed]`): a start line before phase 1
+and an end line when all phases complete; the lines read:
 
   [YYYY-MM-DD HH:MM] [seed] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [seed] end — context files written

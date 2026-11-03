@@ -581,8 +581,8 @@ EOF2
   [ "$VIOLATIONS" -eq "$before" ] && ok "no vault-side script spells the state directory"
 }
 
-# Transitional: writers converted in later issues of #420 (each removes its name).
-COMMITTER_ALLOWLIST="squad-progress.sh cody-checkpoint.sh lore-checkpoint.sh"
+# Empty since #424: every writer commits through claude/hooks/lore.
+COMMITTER_ALLOWLIST=""
 
 check_single_committer() {
   local before="$VIOLATIONS" f base hit line allow
