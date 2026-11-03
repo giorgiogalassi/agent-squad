@@ -181,6 +181,9 @@ if [ -z "$DISPLAY" ]; then
 fi
 
 PROJ="$VAULT/projects/$DISPLAY"
+# Fold pending inbox events first so the orientation reads current state (#423).
+# Short lock wait: a busy vault must not delay session start.
+LORE_LOCK_WAIT=3 SECOND_BRAIN_PATH="$VAULT" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true
 STATE="${STATE_DIR:-$PROJ/$(state_name "$VAULT")}"
 # Project knowledge location (vault or repo); progress.txt and session.log
 # stay under the vault state directory regardless.

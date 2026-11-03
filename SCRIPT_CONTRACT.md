@@ -55,6 +55,32 @@ verbs (`summary`, `resolve`) follow the contract above.
   repository, lock wait timed out (`LORE_LOCK_WAIT` seconds, default 60) or
   commit failed. A stale lock (dead pid, or older than 10 minutes) is broken
   with a stderr notice.
+- `event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]`:
+  writes one event file `<state>/inbox/<id>.ev` through a dot-prefixed temp file
+  and `mv`. Emits `OUTCOME=applied`, `CHANGED=yes`, `ID=<id>`. Exit 0 written, 2
+  usage (also an unknown kind), 10 no vault or unmapped project (nothing
+  written), 20 write failure. The vault is `--vault` or `SECOND_BRAIN_PATH`.
+- `fold [--project <p>] [--vault <dir>]`: claims the inbox events (`mv` to
+  `inbox/.claimed-<pid>/`), takes the same lock as `commit`, applies them,
+  snapshots the working-state files (`ralph-run.md`, `cody-checkpoint.env`,
+  `progress.txt`) and commits once through the same committer internal. Without
+  `--project` every project with an inbox is folded. Claims of dead pids are
+  adopted by one atomic rename, so each event is applied exactly once. Emits
+  `OUTCOME=applied|unchanged`, `CHANGED`, `APPLIED=<n>`, `QUARANTINED=<n>`.
+  Exit 0 done or nothing to do, 2 usage, 10 no vault or unmapped project, 20 not
+  a git repository, lock wait timed out or commit failed (claimed events stay
+  for the next fold). Hook callers set a short `LORE_LOCK_WAIT`.
+
+  Event file: `KEY=value` lines, one per line, `V=1`, `ID`, `SOURCE`,
+  `KIND` (`log|checkpoint|progress|note`), optional `KEY`, `TS`
+  (`YYYY-MM-DD HH:MM:SS`), `LINE`. Events apply in id order; within one fold the
+  newest event per SOURCE+KIND+KEY wins. `log` appends `[TS] [SOURCE] LINE` to
+  `session.log`; `progress` appends `LINE` to `progress.txt`; `checkpoint` adds
+  `[TS] [SOURCE] LINE` to `status.md` `## Last checkpoint` (3 kept, newest
+  first); `note` keeps one line per SOURCE+KEY, at most 10 per SOURCE, under
+  `## Other sources`. Unparsable events and unknown kinds move to
+  `inbox/quarantine/` with a `.why` file and are never committed. `inbox/` is
+  listed in the vault's `.git/info/exclude`.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ## Exception: `squad-stats.py report`

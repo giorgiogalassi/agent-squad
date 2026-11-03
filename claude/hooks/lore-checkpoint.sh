@@ -153,6 +153,10 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 [ -n "${DISPLAY:-}" ] || bail "no vault mapping for this project, skipped"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
+# Fold pending inbox events before the status rebuild (#423); SessionEnd never
+# waits long on the vault lock.
+[ "$MODE" = hook ] && { LORE_LOCK_WAIT=5 SECOND_BRAIN_PATH="$VAULT" bash "$HOOK_DIR/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true; }
+
 [ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
 
 # Denial pass: every session end (main checkout and worktrees), independent of
