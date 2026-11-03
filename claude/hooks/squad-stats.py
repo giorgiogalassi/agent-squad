@@ -241,7 +241,29 @@ def load_project_map():
         return []
 
 
+_LOCAL_ONLY = {}
+
+
+def local_only(name):
+    """True when the vault git-ignores projects/<name>/ (a local-only project,
+    #351): its name must not reach the pushed store (#401, #425)."""
+    if name not in _LOCAL_ONLY:
+        try:
+            r = subprocess.run(["git", "-C", vault_dir(), "check-ignore", "-q",
+                                "projects/%s/status.md" % name],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _LOCAL_ONLY[name] = r.returncode == 0
+        except OSError:
+            _LOCAL_ONLY[name] = False
+    return _LOCAL_ONLY[name]
+
+
 def project_name(cwd, pmap):
+    name = _project_name(cwd, pmap)
+    return "local" if name != "unknown" and local_only(name) else name
+
+
+def _project_name(cwd, pmap):
     if not cwd:
         return "unknown"
     cwd = cwd.rstrip("/")
