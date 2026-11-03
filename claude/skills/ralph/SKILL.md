@@ -224,12 +224,14 @@ Detached mode uses the same file (branch = chain branch).
 ## Vault writes: `squad-progress.sh`
 
 Ralph never edits `progress.txt`, `session.log` or `ralph-run.md` itself;
-every write is one call, committed through the vault write path (the lore
-branch in a PR-mode vault). Reads use the same current copy.
+every write is one call. Working state (`progress.txt`, `ralph-run.md`) is
+written directly and is readable at once; the next `lore fold` snapshot-commits
+it. `log` is an event the fold applies. Reads use the same current copy.
+`append` takes the line with or without its `[<ID>] ` prefix; it is never doubled.
 
 ```bash
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh append --issue <ID> --line "<text>"
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --line "<text>"
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source ralph --line "<text>"
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-write --from <file>
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-row --issue <ID> --set <Column>=<value> [--set ...]
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh run-status --value <Status>
@@ -238,8 +240,9 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh where --file progress|log|run
 
 `run-write --from` takes the whole file (write it to a `mktemp` file first).
 `--set` values contain no `|` and no newline. Call `append` unconditionally.
-`where` emits `FILE=<path>`: read run state, `progress.txt` and
-`session.log` from that path, never from the vault `.squad/` directory.
+`where --file progress|log|run|env` emits `FILE=<path>`: read run state,
+`progress.txt`, `session.log` and the Cody summary from that path, never from the
+vault `.squad/` directory. `log` lines show in `session.log` only after the next fold.
 Read `OUTCOME`, `CHANGED` (and `FILE`). Act on the exit code:
 
 | Exit | Action |
@@ -305,7 +308,8 @@ git -C <wd> branch --show-current
 ```
 
 Hook summary first: the plugin's `SubagentStop` hook leaves
-`<vault>/projects/<display-name>/.squad/cody-checkpoint.env`
+the file `squad-progress.sh where --file env` names (`FILE=`; in a PR-mode vault it
+sits in the session worktree, not the vault checkout; missing means no summary)
 (`STATE`, `ISSUE`, `BRANCH`, `SHA`, `TREE`, `PR`, `BASE`; `STATE` is `pr`,
 `committed` or `detached`). Read it before the git commands; use it only when
 `BRANCH` equals the assigned branch and `SHA` equals HEAD's short sha,
@@ -611,7 +615,7 @@ its last 30 lines into Cody; the file itself is never truncated):
 
 ## Session log
 
-Append to `.squad/session.log` with `squad-progress.sh log --line "<text>"`
+Append to `.squad/session.log` with `squad-progress.sh log --source ralph --line "<text>"`
 (the script adds the timestamp and `[ralph]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs], branch: <branch>

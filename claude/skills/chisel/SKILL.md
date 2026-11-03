@@ -356,8 +356,9 @@ still exist, they just aren't on the board yet:
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source chisel --line "<text>"`;
+the script adds the timestamp and `[chisel]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [chisel] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]

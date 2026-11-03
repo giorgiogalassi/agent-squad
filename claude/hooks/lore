@@ -165,10 +165,16 @@ cmd_commit() {
 # caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed, 10 refused (direct-mode vault off its default branch).
 COMMIT_OUTCOME=unchanged
 commit_locked() {
-  local vault="$1" proj="$2" msg="$3" pending rc=0
+  local vault="$1" proj="$2" msg="$3" pending wt rc=0
   shift 3
   COMMIT_OUTCOME=unchanged
   pending="$(git -C "$vault" status --porcelain -- "$@" 2>/dev/null)"
+  if [ -z "$pending" ] && squad_vault_offdefault "$vault"; then
+    # Off the default branch a writer edits its session worktree (squad_vault_wroot).
+    while IFS= read -r wt; do
+      [ -n "$wt" ] && pending="$pending$(git -C "$wt" status --porcelain -- "$@" 2>/dev/null)"
+    done < <(squad_vault_wt_existing "$vault" "$proj" 2>/dev/null)
+  fi
   [ -n "$pending" ] || return 0
   squad_vault_commit "$vault" "$proj" "$msg" "$@" || { rc=$?; [ "$rc" = 10 ] || rc=1; }
   [ "$rc" = 0 ] && COMMIT_OUTCOME=applied
@@ -318,6 +324,21 @@ apply_note() {  # apply_note <status> <source> <key> <line>
   rm -f "$body"
 }
 
+# commit_in_wt <worktree> <msg> <path>...: commit already-written paths inside the
+# session worktree (PR mode, #424); the caller holds the lock. Sets COMMIT_OUTCOME.
+commit_in_wt() {
+  local wt="$1" msg="$2" id=""
+  shift 2
+  COMMIT_OUTCOME=unchanged
+  [ -n "$(git -C "$wt" status --porcelain -- "$@" 2>/dev/null)" ] || return 0
+  git -C "$wt" add -- "$@" >/dev/null 2>&1
+  git -C "$wt" config user.name >/dev/null 2>&1 || id="$id -c user.name=lore"
+  git -C "$wt" config user.email >/dev/null 2>&1 || id="$id -c user.email=lore@localhost"
+  # shellcheck disable=SC2086
+  git -C "$wt" $id commit -q -m "$msg" -- "$@" >/dev/null 2>&1 || return 1
+  COMMIT_OUTCOME=applied
+}
+
 FOLD_APPLIED=0
 FOLD_COMMITS=0
 
@@ -325,10 +346,21 @@ FOLD_COMMITS=0
 # 0 done, 1 failed (claimed events stay in .claimed-<pid>/ for the next fold).
 fold_project() {
   local vault="$1" proj="$2" sn="$3" lock="$4"
-  local state="$vault/projects/$proj/$sn" inbox claimed f d pid evs rev seen skip
-  local kind source key line ts status paths rel msg eid ledger applied_n=0
-  inbox="$state/inbox"; claimed="$inbox/.claimed-$$"
-  status="$vault/projects/$proj/status.md"
+  local state inbox claimed f d pid evs rev seen skip
+  local kind source key line ts status paths rel msg eid ledger applied_n=0 root="$vault" prmode=0
+  inbox="$vault/projects/$proj/$sn/inbox"; claimed="$inbox/.claimed-$$"
+  # PR-mode vault: working state and events are applied in this project's session
+  # worktree, whatever branch the checkout sits on. Any other mode: nothing is applied
+  # while the checkout is off its default branch (another session's); events wait.
+  if ! squad_local_only "$vault" "$proj" && squad_vault_pr_mode_any "$vault"; then
+    root="$(squad_vault_wt "$vault" "$proj")" || { echo "lore: vault worktree failed" >&2; return 1; }
+    prmode=1
+  elif squad_vault_offdefault "$vault"; then
+    echo "lore: vault checkout is not on its default branch; $proj left unfolded" >&2
+    return 0
+  fi
+  state="$root/projects/$proj/$sn"
+  status="$root/projects/$proj/status.md"
   [ -d "$inbox" ] && ensure_exclude "$vault" "$sn"
   if [ -d "$inbox" ]; then
     for f in "$inbox"/*.ev; do
@@ -402,7 +434,9 @@ EOF2
   paths=""
   for rel in "projects/$proj/status.md" "projects/$proj/$sn/session.log" "projects/$proj/$sn/progress.txt" \
              "projects/$proj/$sn/ralph-run.md" "projects/$proj/$sn/cody-checkpoint.env"; do
-    [ -f "$vault/$rel" ] && paths="$paths
+    # An ignored path (status.md of a local-only project) would fail the whole `git add`.
+    git -C "$root" check-ignore -q "$rel" 2>/dev/null && continue
+    [ -f "$root/$rel" ] && paths="$paths
 $rel"
   done
   msg="[lore] $(squad_public_name "$vault" "$proj") fold $(date '+%Y-%m-%d %H:%M')"
@@ -411,7 +445,8 @@ $rel"
     # shellcheck disable=SC2046
     set -f; IFS='
 '; set -- $paths; unset IFS; set +f
-    commit_locked "$vault" "$proj" "$msg" "$@" || rc=1
+    if [ "$prmode" = 1 ]; then commit_in_wt "$root" "$msg" "$@" || rc=1
+    else commit_locked "$vault" "$proj" "$msg" "$@" || rc=1; fi
     [ "$COMMIT_OUTCOME" = applied ] && FOLD_COMMITS=$((FOLD_COMMITS + 1))
   fi
   lock_release; MY_OWNER=""
@@ -440,7 +475,7 @@ cmd_fold() {
     projects="$proj"
   else
     projects="$(for d in "$vault"/projects/*/; do
-      [ -d "${d}$sn/inbox" ] || continue
+      [ -d "${d}$sn" ] || continue
       p="${d%/}"; printf '%s\n' "${p##*/}"
     done)"
   fi

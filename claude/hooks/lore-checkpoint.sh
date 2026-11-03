@@ -22,11 +22,10 @@
 # <vault>/projects/<name>/.lore-checkpoint.log (overwritten each run).
 #
 # Entry point for other writers (Cody, Ralph): `lore-checkpoint.sh --note "<line>"`
-# inserts a line inside `## Last checkpoint` (3-line cap). Never `>>` status.md:
-# the last section is `## Context refs`, so appended lines land outside it.
-# A note is ONE line starting with "[" (e.g. "[2026-10-12 15:00] [cody] msg"):
-# other lines are dropped by the `^\[` filter, and a multi-line note counts
-# against the 3-line cap.
+# emits a `checkpoint` event (lore event); the next fold writes it inside
+# `## Last checkpoint` (3-line cap). Nothing is written or committed here. A note
+# "[YYYY-MM-DD HH:MM] [source] text" keeps its source, any other text is
+# attributed to claude-code. Every commit this script makes goes through `lore commit`.
 #
 # Denial pass: every SessionEnd also runs
 # `lore-checkpoint.sh --incidents <transcript> <session_id> <project>` (before
@@ -153,6 +152,25 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 [ -n "${DISPLAY:-}" ] || bail "no vault mapping for this project, skipped"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
+# lcommit <message> <path>...: every vault commit goes through the committer.
+lcommit() {
+  local msg="$1"; shift
+  git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  SECOND_BRAIN_PATH="$VAULT" LORE_LOCK_WAIT=5 bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$DISPLAY" --message "$msg" --paths "$@" >/dev/null 2>&1
+}
+
+# --note: an event, folded into status.md later (no status.md precondition, no commit).
+# A "[YYYY-MM-DD HH:MM] [source] text" note keeps its source; anything else is claude-code.
+if [ "$MODE" = note ]; then
+  _src=claude-code; _txt="$NOTE"
+  case "$NOTE" in
+    "["[0-9][0-9][0-9][0-9]-*"] ["*"] "*) _t="${NOTE#*\] \[}"; _src="${_t%%\]*}"; _txt="${_t#*\] }" ;;
+  esac
+  SECOND_BRAIN_PATH="$VAULT" bash "$HOOK_DIR/lore" event --vault "$VAULT" --project "$DISPLAY" \
+    --source "$_src" --kind checkpoint --line "$_txt" >/dev/null 2>&1 || bail "note event not written"
+  exit 0
+fi
+
 [ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
 
 # The vault checkout sits on another session's branch (#422): its files are not ours
@@ -190,7 +208,7 @@ if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x 
   if [ -s "$_dl.tmp" ]; then mv "$_dl.tmp" "$_dl"; else rm -f "$_dl.tmp" "$_dl"; fi
   if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
      && [ -n "$(git -C "$VAULT" status --porcelain -- "projects/$DISPLAY/decisions.md" 2>/dev/null)" ]; then
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/decisions.md"
+    lcommit "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/decisions.md"
   fi
 fi
 
@@ -216,9 +234,7 @@ close_session_log() {
   [ -n "$since" ] && [ -n "$br" ] && [ "$br" != HEAD ] || return 0
   n="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; close_session_starts "$log" "$since" "$br" 2>/dev/null )"
   [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
-  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/session.log"
-  fi
+  lcommit "lore: session log $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/$STATE_NAME/session.log"
 }
 [ "$MODE" = hook ] && close_session_log
 
@@ -232,9 +248,7 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null)"
 NOW="$(date "+%Y-%m-%d %H:%M")"
 
 commit_vault() {
-  if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: $1 $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/status.md"
-  fi
+  lcommit "lore: $1 $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/status.md"
 }
 
 # section <file> <heading>: body of a section. Inner blank lines are kept;
@@ -283,9 +297,7 @@ sync_index() {
   r1="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_row "$idx" "$DISPLAY" "$st" "$upd" 1 2>/dev/null )"
   r2="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_active "$idx" "$DISPLAY" "$upd" 2>/dev/null )"
   [ -n "$r1$r2" ] || return 0
-  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-    squad_vault_commit "$VAULT" "$DISPLAY" "lore: index $DISPLAY" INDEX.md
-  fi
+  lcommit "lore: index $DISPLAY" INDEX.md
 }
 # Session end (#350, #427): start `lore push` detached after the local commit; it pushes
 # the vault's lore/* branches and opens or updates their PR without this hook waiting.
@@ -322,12 +334,6 @@ add_checkpoint() {
   fi
   mv "$out" "$STATUS"
 }
-
-if [ "$MODE" = note ]; then
-  add_checkpoint "$NOTE" || bail "append failed"
-  commit_vault "checkpoint"
-  exit 0
-fi
 
 # --- Worktree session: checkpoint line only -------------------------------
 if [ "$TOP" != "$ROOT" ]; then

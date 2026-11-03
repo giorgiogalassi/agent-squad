@@ -16,7 +16,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
 
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
-cp "$REPO_ROOT"/claude/hooks/{lore-checkpoint.sh,squad-progress.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore-checkpoint.sh,squad-progress.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh,lore} "$TMPROOT/hooks/"
 SUT="$TMPROOT/hooks/lore-checkpoint.sh"
 EVIDENCE="$TMPROOT/evidence"
 printf '#!/bin/sh\ncat > "%s"\nexit 1\n' "$EVIDENCE" > "$TMPROOT/fakebin/claude"
@@ -120,7 +120,14 @@ check "no second progress line without a record" 1 "$(grep -c 'worktree session'
 # 7. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt
 ( cd "$F_PROJECT" && bash "$SUT" --note "[2099-01-01 00:00] [claude-code] by-path probe" </dev/null >/dev/null 2>&1 )
-grep -q 'by-path probe' "$STATUS" && ok "note written" || bad "note written"
+# --note is an event (#424): one checkpoint event, status.md untouched, nothing committed until the fold.
+HEAD_N="$(git -C "$F_VAULT" rev-parse HEAD)"
+grep -q 'by-path probe' "$STATUS" && bad "note: status.md untouched before the fold" || ok "note: status.md untouched before the fold"
+check "note: one checkpoint event" 1 "$(grep -l 'by-path probe' "$F_VAULT"/projects/fixture/.squad/inbox/*.ev 2>/dev/null | wc -l | tr -d ' ')"
+check "note: source kept" 1 "$(grep -lx 'SOURCE=claude-code' "$F_VAULT"/projects/fixture/.squad/inbox/*.ev 2>/dev/null | wc -l | tr -d ' ')"
+check "note: no commit" "$HEAD_N" "$(git -C "$F_VAULT" rev-parse HEAD)"
+bash "$TMPROOT/hooks/lore" fold --vault "$F_VAULT" >/dev/null 2>&1
+grep -q 'by-path probe' "$STATUS" && ok "note written by the fold" || bad "note written by the fold"
 git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "unrelated file still staged" || bad "unrelated file still staged"
 git -C "$F_VAULT" show --name-only --format= HEAD | grep -q unrelated.txt && bad "unrelated file not in commit" || ok "unrelated file not in commit"
 

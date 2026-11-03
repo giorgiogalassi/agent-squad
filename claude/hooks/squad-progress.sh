@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# squad-progress.sh -- Ralph's vault state writes: progress.txt, session.log and
+# squad-progress.sh -- the squad's vault state writes: progress.txt, session.log and
 # ralph-run.md. Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; no jq.
 #
 # Usage:
 #   squad-progress.sh append --issue <ID> --line <text>   progress.txt: "[ID] <text>"
-#   squad-progress.sh log --line <text> [--skill ralph]   session.log: "[YYYY-MM-DD HH:MM] [skill] <text>"
+#   squad-progress.sh log --source <name> --line <text>  session.log "[ts] [name] <text>" via `lore event` (folded later)
 #   squad-progress.sh run-write --from <file>             replace ralph-run.md
 #   squad-progress.sh run-row --issue <ID> --set <Column>=<value> [--set ...]
 #   squad-progress.sh run-status --value <Status>         set the "Status:" header line
-#   squad-progress.sh where --file progress|log|run       print the current copy's path
+#   squad-progress.sh where --file progress|log|run|env       print the current copy's path
 #
-# Writes go through squad_vault_commit (lore branch in a PR-mode vault, a commit
-# on main otherwise). Reads use the same copy: the lore worktree's when it exists.
+# Working state (progress.txt, ralph-run.md, cody-checkpoint.env) is written directly
+# and is never committed here: the next `lore fold` snapshot-commits it, so a reader
+# sees it at once (read-after-write). In a PR-mode vault it lives in this project's
+# session worktree, never in the vault checkout (nothing of ours is dirty there for
+# another session to carry or trip over); `where` returns that path. Durable history
+# (`log`) is an event, visible in session.log after the next fold.
 # An `append` whose text is `resolved. PR: #N ...` is skipped when the file
 # already holds a `[ID] [date] resolved. PR: #N` line (dated or not), whoever wrote it.
 # Emits: OUTCOME=applied|unchanged, CHANGED=yes|no (where: FILE=<path>).
@@ -22,13 +26,13 @@
 VERB="${1:-}"
 [ -n "$VERB" ] || squad_fail 2 "usage: squad-progress.sh append|log|run-write|run-row|run-status|where ..."
 shift
-ISSUE=""; LINE=""; SKILL=ralph; FROM=""; VALUE=""; WHICH=""; SETS=()
+ISSUE=""; LINE=""; SOURCE=""; FROM=""; VALUE=""; WHICH=""; SETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --issue|--line|--skill|--from|--value|--file|--set)
+    --issue|--line|--source|--from|--value|--file|--set)
       [ $# -ge 2 ] || squad_fail 2 "$1 requires a value"
       case "$1" in
-        --issue) ISSUE="$2" ;; --line) LINE="$2" ;; --skill) SKILL="$2" ;;
+        --issue) ISSUE="$2" ;; --line) LINE="$2" ;; --source) SOURCE="$2" ;;
         --from) FROM="$2" ;; --value) VALUE="$2" ;; --file) WHICH="$2" ;;
         --set) SETS+=("$2") ;;
       esac
@@ -40,79 +44,46 @@ case "$VERB" in append|log|run-write|run-row|run-status|where) ;; *) squad_fail 
 
 squad_resolve || squad_fail 20 "path resolution failed"
 V="$VAULT_PATH"; PROJ="${DISPLAY_NAME:-$(basename "$PROJECT_ROOT")}"
+LORE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lore"
 REL_DIR="projects/$PROJ/$(squad_state_name "$V")"
 
-# W: where writes land. The vault, or (checkout off its default branch, #422) the
-# session worktree; a direct-mode vault off its default branch refuses writes.
+# W: where working state lives (squad_vault_wroot). A PR-mode vault: this project's
+# session worktree, on or off the default branch, so the vault checkout never holds
+# our uncommitted files. Direct-mode/local-only: the vault, refused (exit 10) off its
+# default branch. `where` only reads: it falls back to the vault on a refusal.
 W="$V"
-if [ "$VERB" != where ] && ! squad_local_only "$V" "$PROJ" 2>/dev/null; then
+if ! squad_local_only "$V" "$PROJ" 2>/dev/null; then
   W="$(squad_vault_wroot "$V" "$PROJ")"; _wrc=$?
-  [ "$_wrc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing written"
-  [ "$_wrc" = 0 ] && [ -n "$W" ] || squad_fail 20 "vault worktree failed"
+  if [ "$VERB" = where ]; then
+    { [ "$_wrc" = 0 ] && [ -n "$W" ]; } || W="$V"
+  else
+    [ "$_wrc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing written"
+    [ "$_wrc" = 0 ] && [ -n "$W" ] || squad_fail 20 "vault worktree failed"
+  fi
 fi
 
 relof() {
   case "$1" in
-    progress) echo "$REL_DIR/progress.txt" ;; log) echo "$REL_DIR/session.log" ;;
+    progress) echo "$REL_DIR/progress.txt" ;; env) echo "$REL_DIR/cody-checkpoint.env" ;; log) echo "$REL_DIR/session.log" ;;
     run) echo "$REL_DIR/ralph-run.md" ;; *) return 1 ;;
   esac
 }
-# current <rel>: the copy holding the latest content. In a PR-mode vault the
-# written files live on the lore worktree and main is reset to HEAD.
+# current <rel>: the copy holding the latest content: the session worktree's in a
+# PR-mode vault (the vault checkout's committed copy only while the worktree has none,
+# and never off the default branch: that checkout is another session's), else the vault's.
 current() {
-  local wt
-  if [ -d "$V/.git" ] || git -C "$V" rev-parse --git-dir >/dev/null 2>&1; then
-    if ! squad_local_only "$V" "$PROJ" && squad_vault_pr_mode_any "$V"; then
-      wt="$(squad_vault_wt "$V" "$PROJ" 2>/dev/null)" || wt=""
-      # Off the default branch the checkout's copy is another session's: never the answer.
-      [ -n "$wt" ] && { [ -f "$wt/$1" ] || squad_vault_offdefault "$V"; } && { printf '%s' "$wt/$1"; return; }
-    fi
+  if [ "$W" != "$V" ] && { [ -f "$W/$1" ] || squad_vault_offdefault "$V"; }; then
+    printf '%s' "$W/$1"; return
   fi
   printf '%s' "$V/$1"
 }
-# stage <rel>: make the vault path hold the current content, ready to edit.
+# stage <rel>: make $W/<rel> exist, holding the current content, ready to edit.
 stage() {
-  local cur base merged; cur="$(current "$1")"
-  if [ "$W" != "$V" ]; then  # off the default branch: edit the worktree copy only
-    mkdir -p "$(dirname "$W/$1")" || return 1
-    [ -f "$W/$1" ] || : > "$W/$1"
-    return 0
+  mkdir -p "$(dirname "$W/$1")" || return 1
+  if [ ! -f "$W/$1" ]; then
+    if [ "$W" != "$V" ] && [ -f "$V/$1" ] && ! squad_vault_offdefault "$V"; then cp "$V/$1" "$W/$1" || return 1
+    else : > "$W/$1"; fi
   fi
-  mkdir -p "$(dirname "$V/$1")" || return 1
-  if [ "$cur" != "$V/$1" ]; then
-    if [ -f "$V/$1" ] && [ -f "$cur" ] && ! git -C "$V" diff --quiet HEAD -- "$1" 2>/dev/null; then
-      # Vault main holds an uncommitted write (async hook).
-      case "$1" in
-        */progress.txt|*/session.log)
-          # Append-only files: union-merge so neither side's lines are lost. Only
-          # a clean exit with non-empty output counts; anything else fails (exit 20
-          # in the caller) and leaves the vault copy untouched.
-          base="$V/$1.base.$$"; merged="$V/$1.m"
-          git -C "$V" show "HEAD:$1" > "$base" 2>/dev/null || : > "$base"
-          if git merge-file -p --union "$cur" "$base" "$V/$1" > "$merged" 2>/dev/null && [ -s "$merged" ]; then
-            mv "$merged" "$V/$1"; rm -f "$base"
-          else
-            rm -f "$merged" "$base"
-            echo "squad-progress: git merge-file failed for $1; vault copy left intact" >&2
-            return 1
-          fi ;;
-        *)
-          # Rewritten files (ralph-run.md): a union would keep both versions of an
-          # edited row, so the lore copy wins over the uncommitted main copy.
-          echo "squad-progress: uncommitted vault-main $1 differs from HEAD; using the lore copy" >&2
-          cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1" ;;
-      esac
-    else
-      cp "$cur" "$V/$1" 2>/dev/null || : > "$V/$1"
-    fi
-  fi
-  [ -f "$V/$1" ] || : > "$V/$1"
-}
-commit() {
-  local rc=0
-  squad_vault_commit "$V" "$PROJ" "lore: ralph state $(squad_public_name "$V" "$PROJ")" "$1" || rc=$?
-  [ "$rc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing committed"
-  return 0
 }
 done_changed() { squad_emit OUTCOME applied; squad_emit CHANGED yes; exit 0; }
 unchanged() { squad_emit OUTCOME unchanged; squad_emit CHANGED no; exit 0; }
@@ -121,15 +92,17 @@ esc_re() { printf '%s' "$1" | sed 's/[][\.*^$+?(){}|/-]/\\&/g'; }
 
 case "$VERB" in
   where)
-    REL="$(relof "$WHICH")" || squad_fail 2 "where requires --file progress|log|run"
+    REL="$(relof "$WHICH")" || squad_fail 2 "where requires --file progress|log|run|env"
     squad_emit FILE "$(current "$REL")"; squad_emit OUTCOME unchanged; squad_emit CHANGED no; exit 0 ;;
 
   append)
     [ -n "$ISSUE" ] && [ -n "$LINE" ] || squad_fail 2 "append requires --issue and --line"
     REL="$(relof progress)"; ID="$(norm_id "$ISSUE")"; CUR="$(current "$REL")"
+    # Callers pass lines with or without the leading "[ID] ": never doubled.
+    case "$LINE" in "[$ISSUE] "*|"[#$ID] "*|"[$ID] "*) LINE="${LINE#* }" ;; esac
     OUTLINE="[$ISSUE] $LINE"; case "$ISSUE" in \[*) OUTLINE="$ISSUE $LINE" ;; esac
     if [ -f "$CUR" ]; then
-      PRN="$(printf '%s' "$LINE" | sed -n 's/^resolved\. PR: #\([0-9][0-9]*\).*/\1/p')"
+      PRN="$(printf '%s' "$LINE" | sed -n 's/^\([0-9-]\{10\} \)\{0,1\}resolved\. PR: #\([0-9][0-9]*\).*/\2/p')"
       if [ -n "$PRN" ]; then
         grep -Eq "^\[#?$(esc_re "$ID")\] ([0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9:]+)? )?resolved\. PR: #$PRN( |\.|\$)" "$CUR" && unchanged
       fi
@@ -139,15 +112,15 @@ case "$VERB" in
     # A file without a final newline would glue the new line onto the last one.
     [ -s "$W/$REL" ] && [ -n "$(tail -c 1 "$W/$REL")" ] && echo >> "$W/$REL"
     printf '%s\n' "$OUTLINE" >> "$W/$REL" || squad_fail 20 "cannot write $REL"
-    commit "$REL"; done_changed ;;
+    done_changed ;;
 
   log)
     [ -n "$LINE" ] || squad_fail 2 "log requires --line"
-    REL="$(relof log)"
-    stage "$REL" || squad_fail 20 "cannot stage $REL"
-    [ -s "$W/$REL" ] && [ -n "$(tail -c 1 "$W/$REL")" ] && echo >> "$W/$REL"
-    printf '[%s] [%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$SKILL" "$LINE" >> "$W/$REL" || squad_fail 20 "cannot write $REL"
-    commit "$REL"; done_changed ;;
+    [ -n "$SOURCE" ] || squad_fail 2 "log requires --source <name> (the skill or agent writing the line)"
+    _rc=0
+    SECOND_BRAIN_PATH="$V" bash "$LORE" event --vault "$V" --project "$PROJ" --source "$SOURCE" --kind log --line "$LINE" >/dev/null || _rc=$?
+    [ "$_rc" = 0 ] || squad_fail "$([ "$_rc" = 10 ] && echo 10 || echo 20)" "log event not written (lore event exit $_rc)"
+    done_changed ;;
 
   run-write)
     [ -n "$FROM" ] || squad_fail 2 "run-write requires --from"
@@ -155,7 +128,7 @@ case "$VERB" in
     REL="$(relof run)"; CUR="$(current "$REL")"
     [ -f "$CUR" ] && cmp -s "$CUR" "$FROM" && unchanged
     mkdir -p "$(dirname "$W/$REL")" && cp "$FROM" "$W/$REL" || squad_fail 20 "cannot write $REL"
-    commit "$REL"; done_changed ;;
+    done_changed ;;
 
   run-status)
     [ -n "$VALUE" ] || squad_fail 2 "run-status requires --value"
@@ -166,7 +139,7 @@ case "$VERB" in
     stage "$REL" || squad_fail 20 "cannot stage $REL"
     T="$W/$REL.tmp.$$"
     sed "s|^Status:.*|Status: $(printf '%s' "$VALUE" | sed 's/[\\&|]/\\&/g')|" "$W/$REL" > "$T" && mv "$T" "$W/$REL" || squad_fail 20 "cannot write $REL"
-    commit "$REL"; done_changed ;;
+    done_changed ;;
 
   run-row)
     [ -n "$ISSUE" ] && [ "${#SETS[@]}" -gt 0 ] || squad_fail 2 "run-row requires --issue and at least one --set"
@@ -204,5 +177,5 @@ case "$VERB" in
     done
     if cmp -s "$T" "$CUR"; then rm -f "$T"; [ "$CUR" = "$W/$REL" ] || rm -f "$W/$REL"; unchanged; fi
     mv "$T" "$W/$REL" || squad_fail 20 "cannot write $REL"
-    commit "$REL"; done_changed ;;
+    done_changed ;;
 esac

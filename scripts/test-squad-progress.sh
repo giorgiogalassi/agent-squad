@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tests claude/hooks/squad-progress.sh (#370): Ralph's idempotent progress.txt,
-# session.log and ralph-run.md writes, direct and PR-mode vaults.
+# session.log and ralph-run.md writes, direct and PR-mode vaults. Working state is
+# written directly and never committed by the writer (#424): the fold snapshots it;
+# session.log lines are events.
 # Plain bash 3.2; fixture vaults with a bare origin; never touches ~/second-brain.
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,7 +15,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 
 export SQUAD_INCIDENTS=off GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{squad-progress.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{squad-progress.sh,squad-incidents.sh,squad-common.sh,lore} "$TMPROOT/hooks/"
 cat > "$TMPROOT/hooks/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
 [ "${1:-}" = "--state-name" ] && { echo .squad; exit 0; }
@@ -38,6 +40,9 @@ sp() {  # sp <vault> <args...>
   RC=$?; OUT="$(cat "$TMPROOT/out")"
   if [ -n "$OUT" ] && printf '%s\n' "$OUT" | grep -Eqv '^[A-Z_]+='; then bad "stdout has non-KEY=value line"; fi
 }
+fold() {  # fold <vault>: the fold SessionStart/SessionEnd would run
+  SECOND_BRAIN_PATH="$1" bash "$TMPROOT/hooks/lore" fold --vault "$1" >/dev/null 2>&1
+}
 cnt() { grep -cE "$2" "$1" 2>/dev/null; }
 # The hook's own dedupe test (cody-checkpoint.sh), for the Ralph-then-hook order.
 hook_would_skip() { grep -F "[$2] " "$1" 2>/dev/null | grep -qE "PR: #$3( |$)"; }
@@ -57,7 +62,8 @@ printf '%s\n' "$RUN" > "$TMPROOT/run.md"
 mkvault d; V="$TMPROOT/d"; P="$V/projects/proj/.squad/progress.txt"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: n'
 check "direct: append applied" "OUTCOME=applied CHANGED=yes" "$(printf '%s' "$OUT" | tr '\n' ' ' | sed 's/ $//')"
-check "direct: committed on main" "" "$(git -C "$V" status --porcelain)"
+check "direct: written, not committed" "1 init" "$(git -C "$V" status --porcelain | wc -l | tr -d ' ') $(git -C "$V" log --format=%s | tr '\n' ' ' | sed 's/ $//')"
+check "direct: tail readable at once" 1 "$(tail -n 1 "$P" | grep -c '^\[#5\] resolved')"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: n'
 check "direct: exact repeat unchanged" "unchanged" "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: other text'
@@ -85,8 +91,20 @@ check "new dated format without final newline dedupes" 1 "$(cnt "$P" '^\[#24\]')
 sp "$V" append --issue '#26' --line 'no-op note'
 check "file without final newline: new line on its own line" 1 "$(cnt "$P" '^\[#26\] no-op note$')"
 # log
-sp "$V" log --line 'start -- batch: [#5], branch: b'
-check "direct: log line format" 1 "$(cnt "$V/projects/proj/.squad/session.log" '^\[[0-9-]{10} [0-9:]{5}\] \[ralph\] start -- batch')"
+sp "$V" log --line 'start'; check "log without --source: exit 2" 2 "$RC"
+sp "$V" log --source forge --line 'start -- batch: [#5], branch: b'
+check "log: applied" "OUTCOME=applied CHANGED=yes" "$(printf '%s' "$OUT" | tr '\n' ' ' | sed 's/ $//')"
+[ -f "$V/projects/proj/.squad/session.log" ] && bad "log: nothing in session.log before the fold" || ok "log: nothing in session.log before the fold"
+check "log: one event in the inbox" 1 "$(ls "$V"/projects/proj/.squad/inbox/*.ev | wc -l | tr -d ' ')"
+fold "$V"
+check "direct: log line carries the caller's source" 1 "$(cnt "$V/projects/proj/.squad/session.log" '^\[[0-9-]{10} [0-9:]{8}\] \[forge\] start -- batch')"
+# the ID prefix is never doubled, whether or not the caller passes it
+sp "$V" append --issue '#60' --line '[#60] with prefix'
+sp "$V" append --issue '#61' --line 'no prefix'
+check "append: passed prefix not doubled" 1 "$(cnt "$P" '^\[#60\] with prefix$')"
+check "append: no prefix added once" 1 "$(cnt "$P" '^\[#61\] no prefix$')"
+sp "$V" append --issue '#60' --line '[#60] with prefix'
+check "append: prefixed repeat unchanged" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
 # run state
 sp "$V" run-write --from "$TMPROOT/run.md"; check "direct: run-write applied" 0 "$RC"
 sp "$V" run-write --from "$TMPROOT/run.md"; check "direct: run-write repeat unchanged" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
@@ -97,85 +115,98 @@ check "direct: other row untouched" "| #6 | 6-b | 5-a | 0 | 0 | - | - | pending 
 sp "$V" run-row --issue '#9' --set State=x; check "run-row unknown issue: exit 10" 10 "$RC"
 sp "$V" run-row --issue '#5' --set Nope=x; check "run-row unknown column: exit 10" 10 "$RC"
 sp "$V" run-status --value complete; check "direct: run-status" 1 "$(cnt "$R" '^Status: complete$')"
-check "direct: all committed on main" "" "$(git -C "$V" status --porcelain)"
+check "direct: resume reads the counters before any fold" 1 "$(cnt "$R" '^\| #5 .*\| 1 \| 0 \|')"
+fold "$V"
+check "direct: fold snapshot-commits the working state" "" "$(git -C "$V" status --porcelain)"
 sp "$V" append --issue; check "usage error: exit 2" 2 "$RC"
 sp "$V" where --file run; check "direct: where is the vault file" "FILE=$R" "$(printf '%s\n' "$OUT" | sed -n 1p)"
 
-# 2. PR-mode vault: everything lands on the lore branch, reads follow it.
+# 2. PR-mode vault: working state is readable at once; the fold lands it on the lore branch.
 mkvault p '{"vault_main": "pr"}'; V="$TMPROOT/p"; P="$V/projects/proj/.squad/progress.txt"
 B="lore/proj-$(date +%Y-%m-%d)"
+HEAD0="$(git -C "$V" rev-parse HEAD)"
 sp "$V" run-write --from "$TMPROOT/run.md"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: n'
-sp "$V" log --line 'start -- batch: [#5], branch: b'
-check "pr: main clean" "" "$(git -C "$V" status --porcelain)"
-check "pr: main level with origin" "$(git -C "$V" rev-parse origin/main)" "$(git -C "$V" rev-parse main)"
-check "pr: progress line on lore branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -c '^\[#5\] resolved')"
-check "pr: session.log on lore branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/session.log" | grep -c '\[ralph\] start')"
-check "pr: ralph-run.md on lore branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^Status: running')"
-check "pr: ralph-run.md not on main" "no" "$([ -f "$V/projects/proj/.squad/ralph-run.md" ] && echo yes || echo no)"
 sp "$V" run-row --issue '#5' --set Attempts=2 --set State=resolved
-check "pr: row update from the branch copy" "| #5 | 5-a | main | 2 | 0 | - | - | resolved |" "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep '^| #5 ')"
-check "pr: other row survives" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 ')"
+sp "$V" run-row --issue '#6' --set Attempts=1
+sp "$V" log --source ralph --line 'start -- batch: [#5], branch: b'
+check "pr: no commit by the writers" "$HEAD0" "$(git -C "$V" rev-parse HEAD)"
 sp "$V" where --file run
 F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
-check "pr: resumed read gets current run state" 1 "$(cnt "$F" '\| #5 .*resolved')"
-check "pr: where points into the lore worktree" 1 "$(printf '%s\n' "$F" | grep -c '/\.claude/worktrees/lore-proj-')"
-sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: n'
-check "pr: repeat is unchanged (reads the branch copy)" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
-sp "$V" run-status --value complete
-check "pr: run-status on branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^Status: complete')"
-check "pr: still level and clean" "" "$(git -C "$V" status --porcelain)"
-# Hook-written duplicate in PR mode: the hook appends to main's stale copy; Ralph's own line stays single.
+check "pr: resume reads Attempts=2 before any fold" 1 "$(cnt "$F" '^\| #5 .*\| 2 \| 0 \|.*resolved')"
+check "pr: second row update did not lose the first" 1 "$(cnt "$F" '^\| #6 .*\| 1 \| 0 \|')"
 sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: again'
-check "pr: no second line after repeat" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -c '^\[#5\] .*PR: #9')"
+check "pr: repeat is unchanged" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
+fold "$V"
+check "pr: main level with origin after the fold" "$(git -C "$V" rev-parse origin/main)" "$(git -C "$V" rev-parse main)"
+check "pr: main clean after the fold" "" "$(git -C "$V" status --porcelain)"
+check "pr: progress line on lore branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -c '^\[#5\] resolved')"
+check "pr: session.log on lore branch" 1 "$(git -C "$V" show "$B:projects/proj/.squad/session.log" | grep -c '\[ralph\] start')"
+check "pr: row update on the branch" "| #5 | 5-a | main | 2 | 0 | - | - | resolved |" "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep '^| #5 ')"
+check "pr: ralph-run.md not on main" "no" "$([ -f "$V/projects/proj/.squad/ralph-run.md" ] && echo yes || echo no)"
+sp "$V" where --file run
+F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "pr: after the fold where points into the lore worktree" 1 "$(printf '%s\n' "$F" | grep -c '/\.claude/worktrees/lore-proj-')"
+check "pr: resume still reads the counters" 1 "$(cnt "$F" '^\| #5 .*\| 2 \| 0 \|')"
+sp "$V" append --issue '#5' --line 'resolved. PR: #9 (base: main). Notes: n'
+check "pr: repeat after the fold is unchanged (reads the branch copy)" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
+sp "$V" run-status --value complete
+sp "$V" run-row --issue '#6' --set Attempts=3
+sp "$V" run-row --issue '#5' --set Attempts=4
+sp "$V" where --file run; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "pr: edits after a fold build on the branch copy" 1 "$(cnt "$F" '^\| #6 .*\| 3 \| 0 \|')"
+check "pr: status and rows together" 1 "$(cnt "$F" '^Status: complete$')"
+fold "$V"
+check "pr: second fold lands them" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #5 .*| 4 |')"
+check "pr: still level and clean" "" "$(git -C "$V" status --porcelain)"
 
 # Values are data: backslashes stay literal, newlines are refused (exit 2).
 sp "$V" run-row --issue '#6' --set 'State=a\nb\\c'
-check "run-row: backslashes stay literal" '| #6 | 6-b | 5-a | 0 | 0 | - | - | a\nb\\c |' "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep '^| #6 ')"
+sp "$V" where --file run; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "run-row: backslashes stay literal" '| #6 | 6-b | 5-a | 3 | 0 | - | - | a\nb\\c |' "$(grep '^| #6 ' "$F")"
 sp "$V" run-row --issue '#6' --set "State=x
 y"
 check "run-row: newline value is exit 2" 2 "$RC"
-check "run-row: rows stay one line each" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 ')"
+check "run-row: rows stay one line each" 1 "$(grep -c '^| #6 ' "$F")"
 sp "$V" append --issue '#30' --line 'a\nb\\c'
-check "append: backslashes stay literal" 1 "$(git -C "$V" show "$B:projects/proj/.squad/progress.txt" | grep -cF '[#30] a\nb\\c')"
-sp "$V" log --line 'x\ty\\z'
+sp "$V" where --file progress; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "append: backslashes stay literal" 1 "$(grep -cF '[#30] a\nb\\c' "$F")"
+sp "$V" log --source forge --line 'x\ty\\z'
+fold "$V"
 check "log: backslashes stay literal" 1 "$(git -C "$V" show "$B:projects/proj/.squad/session.log" | grep -cF 'x\ty\\z')"
 
-# Race: an async writer left an uncommitted line on vault main; both lines must reach the lore branch.
-printf '[#40] hook line\n' >> "$P"
+# Two writers (the async hook and Ralph) both go through the script: one copy, both lines kept.
+sp "$V" append --issue '#40' --line 'hook line'
 sp "$V" append --issue '#41' --line 'ralph line'
+fold "$V"
 LP="$(git -C "$V" show "$B:projects/proj/.squad/progress.txt")"
 check "race: hook line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#40\] hook line$')"
 check "race: ralph line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#41\] ralph line$')"
 check "race: earlier lines not duplicated" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#5\] resolved')"
+check "pr: nothing of ours ever dirty in the checkout" "" "$(git -C "$V" status --porcelain)"
 
-# merge-file failure must leave the vault copy intact and fail with exit 20 (no truncation).
-mkdir -p "$TMPROOT/fakegit"
-REALGIT="$(command -v git)"
-cat > "$TMPROOT/fakegit/git" <<EOG
-#!/bin/sh
-for a in "\$@"; do [ "\$a" = merge-file ] && exit 255; done
-exec "$REALGIT" "\$@"
-EOG
-chmod +x "$TMPROOT/fakegit/git"
-printf '[#50] hook line 2\n' >> "$P"
-BEFORE="$(cat "$P")"
-(cd "$TMPROOT" && PATH="$TMPROOT/fakegit:$PATH" SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/squad-progress.sh" append --issue '#51' --line 'x' >"$TMPROOT/out" 2>"$TMPROOT/err"); RC=$?
-check "merge failure: exit 20" 20 "$RC"
-check "merge failure: vault copy intact" "$BEFORE" "$(cat "$P")"
-check "merge failure: reason on stderr" 1 "$(grep -c 'merge' "$TMPROOT/err")"
-check "merge failure: no temp files left" "" "$(ls "$(dirname "$P")" | grep -E '\.(m|base\.[0-9]+)$')"
-git -C "$V" checkout -q -- "projects/proj/.squad/progress.txt" 2>/dev/null
-
-# A dirty ralph-run.md on main must not duplicate rows: the lore copy wins, with a notice.
-R="$V/projects/proj/.squad/ralph-run.md"
-git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" > "$R"
-git -C "$V" add "$R" && git -C "$V" commit -qm "seed run" # main tracks an older ralph-run.md
-printf '%s\n' "$(cat "$R")" | sed -e 's/^Status:.*/Status: dirty/' -e 's/^\(| #6 .*| \)[^|]*|$/\1dirty |/' > "$R.x" && mv "$R.x" "$R"
-sp "$V" run-row --issue '#6' --set 'State=merged'
-check "run dirty: one row per issue" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 ')"
-check "run dirty: row updated" 1 "$(git -C "$V" show "$B:projects/proj/.squad/ralph-run.md" | grep -c '^| #6 .*merged')"
-check "run dirty: notice on stderr" 1 "$(grep -c 'ralph-run.md' "$TMPROOT/err")"
+# 9. Another session switches the vault checkout while our working state is unfolded (#424 fix round).
+mkvault w '{"vault_main": "pr"}'; V="$TMPROOT/w"; D="$(date +%Y-%m-%d)"; RUNREL=projects/proj/.squad/ralph-run.md
+printf '%s\n' "$RUN" > "$V/$RUNREL"; git -C "$V" add -A; git -C "$V" commit -qm run; git -C "$V" push -q origin main 2>/dev/null
+sp "$V" run-row --issue '#5' --set Attempts=2
+sp "$V" append --issue '#7' --line 'resolved. PR: #8 (base: main). Notes: n'
+check "switch: our files not dirty in the checkout" "" "$(git -C "$V" status --porcelain)"
+git -C "$V" switch -qc lore/other-2026-11-03; check "switch: other session's switch succeeds" 0 "$?"
+sp "$V" where --file run; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "switch: where reads Attempts=2" 1 "$(grep -c '^| #5 .*| 2 | 0 |' "$F")"
+sp "$V" where --file progress; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "switch: where reads the appended line" 1 "$(grep -c '^\[#7\] .*PR: #8' "$F")"
+fold "$V"
+check "switch: session branch has the row" 1 "$(git -C "$V" show "lore/proj-$D:$RUNREL" | grep -c '^| #5 .*| 2 | 0 |')"
+check "switch: session branch has the line" 1 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c '^\[#7\]')"
+check "switch: other branch has none of our files" 0 "$(git -C "$V" show lore/other-2026-11-03:projects/proj/.squad/progress.txt 2>/dev/null | grep -c '^\[#7\]')"
+check "switch: checkout still clean after the fold" "" "$(git -C "$V" status --porcelain)"
+# a fold off the default branch in a direct-mode vault applies nothing
+mkvault fd '{"vault_main": "direct"}'; V2="$TMPROOT/fd"
+sp "$V2" log --source forge --line 'wait'
+git -C "$V2" switch -qc feature/y; fold "$V2"
+[ -f "$V2/projects/proj/.squad/session.log" ] && bad "direct off main: fold leaves the checkout alone" || ok "direct off main: fold leaves the checkout alone"
+check "direct off main: event waits" 1 "$(ls "$V2"/projects/proj/.squad/inbox/*.ev | wc -l | tr -d ' ')"
 
 # 10. Vault checkout off its default branch (#422): another session's branch.
 mkdir -p "$TMPROOT/bin"; printf '#!/bin/sh\nexit 0\n' > "$TMPROOT/bin/gh"; chmod +x "$TMPROOT/bin/gh"
@@ -192,6 +223,7 @@ sp "$V" run-row --issue '#5' --set 'State=building'
 check "off main: run-row applied" "OUTCOME=applied" "$(printf '%s\n' "$OUT" | sed -n 1p)"
 sp "$V" where --file run
 check "off main: row reads back from where's path" 1 "$(grep -c '^| #5 .*building' "$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')")"
+fold "$V"
 check "off main: row committed on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:$RUNREL" | grep -c '^| #5 .*building')"
 check "off main: checkout run file untouched" 0 "$(grep -c building "$V/$RUNREL")"
 sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
@@ -199,6 +231,7 @@ sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
 check "off main: append dedupes on the session copy" "unchanged" "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
 check "off main: other session's uncommitted edit survives" 1 "$(grep -c 'other session wip' "$V/projects/proj/.squad/progress.txt")"
 check "off main: other session's edit not in our commit" 0 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c 'other session wip')"
+fold "$V"
 check "off main: our line on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c '^\[#30\]')"
 check "off main: our line not in the checkout" 0 "$(grep -c '^\[#30\]' "$V/projects/proj/.squad/progress.txt")"
 check "off main: other branch has no new commit" "run" "$(git -C "$V" log -1 --format=%s lore/other-2026-11-03)"
