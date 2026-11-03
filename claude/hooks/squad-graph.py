@@ -1303,7 +1303,8 @@ def compute_drift(doc, plan):
         elif (e["from"], e["to"]) not in planned_edges:
             items.append({"kind": "unplanned_dependency", "subject": subject, "uses": e.get("uses", [])})
     realised = set((e["from"], e["to"]) for e in added)
-    unrealized = {"units": sorted(u for u in planned_units if u not in changed),
+    touched = set(g["id"] for g in doc["groups"] if g.get("state") == "changed")
+    unrealized = {"units": sorted(u for u in planned_units if u not in touched),
                   "edges": sorted("%s>%s" % p for p in planned_edges if p not in realised)}
     return items, unrealized
 

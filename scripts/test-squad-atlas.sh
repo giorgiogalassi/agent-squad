@@ -189,6 +189,26 @@ EOPY
 )"
 check "R-1 retro parses the same five rounds" "$VJSON" "$RJSON"
 
+# ---------------------------------------------------------------- #411
+# Planned versus actual and the timeline come from files; Atlas extracts nothing.
+mkdir -p "$SD/forge"
+printf '{"version":1,"kind":"planned","units":[{"id":"(root)"},{"id":"billing"}],"edges":[],"boundaries":[]}\n' > "$SD/forge/planned-graph.json"
+printf '{"v":1,"ts":"2026-11-02T10:00:00Z","branch":"feat","issue":"7","type":"dep_added","subject":"a>b","commit":"%s","url":"https://bitbucket.org/ws/demo/commits/abc","note":"","net":"added"}\n' "0123456789abcdef" > "$SD/graph-timeline.jsonl"
+printf '{"v":1,"ts":"2026-11-02T11:00:00Z","branch":"other","issue":"9","type":"dep_added","subject":"x>y","commit":"ffff","url":"","note":"","net":"added"}\n' >> "$SD/graph-timeline.jsonl"
+run feat
+check "L-1 gather keys: no drift on a matching plan, one event for this branch" "0/1" "$(key DRIFT)/$(key TIMELINE_EVENTS)"
+check "L-2 atlas.json holds the plan, what was not realised and the branch events only" "2/billing/1" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%d/%s/%d" % (len(d["planned"]["units"]), ",".join(d["unrealized"]["units"]), len(d["timeline"])))' "$SD/atlas/feat/atlas.json")"
+arender feat
+check "L-3 page shows planned versus actual, the timeline and a commit link" "1/1/1/1" \
+  "$(grep -c 'Planned versus actual' "$PAGE")/$(grep -c 'The change matches the plan' "$PAGE")/$(grep -c 'Timeline of structural events (1)' "$PAGE")/$(grep -c 'bitbucket.org/ws/demo/commits/abc' "$PAGE")"
+rm "$SD/forge/planned-graph.json" "$SD/graph-timeline.jsonl"
+run feat
+GATHER="$OUT"
+arender feat
+check "L-4 without plan and events: none, and the page says so" "none/0/1/1" \
+  "$(OUT="$GATHER"; key DRIFT)/$(OUT="$GATHER"; key TIMELINE_EVENTS)/$(grep -c 'No planned graph' "$PAGE")/$(grep -c 'No event recorded' "$PAGE")"
+
 # ---------------------------------------------------------------- retro
 # Window, held% with unknown follow-ups, blocking-vs-non-blocking kinds.
 d_ago() { python3 -c 'import datetime,sys; print((datetime.date.today()-datetime.timedelta(days=int(sys.argv[1]))).isoformat())' "$1"; }
