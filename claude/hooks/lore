@@ -2,7 +2,14 @@
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
 #   lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...
+#   lore map [--root <dir>] [--name <n>] [--local] [--create-vault]
 #   lore version
+#
+# `map` is first contact: it never prompts. It resolves vault and root, records
+# the mapping through lore-map.sh set (which commits through `commit`) and
+# creates projects/<name>/. Exit 10 with NEED=vault|name|migrate|jq (plus
+# SUGGESTED= for name) when a human must decide; nothing is written then. Exit 2
+# when the root is the vault. Stdout: OUTCOME, CHANGED, NAME, TARGET, ROOT.
 #
 # `commit` is the single committer: the only code that calls squad_vault_commit
 # (PR mode, session worktree, union merge stay in squad-common.sh; there is no
@@ -137,6 +144,85 @@ cmd_commit() {
   squad_emit OUTCOME applied; squad_emit CHANGED yes
 }
 
+cmd_map() {
+  local root="" name="" local_flag="" create=no resolved cand vault pr_root disp ctx f n
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --root) [ $# -ge 2 ] || squad_fail 2 "--root needs a value"; root="$2"; shift 2 ;;
+      --name) [ $# -ge 2 ] || squad_fail 2 "--name needs a value"; name="$2"; shift 2 ;;
+      --local) local_flag="--local"; shift ;;
+      --create-vault) create=yes; shift ;;
+      *) squad_fail 2 "usage: lore map [--root <dir>] [--name <n>] [--local] [--create-vault]" ;;
+    esac
+  done
+  [ -n "$root" ] || root="$PWD"
+  [ -d "$root" ] || squad_fail 2 "root is not a directory: $root"
+  # shellcheck disable=SC2046
+  resolved="$(cd "$root" && bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)" || squad_fail 20 "path resolution failed"
+  vault="$(printf '%s\n' "$resolved" | sed -n 's/^VAULT_PATH=//p')"
+  pr_root="$(printf '%s\n' "$resolved" | sed -n 's/^PROJECT_ROOT=//p')"
+  disp="$(printf '%s\n' "$resolved" | sed -n 's/^DISPLAY_NAME=//p')"
+  [ -n "$vault" ] || squad_fail 20 "no vault path resolved"
+  [ -n "$pr_root" ] || pr_root="$(cd "$root" && pwd -P)"
+  if [ -d "$vault" ] && [ "$(cd "$vault" && pwd -P)" = "$(cd "$pr_root" && pwd -P)" ]; then
+    squad_fail 2 "the vault is not a project: run lore map from a project directory"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    squad_emit NEED jq; squad_fail 10 "jq is required to write the mapping"
+  fi
+  if [ ! -d "$vault" ]; then
+    if [ "$create" != yes ]; then
+      squad_emit NEED vault; squad_fail 10 "no vault at $vault; rerun with --create-vault to create it"
+    fi
+    mkdir -p "$vault" || squad_fail 20 "cannot create $vault"
+    git -C "$vault" init -q -b main 2>/dev/null || git -C "$vault" init -q || squad_fail 20 "git init failed in $vault"
+    printf '{\n  "projects": {},\n  "state_dir": ".lore"\n}\n' > "$vault/lore-config.json" || squad_fail 20 "cannot write config"
+    bash "$HOOK_DIR/lore-map.sh" ignore --vault "$vault" >/dev/null || exit $?
+    # A subprocess: cmd_commit holds the lock until this process exits.
+    bash "$HOOK_DIR/lore" commit --vault "$vault" --project vault --message "[lore] create vault" --paths lore-config.json .gitignore >/dev/null || exit $?
+  fi
+  if [ -n "$disp" ] && [ -z "$name" ]; then
+    n="$disp"
+    squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit NAME "$n"
+    if [ "$(jq -r --arg k "$pr_root" '.projects[$k] // empty' "$vault/lore-config.local.json" 2>/dev/null)" = "$n" ]; then
+      squad_emit TARGET local
+    else
+      squad_emit TARGET tracked
+    fi
+    squad_emit ROOT "$pr_root"
+    return 0
+  fi
+  cand="${name:-$(basename "$pr_root")}"
+  ctx=""
+  for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
+    [ -f "$f" ] || continue
+    ctx="$(jq -r --arg k "$pr_root" '.context[$k] // empty' "$f" 2>/dev/null)"
+    [ -n "$ctx" ] && break
+  done
+  if [ -d "$pr_root/.squad" ] && [ "$ctx" != repo ]; then
+    squad_emit NEED migrate; squad_fail 10 "legacy $pr_root/.squad needs migration: run /lore start"
+  fi
+  if [ -e "$vault/projects/$cand" ]; then
+    n=2
+    while [ -e "$vault/projects/$cand-$n" ]; do n=$((n + 1)); done
+    squad_emit NEED name; squad_emit SUGGESTED "$cand-$n"
+    squad_fail 10 "a vault project named $cand already exists"
+  fi
+  # lore-map.sh set picks the target, makes a local-only name ignored before the
+  # folder exists, and commits a tracked mapping through `commit`; its exit
+  # (10 refusal, 20 failure) is surfaced as is, never reported as applied.
+  local out rc=0
+  out="$(bash "$HOOK_DIR/lore-map.sh" set --vault "$vault" --root "$pr_root" --name "$cand" $local_flag)" || rc=$?
+  [ "$rc" = 0 ] || exit "$rc"
+  mkdir -p "$vault/projects/$cand" || squad_fail 20 "cannot create projects/$cand"
+  squad_emit OUTCOME "$(printf '%s\n' "$out" | sed -n 's/^OUTCOME=//p')"
+  squad_emit CHANGED "$(printf '%s\n' "$out" | sed -n 's/^CHANGED=//p')"
+  squad_emit NAME "$cand"
+  squad_emit TARGET "$(printf '%s\n' "$out" | sed -n 's/^TARGET=//p')"
+  squad_emit ROOT "$pr_root"
+  squad_emit TRACKED_FILES "$(printf '%s\n' "$out" | sed -n 's/^TRACKED_FILES=//p')"
+}
+
 cmd_version() {
   local pj="$HOOK_DIR/../.claude-plugin/plugin.json" v=""
   [ -f "$pj" ] || pj="$HOOK_DIR/../plugin.json"
@@ -148,6 +234,7 @@ cmd_version() {
 VERB="${1:-}"; [ $# -gt 0 ] && shift
 case "$VERB" in
   commit)  cmd_commit "$@" ;;
+  map)     cmd_map "$@" ;;
   version) cmd_version ;;
-  *) squad_fail 2 "usage: lore <commit|version> ..." ;;
+  *) squad_fail 2 "usage: lore <commit|map|version> ..." ;;
 esac
