@@ -182,7 +182,6 @@ squad_vault_default_branch() {
 # default branch, or when no default branch can be told.
 squad_vault_offdefault() {
   local cur def
-  squad_vault_main_local "$1" && return 1
   def="$(squad_vault_default_branch "$1")" || return 1
   cur="$(git -C "$1" symbolic-ref -q --short HEAD 2>/dev/null)"
   [ "$cur" != "$def" ]
@@ -494,7 +493,7 @@ squad_vault_finish() {
 # commits ahead of the default branch and its tip is not the remote's. Always 1 for
 # a local-only vault.
 squad_vault_push_pending() {
-  local v="$1" cd st b base def
+  local v="$1" cd st b base def wt _wtb
   squad_vault_main_local "$v" && return 1
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 1
   cd="$(git -C "$v" rev-parse --git-common-dir 2>/dev/null)" || return 1
@@ -505,6 +504,14 @@ squad_vault_push_pending() {
   base="$def"; git -C "$v" rev-parse -q --verify "origin/$def" >/dev/null 2>&1 && base="origin/$def"
   while IFS= read -r b; do
     [ -n "$b" ] || continue
+    # what squad_vault_finish skips: branches without a session worktree, local-only projects
+    ls -d "$v"/.claude/worktrees/lore-* >/dev/null 2>&1 || break
+    _wtb=0
+    for wt in "$v"/.claude/worktrees/lore-*; do
+      [ "$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)" = "$b" ] && _wtb=1
+    done
+    [ "$_wtb" = 1 ] || continue
+    squad_local_only "$v" "$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')" && continue
     [ "$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)" -gt 0 ] || continue
     [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] || return 0
   done <<EOL

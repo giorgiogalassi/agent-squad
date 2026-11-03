@@ -101,22 +101,34 @@ sleep 1
 ( cd "$P" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 2
 check "caught up: still once" 1 "$(remote_has "$V" d "$BR")"
 
-# 5. vault_main local-only: local commit, unchanged, gh never called
+# 5. vault_main local-only: local commit on the default branch, unchanged, gh never called
 mkvault e '"vault_main":"local-only"'; V="$TMPROOT/e"; : > "$GH_LOG"
-git -C "$V" switch -qc side
 write "$V" one
-check "local-only: committed on the current branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
+check "local-only: committed on the default branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
 out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; rc=$?
 check "local-only: exit 0" 0 "$rc"; has "local-only: unchanged" "OUTCOME=unchanged" "$out"
 check "local-only: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
-check "local-only: nothing on remote" 0 "$(git -C "$V" ls-remote origin 'refs/heads/side' | wc -l | tr -d ' ')"
+check "local-only: nothing on remote" 0 "$(remote_has "$V" e "$BR")"
+# off the default branch: refused (exit 10), branch untouched
+git -C "$V" switch -qc side; h="$(git -C "$V" rev-parse HEAD)"
+echo two >> "$V/projects/proj/decisions.md"
+bash "$LORE" commit --vault "$V" --project proj --message "[lore] two" --paths projects/proj/decisions.md >/dev/null 2>&1; rc=$?
+check "local-only off default: exit 10" 10 "$rc"; check "local-only off default: no commit" "$h" "$(git -C "$V" rev-parse HEAD)"
 
-# 6. detect: no origin behaves as local-only
+# 6. detect: no origin behaves as local-only (still guarded)
 mkvault f "" 0; V="$TMPROOT/f"; : > "$GH_LOG"
-git -C "$V" switch -qc side
 write "$V" one
-check "no origin: committed on the current branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
+check "no origin: committed on the default branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
 out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; has "no origin: unchanged" "OUTCOME=unchanged" "$out"
 check "no origin: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+git -C "$V" switch -qc side; h="$(git -C "$V" rev-parse HEAD)"
+echo two >> "$V/projects/proj/decisions.md"
+bash "$LORE" commit --vault "$V" --project proj --message "[lore] two" --paths projects/proj/decisions.md >/dev/null 2>&1; rc=$?
+check "no origin off default: exit 10" 10 "$rc"; check "no origin off default: no commit" "$h" "$(git -C "$V" rev-parse HEAD)"
+
+# 7. push_pending skips what finish skips: a lore branch with no session worktree
+mkvault g '"vault_main":"pr"'; V="$TMPROOT/g"
+git -C "$V" branch lore/orphan-2026-01-01; git -C "$V" checkout -q lore/orphan-2026-01-01; echo z > "$V/z"; git -C "$V" add z; git -C "$V" commit -qm z; git -C "$V" checkout -q main
+( . "$HOOKS/squad-common.sh"; squad_vault_push_pending "$V" ); check "pending: worktree-less lore branch is not pending" 1 "$?"
 
 echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]

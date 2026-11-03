@@ -501,7 +501,9 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   starts `lore push` detached; the result is in `<vault>/.git/lore-push-status`
   (`AT`, `OUTCOME=applied|unchanged|failed`, `REASON`). SessionStart shows a failed
   push and retries it in the background, also when a `lore/*` branch is ahead of its
-  remote tip (a push cut short at SessionEnd).
+  remote tip (a push cut short at SessionEnd); this is also what `/lore recover`
+  relies on, it has no push step of its own. A local-only vault still commits on its
+  default branch only: off it, writes are refused as in any direct-mode vault.
 - Optional `"vault_main": "pr"` in `lore-config.json` (`"direct"` forces
   today's behaviour; absent = detected from a `pre-push` hook that rejects
   `refs/heads/main`): Lore commits its vault writes on `lore/<project>-<date>`,

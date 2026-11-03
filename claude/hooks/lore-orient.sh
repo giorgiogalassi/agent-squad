@@ -452,9 +452,14 @@ if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/d
   _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
   if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
     _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
-    SIGNALS="${SIGNALS}Last vault push failed${_vreason:+: $_vreason}; retrying in the background (lore push)${NL}"
+    _vfail="Last vault push failed${_vreason:+: $_vreason}"
+  else _vfail=""
   fi
-  ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1
+  if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
+  else
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
+  fi
 fi
 if [ -f "$SQUAD_DIR/architecture.md" ]; then
   ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"

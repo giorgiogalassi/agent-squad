@@ -199,8 +199,6 @@ check "off-main direct vault: no lore branch" "" "$(git -C "$V" branch --list 'l
 
 # detect via pre-push hook evaluates the default branch, not the current one
 V="$TMP/o3"; mkvault "$V"; git -C "$V" branch -M main
-# a vault with no origin is local-only (#427); this one has a remote, so it is not
-git -C "$V" remote add origin "$TMP/o3-origin.git"
 printf '#!/bin/sh\nwhile read l s r t; do [ "$r" = refs/heads/main ] && exit 1; done\nexit 0\n' > "$V/.git/hooks/pre-push"; chmod +x "$V/.git/hooks/pre-push"
 git -C "$V" switch -qc lore/other-2026-11-03
 echo x > "$V/projects/p/a.md"
