@@ -83,6 +83,13 @@ run ren --base origin/main
 check "A-9 rename is delete+add, no 'old => new' path" "0/2/0" \
   "$RC/$(key FILES)/$(python3 -c 'import json,sys; print(sum("=>" in f["path"] for f in json.load(open(sys.argv[1]))["files"]))' "$SD/atlas/ren/atlas.json")"
 
+# A local branch strictly behind origin/<head> (stale checkout): origin wins.
+( cd "$CL" && git branch stale feat && git checkout -q --detach feat && echo g > g && git add g && git commit -qm more \
+  && git update-ref refs/remotes/origin/stale HEAD && git checkout -q main )
+run stale
+check "A-9b stale local head: gathers the newer origin head" "0/origin/stale/2" "$RC/$(key HEAD)/$(key COMMITS)"
+rm -rf "$SD/atlas/stale"; ( cd "$CL" && git branch -qD stale && git update-ref -d refs/remotes/origin/stale )
+
 # One bad batch row does not abort the others.
 cp "$SD/ralph-run.md" "$TMPROOT/ralph-run.bak"
 echo '| #8 | no-such-branch | main |' >> "$SD/ralph-run.md"
@@ -91,6 +98,24 @@ check "A-10 batch: bad row reported, good row done" "0/2/1/1" \
   "$RC/$(key ROWS)/$(key ROWS_FAILED)/$(printf '%s\n' "$OUT" | grep -c '^ROW_ERROR=')"
 check "A-10b batch: the good row still emitted its block" "1" "$(printf '%s\n' "$OUT" | grep -c '^ID=feat$')"
 cp "$TMPROOT/ralph-run.bak" "$SD/ralph-run.md"
+
+# A row that fails after writing files leaves no partial output behind.
+rm -rf "$SD/atlas/feat"
+( cd "$CL" && python3 - "$ATLAS" "$SD/atlas/feat" <<'EOPY'
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("sa", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+class Boom:
+    def format(self, **k): raise OSError("disk full")
+m.BRIEF_TEMPLATE = Boom()
+try:
+    m.cmd_gather(["--batch"])
+except m.Fatal:
+    pass
+print("LEFT" if os.path.exists(sys.argv[2]) else "CLEAN")
+EOPY
+) > "$TMPROOT/partial.out" 2>/dev/null
+check "A-10c batch: failed row leaves no partial atlas dir" "CLEAN" "$(grep -E '^(LEFT|CLEAN)$' "$TMPROOT/partial.out")"
 
 # scout-cache.md and forge/output.yaml come from $SQUAD_DIR, not the vault.
 RS="$TMPROOT/repo-squad"; mkdir -p "$RS/forge"

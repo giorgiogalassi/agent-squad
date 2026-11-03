@@ -69,6 +69,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from urllib.parse import quote
@@ -323,11 +324,19 @@ def ref_exists(root, ref):
 
 def head_ref(root, head):
     """The PR head as a ref: the local branch, else origin/<head> (a head
-    that was never checked out locally), else None."""
-    for cand in (head, "refs/remotes/origin/" + head):
-        if ref_exists(root, cand):
-            return cand if cand == head else "origin/" + head
-    return None
+    that was never checked out locally), else None. When both exist and the
+    local branch is strictly behind origin (a stale checkout of a PR that
+    moved on), origin wins; local wins when ahead or diverged."""
+    local = ref_exists(root, head)
+    remote = ref_exists(root, "refs/remotes/origin/" + head)
+    if local and remote:
+        behind = subprocess.run(["git", "merge-base", "--is-ancestor", head, "origin/" + head], cwd=root,
+                                capture_output=True).returncode == 0
+        same = git("rev-parse", head, cwd=root).strip() == git("rev-parse", "origin/" + head, cwd=root).strip()
+        return "origin/" + head if behind and not same else head
+    if local:
+        return head
+    return "origin/" + head if remote else None
 
 
 def base_ref(root, base, override=None):
@@ -414,11 +423,15 @@ def gather_one(spec, paths, sd, base_override=None):
             "verdicts": verdicts_for(sd, spec["issue"]),
             "body": spec.get("body", "")}
     out = os.path.join(sd, "atlas", spec["id"])
+    fresh = not os.path.exists(out)
+    wrote = []
     try:
         os.makedirs(out, exist_ok=True)
+        wrote.append(os.path.join(out, "atlas.json")) if not os.path.exists(os.path.join(out, "atlas.json")) else None
         changed = lib.write_if_changed(os.path.join(out, "atlas.json"), json.dumps(data, indent=1))
         brief = os.path.join(out, "brief.md")
         if not os.path.exists(brief):
+            wrote.append(brief)
             with open(brief, "w", encoding="utf-8") as f:
                 f.write(BRIEF_TEMPLATE.format(
                     title=data["title"], base=base, head=head, commits=len(commits),
@@ -428,6 +441,15 @@ def gather_one(spec, paths, sd, base_override=None):
         else:
             header = refresh_brief(brief, data, sum(x["added"] for x in files), sum(x["deleted"] for x in files))
     except OSError as e:
+        # No partial output next to the error: drop what this run created.
+        if fresh:
+            shutil.rmtree(out, ignore_errors=True)
+        else:
+            for w in wrote:
+                try:
+                    os.remove(w)
+                except OSError:
+                    pass
         fail(20, "cannot write atlas: %s" % e)
     emit("ID", data["id"])
     emit("OUTCOME", "applied" if changed else "unchanged")

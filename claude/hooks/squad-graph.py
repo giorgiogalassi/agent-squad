@@ -610,8 +610,11 @@ def discover(snap, scout_path=None):
     skips = [glob_re(p[1:]) for p in patterns if p.startswith("!")] if patterns else []
     cands, pkg_names = [], {}
     for d in sorted(mf):
-        if d == "" or any(seg in NON_UNIT_DIRS for seg in d.split("/")):
+        if d == "":
             continue
+        # Declared units (project.json, workspace-glob package.json) count wherever
+        # they live; NON_UNIT_DIRS only filters manifests nothing declares.
+        non_unit = any(seg in NON_UNIT_DIRS for seg in d.split("/"))
         ms = mf[d]
         name, declared = None, False
         if "project.json" in ms:
@@ -627,6 +630,8 @@ def discover(snap, scout_path=None):
             declared = globs is not None
             name = (load_json(texts.get(ms["package.json"])) or {}).get("name")
         elif "project.json" not in ms and not py:
+            continue
+        if non_unit and not declared:
             continue
         cands.append((d, name, declared))
     # A single-package repo (own root manifest) keeps its layout unless the nested
