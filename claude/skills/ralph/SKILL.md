@@ -38,6 +38,9 @@ the cap of Phase 2e; missing means 2; `0` means the same as `--no-review`). Miss
 **Flags.**
 - `--no-review`: skip Phase 2e for the whole batch; the batch then runs
   exactly as it did before review existed.
+- `--atlas`: opt-in. After an issue's review ends `APPROVED` (step 3 of
+  Phase 2e), run the Atlas flow for its PR (see 2f). Off by default; a
+  batch without the flag behaves exactly as before.
 - `--review-context "<text>"`: write the text to
   `.squad/review-context.md` for this batch (if the file exists, show it
   and ask before overwriting). Without the flag, an existing
@@ -500,7 +503,8 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    - `APPROVED`, or `COMMENT` with nothing blocking: done, no Cody run.
      Count the round, `squad-progress.sh append`
      `[ID] review: <verdict> r<N>` (for `COMMENT`, add the observations
-     in one line so the human gate sees them), mark `resolved`.
+     in one line so the human gate sees them), mark `resolved`. Verdict
+     `APPROVED` with `--atlas`: run 2f before the next issue.
    - `INCOMPLETE` (Reven names what it did not read): not a fix request
      and not yet a round. Re-run Reven once per review round with
      `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
@@ -548,6 +552,17 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
 Update the `ralph-run.md` row (`run-row`) after every review and fix round.
 Ralph never merges.
 
+### 2f. Atlas (only with `--atlas`; best-effort)
+
+For an issue that ended `APPROVED`, connected mode, invoke the `atlas`
+skill on its PR number (branch name in detached mode), so it gathers the
+change, fills `brief.md` and renders the page. Record the page path the
+render prints (`HTML`) for the Phase 3 report. Atlas never changes the
+issue's state, labels or `ralph-run.md` row. A failure of any kind
+(gather, brief or render exits non-zero, the skill is missing) is noted
+for the report as `[ID] atlas failed: <reason>` and the batch continues;
+Atlas never escalates, retries or fails the batch.
+
 ## Phase 3: end of batch report
 
 Detached: first set `Status: executed` in the batch file. Set `Status: complete` with `squad-progress.sh run-status`.
@@ -558,6 +573,7 @@ Detached: first set `Status: executed` in the batch file. Set `Status: complete`
   Needs review: [#14, ...]   (own line; omit when empty)
   Reviewed:  [#12 APPROVED r1, #14 APPROVED r2, #15 needs-review r2]   (omit with --no-review)
   In review: [#12, #14, ...]
+  Atlas:     [#12 <page path>, #14 failed: <reason>]   (only with --atlas)
   Escalated: [#13] -- <reason>
   Skipped:   [#15] -- blocked by escalated issue
 

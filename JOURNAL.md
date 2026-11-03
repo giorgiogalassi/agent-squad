@@ -1829,3 +1829,20 @@ claude/
 
 `PLATFORM_DIFFERENCES.md` is kept only as a short historical note; it no
 longer documents an active second tree.
+
+### Iteration 41: Atlas leftovers (#416)
+
+- *Ralph `--atlas`.* Opt-in; after an `APPROVED` review Ralph runs the Atlas
+  flow for the PR and lists the page in the report. An Atlas failure is
+  reported and never fails the batch.
+- *Declared units win.* `discover()` dropped an Nx `project.json` or a
+  workspace-glob package under `examples/`; `NON_UNIT_DIRS` now only filters
+  manifests nothing declares.
+- *No partial output.* A `gather --batch` row that fails while writing removes
+  what it created.
+- *Live run (PR #412, merged, base = first parent of the merge):* gather and
+  render in under a second, page 24.7 KB (was about 270 KB), all nine brief
+  sections filled, no external resource. It surfaced one bug: `gather` took a
+  stale local branch over a newer `origin/<head>` and compared 1 commit
+  instead of 7; origin now wins when the local branch is strictly behind. A
+  merged PR needs `--base <merge>^1`, since its head is already in the base.

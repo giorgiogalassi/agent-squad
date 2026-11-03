@@ -350,6 +350,22 @@ check "G-17 subcommand -h exits 0" "0" "$?"
 check "I-1 mixed default + named import records the default too" "True True" "$(pymod '
 r=m.imports_in("ts","import D, { a } from \"./x\";\nimport { b } from \"./y\";\n")
 print(("*" in r[0][1] and "a" in r[0][1]), r[1][1]=={"b"})')"
+check "I-2 import type D, { a }: default recorded like import D, { a }" "True" "$(pymod '
+r=m.imports_in("ts","import type D, { a } from \"./x\";\nimport type { b } from \"./y\";\n")
+print(("*" in r[0][1] and "a" in r[0][1]) and r[1][1]=={"b"})')"
+
+# Declared units win over NON_UNIT_DIRS; undeclared manifests there stay dropped.
+D="$TMPROOT/decl"; git init -q -b main "$D"
+printf '{"name":"root","workspaces":["examples/*"]}\n' | w "$D/package.json"
+printf '{"name":"demo"}\n' | w "$D/examples/demo/package.json"
+printf 'export const a = 1;\n' | w "$D/examples/demo/index.js"
+printf '{"name":"stray"}\n' | w "$D/fixtures/x/package.json"
+printf '{"name":"nxp"}\n' | w "$D/examples/nxp/project.json"
+printf 'export const n = 1;\n' | w "$D/examples/nxp/index.js"
+commit "$D" base
+python3 "$GRAPH" extract --root "$D" --ref HEAD --level unit --out "$TMPROOT/out/decl.json" >/dev/null 2>&1
+check "DU-1 declared units under examples/ are manifest units, undeclared fixtures/ is not" "manifest ['examples/demo', 'examples/nxp']" \
+  "$(pj "$TMPROOT/out/decl.json" 'd["unit_source"]+" "+str(sorted(g["id"] for g in d["groups"]))')"
 
 # ------------------------------------------------------- check and event
 # Planned graphs are intent (Forge); `check` compares them with a `diff`.
