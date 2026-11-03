@@ -198,7 +198,8 @@ OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
 [ -n "$UNMAPPED_HINT" ] && OUTPUT="${OUTPUT}${UNMAPPED_HINT}${NL}${NL}"
 
 if [ -f "$STATUS" ]; then
-  OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS")${NL}"
+  # Third-party lines (notes, checkpoints from other plugins) come out as one fenced data block (#426).
+  OUTPUT="${OUTPUT}### Last recorded status${NL}$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && squad_fence_render status "$STATUS" || echo "(status withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
   # Older versions live in the vault's git history (the checkpoints commit them).
   OUTPUT="${OUTPUT}Previous versions: git -C $VAULT log --oneline -- projects/$DISPLAY/status.md${NL}"
 else
@@ -434,7 +435,7 @@ if [ -f "$STATE/progress.txt" ]; then
 fi
 
 if [ -f "$STATE/session.log" ]; then
-  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$STATE/session.log")${NL}"
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$STATE/session.log" | ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_fence_render log - ))${NL}"
 fi
 
 # Staleness and budget signals. Each line is omitted when not applicable.
