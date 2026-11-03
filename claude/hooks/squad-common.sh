@@ -496,7 +496,12 @@ squad_emit() {
 # section itself is replaced by the block). Fence length beats the longest
 # backtick run in the content, so a line cannot close the fence early. No third
 # party lines: plain pass-through, no block. Always returns 0.
-SQUAD_FIRST_PARTY="${SQUAD_FIRST_PARTY:-agent-squad lore claude-code cody ralph reven}"
+# SOURCE is self-declared by whoever writes the event, so SQUAD_FIRST_PARTY is a
+# rendering rule (what is shown inline vs fenced), not a trust boundary: a plugin
+# can claim a first-party name. Lines with no `[source]` prefix count as first-party
+# and stay in place: the squad's own writers and older vault lines carry none, and
+# fencing them would hide the squad's state.
+SQUAD_FIRST_PARTY="${SQUAD_FIRST_PARTY:-agent-squad lore claude-code cody ralph reven archy atlas chisel forge retro seed}"
 squad_fence_render() {
   awk -v mode="$1" -v fp="$SQUAD_FIRST_PARTY" '
     function src(l,  m, p) {

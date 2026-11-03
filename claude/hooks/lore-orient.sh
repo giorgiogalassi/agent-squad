@@ -435,7 +435,7 @@ if [ -f "$STATE/progress.txt" ]; then
 fi
 
 if [ -f "$STATE/session.log" ]; then
-  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$STATE/session.log" | ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_fence_render log - ))${NL}"
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && { tail -n 5 "$STATE/session.log" | squad_fence_render log -; } || echo "(session.log withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
 fi
 
 # Staleness and budget signals. Each line is omitted when not applicable.
