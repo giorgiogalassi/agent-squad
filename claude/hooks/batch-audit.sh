@@ -206,6 +206,6 @@ if [ "$AS" = open ]; then
   PATHS="$PATHS projects/$PROJECT/status.md"
 fi
 # shellcheck disable=SC2086
-bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$PROJECT" --message "[lore] $(squad_public_name "$VAULT" "$PROJECT") audit $(date '+%Y-%m-%d %H:%M')" --paths $PATHS >/dev/null || true
+bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$PROJECT" --message "[lore] $(squad_public_name "$VAULT" "$PROJECT") audit $(date '+%Y-%m-%d %H:%M')" --paths $PATHS >/dev/null || squad_commit_fail $?
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ITEM_LINE "$LINE"
 exit 0

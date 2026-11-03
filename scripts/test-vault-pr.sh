@@ -338,5 +338,17 @@ finish "$V" FAKE_TRACKER_MODE=detached
 check "per-branch (c): dashed name, base branch not pushed" no "$(pushed "$V" "lore/my-app-$TODAY")"
 check "per-branch (c): -2 suffix branch not pushed" no "$(pushed "$V" "lore/my-app-$TODAY-2")"
 
+# Off the default branch (#422): lore-decide reports failure, not applied.
+mkvault od '{"vault_main": "direct"}'; V="$TMPROOT/od"; git -C "$V" switch -qc feature/x
+out="$(cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/lore-decide.sh" "One: first" 2>"$TMPROOT/od.err")"; rc=$?
+check "decide off main (direct): exit 10" 10 "$rc"
+check "decide off main (direct): not reported applied" 0 "$(printf '%s' "$out" | grep -c 'OUTCOME=applied')"
+check "decide off main (direct): no commit on the feature branch" 1 "$(git -C "$V" rev-list --count feature/x)"
+mkvault op '{"vault_main": "pr"}'; V="$TMPROOT/op"; git -C "$V" switch -qc lore/other-2026-11-03
+out="$(cd "$TMPROOT" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/lore-decide.sh" "One: first" 2>/dev/null)"; rc=$?
+check "decide off main (pr): exit 10" 10 "$rc"
+check "decide off main (pr): not reported applied" 0 "$(printf '%s' "$out" | grep -c 'OUTCOME=applied')"
+check "decide off main (pr): other branch unchanged" 1 "$(git -C "$V" rev-list --count lore/other-2026-11-03)"
+
 echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]

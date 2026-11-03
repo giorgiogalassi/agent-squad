@@ -337,24 +337,39 @@ squad_vault_wt_existing() {
 # restores them in the main checkout and commits there, so main stays level with
 # origin. Never fails the caller; on a worktree failure the change stays uncommitted.
 squad_vault_commit() {
-  local v="$1" proj="$2" msg="$3" root="$1" wt p base ours bref cur off=0 _id=""
+  local v="$1" proj="$2" msg="$3" root="$1" wt wtw p base ours bref cur off=0 _id=""
   shift 3
   git -C "$v" rev-parse --git-dir >/dev/null 2>&1 || return 0
   squad_vault_offdefault "$v" && off=1
   if ! squad_local_only "$v" "$proj" && squad_vault_pr_mode_any "$v"; then
+    if [ "$off" = 1 ]; then
+      # Off the default branch (#422) the checkout belongs to another session: only
+      # paths already written in a session worktree (squad_vault_wroot) are
+      # committed. A path written in the checkout is refused, and the checkout's
+      # files are never read, copied, restored or removed. Checked before any
+      # worktree is created.
+      cur="$(git -C "$v" symbolic-ref -q --short HEAD 2>/dev/null)"; bref="$(squad_vault_default_branch "$v")"
+      for p in "$@"; do
+        [ -n "$(git -C "$v" status --porcelain -- "$p" 2>/dev/null)" ] || continue
+        wtw=0
+        while IFS= read -r wt; do
+          [ -n "$wt" ] && [ -n "$(git -C "$wt" status --porcelain -- "$p" 2>/dev/null)" ] && wtw=1
+        done < <(squad_vault_wt_existing "$v" "$proj" 2>/dev/null)
+        if [ "$wtw" = 0 ]; then
+          echo "squad: vault checkout is on ${cur:-a detached HEAD}, not $bref; $p not committed, checkout left untouched" >&2
+          return 10
+        fi
+      done
+    fi
     wt="$(squad_vault_wt "$v" "$proj")" || { echo "squad: vault worktree failed; change left uncommitted" >&2; return 1; }
-    # Off the default branch (#422) the checkout belongs to another session: the merge
-    # base is the default branch, never the checkout's HEAD, and a path the caller
-    # already wrote in the session worktree (squad_vault_wroot) is committed as is,
-    # leaving the checkout's copy alone. Only a path written in the checkout itself
-    # (lore commit, an interactive writer) is moved over and restored there.
-    bref=HEAD; [ "$off" = 1 ] && bref="$(squad_vault_default_branch "$v")"
+    if [ "$off" = 1 ]; then
+      :  # refusal already decided above
+    else
     base="$wt.base.$$"; ours="$wt.ours.$$"
     for p in "$@"; do
-      git -C "$v" show "$bref:$p" > "$base" 2>/dev/null || : > "$base"
-      if [ "$off" = 1 ] && [ -n "$(git -C "$wt" status --porcelain -- "$p" 2>/dev/null)" ]; then continue; fi
       [ -f "$v/$p" ] || continue
       mkdir -p "$(dirname "$wt/$p")"
+      git -C "$v" show "HEAD:$p" > "$base" 2>/dev/null || : > "$base"
       if [ -f "$wt/$p" ] && ! cmp -s "$wt/$p" "$base" && ! cmp -s "$wt/$p" "$v/$p"; then
         cp "$wt/$p" "$ours"
         if ! git merge-file -p "$ours" "$base" "$v/$p" > "$wt/$p" 2>/dev/null; then
@@ -371,6 +386,7 @@ squad_vault_commit() {
       if git -C "$v" cat-file -e "HEAD:$p" 2>/dev/null; then git -C "$v" checkout -q HEAD -- "$p" >/dev/null 2>&1; else rm -f "$v/$p"; fi
     done
     rm -f "$base" "$ours"
+    fi
     root="$wt"
   elif [ "$off" = 1 ] && ! squad_local_only "$v" "$proj"; then
     # Direct mode never commits on another session's branch (#422): exit 10.
@@ -385,6 +401,14 @@ squad_vault_commit() {
   # shellcheck disable=SC2086
   git -C "$root" $_id commit -q -m "$msg" -- "$@" >/dev/null 2>&1 || true
   return 0
+}
+
+# squad_commit_fail <rc>: a writer's `lore commit` call returned <rc>: exit 10 (refused,
+# off the default branch of a direct-mode vault) or 20 instead of reporting applied.
+# The written file stays in place, uncommitted; lore's stderr already names the reason.
+squad_commit_fail() {
+  [ "$1" = 0 ] && return 0
+  squad_fail "$([ "$1" = 10 ] && echo 10 || echo 20)" "vault commit not made (lore commit exit $1); the written file is left uncommitted"
 }
 
 # squad_vault_wroot <vault> <project>: the directory a writer must edit before

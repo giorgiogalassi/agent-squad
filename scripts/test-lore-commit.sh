@@ -177,14 +177,15 @@ mkvault_pr() {  # mkvault_pr <dir> <branch-to-checkout>
 }
 V="$TMP/o1"; mkvault_pr "$V" lore/other-2026-11-03
 other="$(git -C "$V" rev-parse HEAD)"
-echo more >> "$V/projects/p/progress.txt"
-out="$(bash "$LORE" commit --vault "$V" --project p --message "[lore] off main" --paths projects/p/progress.txt 2>&1)"; rc=$?
-check "off-main PR vault: exit 0" 0 "$rc"
-check "off-main PR vault: checkout branch unchanged" "$other" "$(git -C "$V" rev-parse lore/other-2026-11-03)"
+echo "other session wip" >> "$V/projects/p/progress.txt"       # dirty, written in the checkout
+cp "$V/projects/p/progress.txt" "$TMP/o1.before"
+out="$(bash "$LORE" commit --vault "$V" --project p --message "[lore] off main" --paths projects/p/progress.txt 2>"$TMP/err")"; rc=$?
+check "off-main PR vault: checkout-written path exits 10" 10 "$rc"
+has "off-main PR vault: reason names branch and default" "lore/other-2026-11-03, not main" "$(cat "$TMP/err")"
+cmp -s "$TMP/o1.before" "$V/projects/p/progress.txt" && ok "off-main PR vault: checkout file byte-identical" || bad "off-main PR vault: checkout file changed"
+check "off-main PR vault: other branch unchanged" "$other" "$(git -C "$V" rev-parse lore/other-2026-11-03)"
+check "off-main PR vault: no session branch commit" "" "$(git -C "$V" log --oneline main..lore/p-$D 2>/dev/null)"
 check "off-main PR vault: still on the other branch" "lore/other-2026-11-03" "$(git -C "$V" symbolic-ref --short HEAD)"
-check "off-main PR vault: commit on the project session branch" "[lore] off main" "$(git -C "$V" log -1 --format=%s "lore/p-$D")"
-check "off-main PR vault: session branch based on main" "prog" "$(git -C "$V" log -1 --skip=1 --format=%s "lore/p-$D")"
-check "off-main PR vault: checkout working copy matches its branch" "" "$(git -C "$V" status --porcelain --untracked-files=no)"
 
 V="$TMP/o2"; mkvault "$V"; git -C "$V" branch -M main
 printf '{"vault_main": "direct"}\n' > "$V/lore-config.json"; git -C "$V" add -A; git -C "$V" commit -qm cfg
@@ -202,9 +203,9 @@ printf '#!/bin/sh\nwhile read l s r t; do [ "$r" = refs/heads/main ] && exit 1; 
 git -C "$V" switch -qc lore/other-2026-11-03
 echo x > "$V/projects/p/a.md"
 bash "$LORE" commit --vault "$V" --project p --message "[lore] detect" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
-check "off-main detected PR vault: exit 0" 0 "$rc"
-check "off-main detected PR vault: committed on session branch" "[lore] detect" "$(git -C "$V" log -1 --format=%s "lore/p-$D")"
+check "off-main detected PR vault: checkout-written path exits 10" 10 "$rc"
 check "off-main detected PR vault: other branch untouched" "init" "$(git -C "$V" log -1 --format=%s lore/other-2026-11-03)"
+check "off-main detected PR vault: no session branch" "" "$(git -C "$V" branch --list "lore/p-*")"
 
 # on main: unchanged (PR mode commits on the session branch, direct on main)
 V="$TMP/o4"; mkvault_pr "$V" main-tmp; git -C "$V" switch -q main

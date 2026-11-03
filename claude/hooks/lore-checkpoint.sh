@@ -153,6 +153,8 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 [ -n "${DISPLAY:-}" ] || bail "no vault mapping for this project, skipped"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
+[ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
+
 # The vault checkout sits on another session's branch (#422): its files are not ours
 # to write, so nothing is written or committed here (a direct-mode vault would refuse
 # anyway). Only the session branches already written are pushed.
@@ -161,7 +163,6 @@ if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$V
   bail "vault checkout is not on its default branch, skipped"
 fi
 
-[ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
 
 # Denial pass: every session end (main checkout and worktrees), independent of
 # the status rebuild below.
