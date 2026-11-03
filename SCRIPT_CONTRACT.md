@@ -67,6 +67,13 @@ running plugin's version (from `plugin.json`) is the same or newer than the
 installed one, so an older plugin never downgrades it. It is not added to
 PATH; the session env exports `LORE_BIN` (the shim path) and `LORE_STATE_DIR`.
 
+If the plugin directory the shim points at is gone, `lore event` still exits 0
+silently (the client contract); every other verb prints `lore: plugin not found
+at <dir>` to stderr and exits 20. The newest SessionStart wins between a dev
+checkout and the released plugin at the same version (same version replaces);
+an older dev checkout never replaces a newer shim. `LORE_BIN` is not exported
+when neither `XDG_DATA_HOME` nor `HOME` is set.
+
 Clients (other plugins' hooks, headless runs) call it as below. A missing shim
 means do nothing: exit 0, write nothing.
 

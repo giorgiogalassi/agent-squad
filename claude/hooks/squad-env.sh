@@ -48,7 +48,9 @@ squote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 # installed shim (a numeric compare, never a downgrade); replaced with temp + mv
 # in the same directory so a concurrent execution never sees a partial file.
 # Not added to PATH. Best-effort: every failure is silent.
-LORE_BIN_PATH="${XDG_DATA_HOME:-${HOME:-}/.local/share}/lore/bin/lore"
+LORE_BIN_PATH=""
+if [ -n "${XDG_DATA_HOME:-}" ]; then LORE_BIN_PATH="$XDG_DATA_HOME/lore/bin/lore"
+elif [ -n "${HOME:-}" ]; then LORE_BIN_PATH="$HOME/.local/share/lore/bin/lore"; fi
 
 # ver_ge <a> <b>: 0 when dotted numeric version a >= b (missing parts are 0).
 ver_ge() {
@@ -66,7 +68,7 @@ ver_ge() {
 
 install_lore_shim() {
   local plugin_dir pj v cur shim_dir tmp
-  [ -n "${HOME:-}${XDG_DATA_HOME:-}" ] || return 0
+  [ -n "$LORE_BIN_PATH" ] || return 0
   plugin_dir="$(cd "$HOOK_DIR/.." 2>/dev/null && pwd)" || return 0
   [ -f "$HOOK_DIR/lore" ] || return 0
   pj="$plugin_dir/.claude-plugin/plugin.json"
@@ -85,7 +87,10 @@ install_lore_shim() {
     printf '# Installed by the agent-squad plugin (SessionStart). Do not edit.\n'
     printf 'LORE_PLUGIN_DIR=%s\n' "$(squote "$plugin_dir")"
     printf "LORE_VERSION='%s'\n" "$v"
-    printf '[ -x "$LORE_PLUGIN_DIR/hooks/lore" ] || exit 0\n'
+    printf 'if [ ! -x "$LORE_PLUGIN_DIR/hooks/lore" ]; then\n'
+    printf '  [ "${1:-}" = event ] && exit 0\n'
+    printf '  echo "lore: plugin not found at $LORE_PLUGIN_DIR" >&2; exit 20\n'
+    printf 'fi\n'
     printf 'exec "$LORE_PLUGIN_DIR/hooks/lore" "$@"\n'
   } > "$tmp" 2>/dev/null && chmod 755 "$tmp" 2>/dev/null && mv -f "$tmp" "$LORE_BIN_PATH" 2>/dev/null
   rm -f "$tmp" 2>/dev/null
@@ -108,7 +113,6 @@ while IFS='=' read -r _k _v; do
 done < <(bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ "$GOT_ROOT" = 1 ] || exit 0
 
-
 # Drop earlier lines for our own keys (idempotence), keep everything else.
 TMP="$(mktemp "${TMPDIR:-/tmp}/squad-env.XXXXXX" 2>/dev/null)" || exit 0
 if [ -f "$CLAUDE_ENV_FILE" ]; then
@@ -122,7 +126,7 @@ fi
   printf 'export SQUAD_TRACKER_MODE=%s\n' "$(squote "$V_MODE")"
   printf 'export SQUAD_STATE_DIR=%s\n' "$(squote "$V_STATE")"
   printf 'export LORE_STATE_DIR=%s\n' "$(squote "$V_STATE")"
-  printf 'export LORE_BIN=%s\n' "$(squote "$LORE_BIN_PATH")"
+  [ -z "$LORE_BIN_PATH" ] || printf 'export LORE_BIN=%s\n' "$(squote "$LORE_BIN_PATH")"
 } >> "$TMP"
 cat "$TMP" > "$CLAUDE_ENV_FILE" 2>/dev/null
 rm -f "$TMP"

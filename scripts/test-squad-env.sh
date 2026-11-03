@@ -106,6 +106,20 @@ wait "$LP"
 grep -q "^LORE_VERSION='$PLUGIN_VERSION'$" "$SHIM" && ok "shim: replacement completed" || bad "shim: replacement incomplete"
 ls "$XDG_DATA_HOME/lore/bin" | grep -qv '^lore$' && bad "shim: temp file left behind" || ok "shim: no temp file left behind"
 
+# Shim whose plugin dir is gone: `event` exits 0 silently, other verbs exit 20.
+mv "$TMPROOT/hooks/lore" "$TMPROOT/hooks/lore.off"
+out="$("$SHIM" event x 2>&1; echo "rc=$?")"
+[ "$out" = "rc=0" ] && ok "shim: plugin gone, event exits 0 silently" || bad "shim: event '$out'"
+out="$("$SHIM" commit 2>&1; echo "rc=$?")"
+case "$out" in "lore: plugin not found at "*"rc=20") ok "shim: plugin gone, other verb exits 20 with a stderr line" ;; *) bad "shim: commit '$out'" ;; esac
+mv "$TMPROOT/hooks/lore.off" "$TMPROOT/hooks/lore"
+
+# No HOME and no XDG_DATA_HOME: no shim, no LORE_BIN.
+NE="$TMPROOT/envnone"; : > "$NE"
+(cd "$TMPROOT" && printf '{"cwd":"%s"}' "$PROJ" | env -u HOME -u XDG_DATA_HOME SECOND_BRAIN_PATH="$VAULT" CLAUDE_ENV_FILE="$NE" bash "$H")
+grep -q '^export LORE_BIN=' "$NE" && bad "env: LORE_BIN exported without HOME/XDG" || ok "env: no LORE_BIN without HOME/XDG"
+grep -q '^export SQUAD_DIR=' "$NE" && ok "env: other values still exported" || bad "env: nothing exported without HOME"
+
 # Documented client snippet: no shim and no LORE_BIN is a silent no-op.
 snip='"${LORE_BIN:-$HOME/.local/share/lore/bin/lore}" "$@"'
 out="$(env -i HOME="$TMPROOT/nohome" PATH="$PATH" bash -c '
