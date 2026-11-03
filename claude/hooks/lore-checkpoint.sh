@@ -157,6 +157,14 @@ STATUS="$VAULT/projects/$DISPLAY/status.md"
 # waits long on the vault lock.
 [ "$MODE" = hook ] && { LORE_LOCK_WAIT=5 SECOND_BRAIN_PATH="$VAULT" bash "$HOOK_DIR/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true; }
 
+# The vault checkout sits on another session's branch (#422): its files are not ours
+# to write, so nothing is written or committed here (a direct-mode vault would refuse
+# anyway). Only the session branches already written are pushed.
+if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_offdefault "$VAULT"; then
+  [ "$MODE" = hook ] && squad_vault_finish "$VAULT" >/dev/null 2>&1
+  bail "vault checkout is not on its default branch, skipped"
+fi
+
 [ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
 
 # Denial pass: every session end (main checkout and worktrees), independent of

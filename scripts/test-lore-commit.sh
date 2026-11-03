@@ -217,5 +217,25 @@ echo y > "$V/projects/p/a.md"
 bash "$LORE" commit --vault "$V" --project p --message "[lore] on main direct" --paths projects/p/a.md >/dev/null 2>&1
 check "on main direct vault: commit on main" "[lore] on main direct" "$(git -C "$V" log -1 --format=%s main)"
 
+# dirty checkout off main: the other session's edit survives and is not committed (#422)
+V="$TMP/o6"; mkvault_pr "$V" lore/other-2026-11-03
+echo "other wip" >> "$V/projects/p/progress.txt"        # other session's uncommitted edit
+mkdir -p "$V/.claude/worktrees"
+wt="$(. "$REPO_ROOT/claude/hooks/squad-common.sh"; squad_vault_wroot "$V" p)"
+echo "ours" >> "$wt/projects/p/progress.txt"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] dirty" --paths projects/p/progress.txt >/dev/null 2>&1
+check "dirty off-main: other session's edit survives" "other wip" "$(tail -1 "$V/projects/p/progress.txt")"
+check "dirty off-main: their edit not in our commit" 0 "$(git -C "$V" show "lore/p-$D:projects/p/progress.txt" | grep -c 'other wip')"
+check "dirty off-main: our edit committed" "ours" "$(git -C "$V" show "lore/p-$D:projects/p/progress.txt" | tail -1)"
+
+# a vault whose default branch is not main/master still commits there (origin/HEAD)
+V="$TMP/o7"; mkvault "$V"; git -C "$V" branch -M trunk
+git init -q --bare -b trunk "$TMP/o7-origin.git"; git -C "$V" remote add origin "$TMP/o7-origin.git"
+git -C "$V" push -q -u origin trunk 2>/dev/null; git -C "$V" remote set-head origin trunk >/dev/null 2>&1
+echo y > "$V/projects/p/a.md"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] on trunk" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
+check "trunk default: exit 0" 0 "$rc"
+check "trunk default: commit on trunk" "[lore] on trunk" "$(git -C "$V" log -1 --format=%s trunk)"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

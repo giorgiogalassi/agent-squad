@@ -42,6 +42,15 @@ squad_resolve || squad_fail 20 "path resolution failed"
 V="$VAULT_PATH"; PROJ="${DISPLAY_NAME:-$(basename "$PROJECT_ROOT")}"
 REL_DIR="projects/$PROJ/$(squad_state_name "$V")"
 
+# W: where writes land. The vault, or (checkout off its default branch, #422) the
+# session worktree; a direct-mode vault off its default branch refuses writes.
+W="$V"
+if [ "$VERB" != where ] && ! squad_local_only "$V" "$PROJ" 2>/dev/null; then
+  W="$(squad_vault_wroot "$V" "$PROJ")"; _wrc=$?
+  [ "$_wrc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing written"
+  [ "$_wrc" = 0 ] && [ -n "$W" ] || squad_fail 20 "vault worktree failed"
+fi
+
 relof() {
   case "$1" in
     progress) echo "$REL_DIR/progress.txt" ;; log) echo "$REL_DIR/session.log" ;;
@@ -53,8 +62,10 @@ relof() {
 current() {
   local wt
   if [ -d "$V/.git" ] || git -C "$V" rev-parse --git-dir >/dev/null 2>&1; then
-    if ! squad_local_only "$V" "$PROJ" && squad_vault_pr_mode "$V"; then
-      wt="$(squad_vault_wt "$V" "$PROJ" 2>/dev/null)" && [ -f "$wt/$1" ] && { printf '%s' "$wt/$1"; return; }
+    if ! squad_local_only "$V" "$PROJ" && squad_vault_pr_mode_any "$V"; then
+      wt="$(squad_vault_wt "$V" "$PROJ" 2>/dev/null)" || wt=""
+      # Off the default branch the checkout's copy is another session's: never the answer.
+      [ -n "$wt" ] && { [ -f "$wt/$1" ] || squad_vault_offdefault "$V"; } && { printf '%s' "$wt/$1"; return; }
     fi
   fi
   printf '%s' "$V/$1"
@@ -62,6 +73,11 @@ current() {
 # stage <rel>: make the vault path hold the current content, ready to edit.
 stage() {
   local cur base merged; cur="$(current "$1")"
+  if [ "$W" != "$V" ]; then  # off the default branch: edit the worktree copy only
+    mkdir -p "$(dirname "$W/$1")" || return 1
+    [ -f "$W/$1" ] || : > "$W/$1"
+    return 0
+  fi
   mkdir -p "$(dirname "$V/$1")" || return 1
   if [ "$cur" != "$V/$1" ]; then
     if [ -f "$V/$1" ] && [ -f "$cur" ] && ! git -C "$V" diff --quiet HEAD -- "$1" 2>/dev/null; then
@@ -92,7 +108,12 @@ stage() {
   fi
   [ -f "$V/$1" ] || : > "$V/$1"
 }
-commit() { squad_vault_commit "$V" "$PROJ" "lore: ralph state $(squad_public_name "$V" "$PROJ")" "$1"; }
+commit() {
+  local rc=0
+  squad_vault_commit "$V" "$PROJ" "lore: ralph state $(squad_public_name "$V" "$PROJ")" "$1" || rc=$?
+  [ "$rc" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing committed"
+  return 0
+}
 done_changed() { squad_emit OUTCOME applied; squad_emit CHANGED yes; exit 0; }
 unchanged() { squad_emit OUTCOME unchanged; squad_emit CHANGED no; exit 0; }
 norm_id() { local i="${1#\[}"; i="${i%\]}"; i="${i#\#}"; printf '%s' "$i"; }
@@ -116,16 +137,16 @@ case "$VERB" in
     fi
     stage "$REL" || squad_fail 20 "cannot stage $REL"
     # A file without a final newline would glue the new line onto the last one.
-    [ -s "$V/$REL" ] && [ -n "$(tail -c 1 "$V/$REL")" ] && echo >> "$V/$REL"
-    printf '%s\n' "$OUTLINE" >> "$V/$REL" || squad_fail 20 "cannot write $REL"
+    [ -s "$W/$REL" ] && [ -n "$(tail -c 1 "$W/$REL")" ] && echo >> "$W/$REL"
+    printf '%s\n' "$OUTLINE" >> "$W/$REL" || squad_fail 20 "cannot write $REL"
     commit "$REL"; done_changed ;;
 
   log)
     [ -n "$LINE" ] || squad_fail 2 "log requires --line"
     REL="$(relof log)"
     stage "$REL" || squad_fail 20 "cannot stage $REL"
-    [ -s "$V/$REL" ] && [ -n "$(tail -c 1 "$V/$REL")" ] && echo >> "$V/$REL"
-    printf '[%s] [%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$SKILL" "$LINE" >> "$V/$REL" || squad_fail 20 "cannot write $REL"
+    [ -s "$W/$REL" ] && [ -n "$(tail -c 1 "$W/$REL")" ] && echo >> "$W/$REL"
+    printf '[%s] [%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$SKILL" "$LINE" >> "$W/$REL" || squad_fail 20 "cannot write $REL"
     commit "$REL"; done_changed ;;
 
   run-write)
@@ -133,7 +154,7 @@ case "$VERB" in
     [ -f "$FROM" ] && [ -r "$FROM" ] || squad_fail 10 "source file missing or unreadable: $FROM"
     REL="$(relof run)"; CUR="$(current "$REL")"
     [ -f "$CUR" ] && cmp -s "$CUR" "$FROM" && unchanged
-    mkdir -p "$(dirname "$V/$REL")" && cp "$FROM" "$V/$REL" || squad_fail 20 "cannot write $REL"
+    mkdir -p "$(dirname "$W/$REL")" && cp "$FROM" "$W/$REL" || squad_fail 20 "cannot write $REL"
     commit "$REL"; done_changed ;;
 
   run-status)
@@ -143,8 +164,8 @@ case "$VERB" in
     grep -q '^Status:' "$CUR" || squad_fail 10 "ralph-run.md has no Status line"
     grep -qxF "Status: $VALUE" "$CUR" && unchanged
     stage "$REL" || squad_fail 20 "cannot stage $REL"
-    T="$V/$REL.tmp.$$"
-    sed "s|^Status:.*|Status: $(printf '%s' "$VALUE" | sed 's/[\\&|]/\\&/g')|" "$V/$REL" > "$T" && mv "$T" "$V/$REL" || squad_fail 20 "cannot write $REL"
+    T="$W/$REL.tmp.$$"
+    sed "s|^Status:.*|Status: $(printf '%s' "$VALUE" | sed 's/[\\&|]/\\&/g')|" "$W/$REL" > "$T" && mv "$T" "$W/$REL" || squad_fail 20 "cannot write $REL"
     commit "$REL"; done_changed ;;
 
   run-row)
@@ -152,7 +173,7 @@ case "$VERB" in
     REL="$(relof run)"; CUR="$(current "$REL")"; ID="$(norm_id "$ISSUE")"
     [ -f "$CUR" ] || squad_fail 10 "ralph-run.md does not exist"
     stage "$REL" || squad_fail 20 "cannot stage $REL"
-    T="$V/$REL.tmp.$$"; cp "$V/$REL" "$T" || squad_fail 20 "cannot write $REL"
+    T="$W/$REL.tmp.$$"; cp "$W/$REL" "$T" || squad_fail 20 "cannot write $REL"
     for kv in "${SETS[@]}"; do
       COL="${kv%%=*}"; VAL="${kv#*=}"
       case "$kv" in *=*) ;; *) rm -f "$T"; squad_fail 2 "--set needs Column=value" ;; esac
@@ -181,7 +202,7 @@ case "$VERB" in
       fi
       mv "$T.o" "$T"
     done
-    if cmp -s "$T" "$CUR"; then rm -f "$T"; [ "$CUR" = "$V/$REL" ] || rm -f "$V/$REL"; unchanged; fi
-    mv "$T" "$V/$REL" || squad_fail 20 "cannot write $REL"
+    if cmp -s "$T" "$CUR"; then rm -f "$T"; [ "$CUR" = "$W/$REL" ] || rm -f "$W/$REL"; unchanged; fi
+    mv "$T" "$W/$REL" || squad_fail 20 "cannot write $REL"
     commit "$REL"; done_changed ;;
 esac
