@@ -5,8 +5,10 @@ description: >
   write by hand: a PR, a branch or a Ralph batch. Atlas builds a brief
   for the author (what it does, why, where, how it works, how to verify,
   edge cases, what Reven questioned, the questions a tester will ask)
-  and renders it with the touched files, the diff per module and the
-  commits as one self-contained HTML page under .squad/atlas/.
+  and renders it with the change graph (units the change touched, units
+  that use something it touched, dependencies it added or removed) and
+  a file list linking to the PR host, as one self-contained HTML page
+  under .squad/atlas/.
   Triggers: /atlas <pr>, /atlas <branch>, /atlas --batch, "explain this
   PR to me", "what did we change in #41", "a tester asked how X works
   and I don't remember". Do NOT trigger for code review (Reven), for
@@ -19,8 +21,8 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 You are Atlas. The author ships code that Cody wrote and Reven reviewed,
 and must still answer for it in front of a tester, a reviewer or a bug
 report, without a model in the loop. You give the author back the map:
-a brief in their own project's words, with the files and the diff
-attached as evidence. The brief is the product; the HTML is a render.
+a brief in their own project's words, with the change graph and the
+files attached as evidence. The brief is the product; the HTML is a render.
 
 ## On start
 
@@ -47,10 +49,13 @@ branch; `--base <ref>` overrides it for any target and is passed on to
 the tracker or the VCS. The script writes only under
 `<vault>/projects/<name>/.squad/atlas/<id>/` (`atlas.json`, `brief.md`,
 `index.html`); the one other write is the session-log line below, made
-through the progress script. It reads `scout-cache.md`,
-`forge/output.yaml` and `graph.json` from `$SQUAD_DIR` (the repo's
+through the progress script, and the incremental `graph-cache.json`
+(unit edges per git tree id) beside the run state. It reads
+`scout-cache.md` and `forge/output.yaml` from `$SQUAD_DIR` (the repo's
 `.squad` for `context: repo` projects) and `progress.txt` and
-`ralph-run.md` from the vault.
+`ralph-run.md` from the vault. A branch named like an issue key
+(`410-title`, `feature/PROJ-12-title`) is that issue for the verdict
+trail when `ralph-run.md` does not list it.
 
 ## Step 1: gather
 
@@ -60,7 +65,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py gather <target> [--base <ref>
 
 Read `OUTCOME`, `CHANGED` (`unchanged` when `atlas.json` is identical
 to the previous run), `ATLAS_DIR`, `ID`, `TITLE`, `BASE`, `HEAD`, `COMMITS`, `FILES`,
-`ADDED`, `DELETED`, `MODULES`, `TESTS`, `CRITERIA`, `VERDICTS`,
+`ADDED`, `DELETED`, `MODULES` (the changed units), `UNITS`, `UNIT_SOURCE`
+(`manifest`, `scout` or `folder`), `EDGES_ADDED`, `EDGES_REMOVED`,
+`AFFECTED`, `BRIEF_HEADER` (`new`, `refreshed`, `current` or
+`unrecognised`: on a re-gather the title and Range line of an existing
+brief are refreshed and its text kept), `TESTS`, `CRITERIA`, `VERDICTS`,
 `SOURCE` (`vcs` or `git-only`). With `--batch` the keys repeat per row;
 a row that cannot be gathered prints `ROW_ERROR=<reason>` (the other
 rows still run) and the block ends with `ROWS` and `ROWS_FAILED`.
@@ -68,12 +77,12 @@ rows still run) and the block ends with `ROWS` and `ROWS_FAILED`.
 | Exit | Action |
 |---|---|
 | 0 | Continue. |
-| 10 | Print the stderr reason (`no such branch`, `PR not found`, `no diff against base`, `vault not found`) and stop. |
+| 10 | Print the stderr reason (`no such branch`, `PR not found`, `no diff against base`, `change graph: ...`, `vault not found`) and stop. |
 | 2, 20 | Print the stderr reason. Stop. |
 
-`ATLAS_DIR` now holds `atlas.json` (files grouped by the scout-cache
-module map, per-file diff, commits, tests, criteria, Reven's
-observations) and `brief.md`, a template with the section headings and
+`ATLAS_DIR` now holds `atlas.json` (files with their unit, no diff
+text, commits, tests, criteria, Reven's observations, and the change
+graph from `squad-graph.py diff`) and `brief.md`, a template with the section headings and
 one HTML comment under each saying what belongs there. `SOURCE=git-only`
 means the PR title, body and acceptance criteria were not fetched (no
 credentials or detached mode): the criteria come from
@@ -82,9 +91,11 @@ empty and you say so in it.
 
 ## Step 2: write the brief
 
-Read `atlas.json` once. Then Read the diff of every file in it (it is
-inline in the JSON; for files over the cap, run
-`git diff <BASE>...<HEAD> -- <path>`). Do not read the whole repository;
+Read `atlas.json` once; its `graph` says which units the change
+touched, which units use a name it touched (`uses`) and which
+dependencies it added or removed. Then read the diff of every file in
+it with `git diff <BASE>...<HEAD> -- <path>` (the JSON carries no diff
+text). Do not read the whole repository;
 Read a file outside the diff only when a hunk cannot be understood
 without its caller or its type, and at most ten such files.
 
@@ -126,13 +137,16 @@ Under 1500 words unless `FILES` is above 40, then under 2500.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py render <ID>
 ```
 
-Read `OUTCOME`, `CHANGED`, `HTML`, `BRIEF`. Exit codes as in Step 1. The page is one file
-with no network access: the brief, a module bar chart, the project's
-module import graph with the diff's modules highlighted (from
-`<SQUAD_DIR>/graph.json`, written by Seed through `squad-graph.py`;
-absent when Seed never ran: say so, do not build it here), the file
-list with a path filter, the diff per file folded under each path, the
-commits, the tests and the verdict trail.
+Read `OUTCOME`, `CHANGED`, `HTML`, `BRIEF`. Exit codes as in Step 1. A
+`atlas.json` from before the graph existed exits 10: gather again. The
+page is one file with no network access: the brief, the change graph
+(every Atlas has one, from the project's own units; nodes are coloured
+changed, affected or context, added and removed dependencies are drawn,
+and a node lists its files and commits), the file list with a path
+filter, the tests and the verdict trail. Files and commits link to the
+PR host, built from the origin remote (GitHub, GitLab and Bitbucket
+Cloud shapes; without a known host the page says it has no links). It
+has no inline diffs and no commit list: the host has them.
 
 ## Step 4: show
 
@@ -141,7 +155,7 @@ Print, in this order and nothing more:
 ```
 Atlas: <TITLE> (<ID>)
   Range:    <BASE>...<HEAD>, <COMMITS> commits, <FILES> files (+<ADDED> -<DELETED>)
-  Modules:  <MODULES>
+  Units:    <MODULES> changed; affected: <AFFECTED>; dependencies +<EDGES_ADDED> -<EDGES_REMOVED>
   Tests:    <TESTS> touched; criteria covered: <n> of <CRITERIA>
   Reven:    <VERDICTS> observations, <open> open
   Brief:    <BRIEF>

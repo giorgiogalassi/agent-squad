@@ -174,25 +174,29 @@ else.
 
 ## Phase 4b: extract the import graph
 
-After `scout-cache.md` is written (its Module map names the groups):
+After `scout-cache.md` is written. Units come from the project's own
+manifests and workspaces; the Module map is only the fallback when the
+project declares none (then folders):
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py extract
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html
 ```
 
-Read `GRAPH`, `FILES`, `EDGES`, `MODULES`, `CYCLES`, `UNTESTED_MODULES`
-from `extract`, `OUT` from `render`.
+Read `GRAPH`, `FILES`, `EDGES`, `MODULES`, `CYCLES`, `UNTESTED_MODULES`,
+`UNIT_SOURCE` (`manifest`, `scout` or `folder`) from `extract`, `OUT`
+from `render`.
 
 | Exit | Action |
 |---|---|
 | 0 | Continue; mention `CYCLES` and `UNTESTED_MODULES` in the closing summary when above 0. |
 | 10, 20 | Print the stderr reason and continue; the graph is optional. |
 
-`graph.json` is the one import graph of the project, read later by Atlas
-to show where a diff falls; `graph.html` is its page. Never write either
-by hand and never describe the graph in `architecture.md`: the Module
-map is the prose, the graph is the code's.
+`graph.json` is the one import graph of the project (format in the
+`squad-graph.py` docstring); `graph.html` is its page. Atlas does not
+read it: it asks `squad-graph.py diff` for the change graph of each
+range. Never write either by hand and never describe the graph in
+`architecture.md`: the Module map is the prose, the graph is the code's.
 
 ## Phase 5: ensure .squad directories
 

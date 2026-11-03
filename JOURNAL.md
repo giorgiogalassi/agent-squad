@@ -1460,6 +1460,42 @@ skills was a soft aside after triage, tied to nothing in the output.
 > the same standing as vault rules, and like rules every loaded one must be
 > accounted for in the output.
 
+### Iteration 40: Atlas shows the change graph, not a second git history (#410)
+
+**Problem:** on a real 49-file PR the Atlas page weighed about 270 KB and
+repeated what `git log` and `git diff` already say (every diff, every
+commit), while the one thing git cannot show, the structure the change
+touches, was optional and wrong: the scout-cache Module map did not match
+the diff's paths when the project sat below the repository root, so the
+whole PR landed in one module.
+
+**Change (#410, on the #411 contract):**
+
+- *One script owns the graph.* `squad-graph.py` gains `diff` (merge-base to
+  head: changed units, added and removed dependencies, affected units with
+  the names they use) and `extract --ref/--level`, behind one `graph.json`
+  format: a unit is a group, `level` says whether nodes and edges are
+  files or units. Units come from the project's manifests and workspaces,
+  edges through its own path aliases (every `paths` target), the Module
+  map only as fallback, folders as the last resort.
+- *Affected means a touched declaration.* The -U0 hunks of each changed
+  file select the top-level declarations they touch; an importer is
+  affected only when it pulls one of those names. Per file it over-reported
+  (9 affected units became 3 on the reference PR).
+- *Incremental cache.* Unit edges are cached in the vault per unit, keyed
+  by the git tree id of its folder; a warm run only reads what changed.
+- *Lighter page.* Brief, graph (changed, affected, context nodes; the node
+  panel lists files and commits) and a file list; files and commits link
+  to the host from the origin remote. Everything embedded is escaped
+  (PR-controlled file names and subjects), links are https only.
+- *Fixed in passing.* A branch named like an issue key is that issue for
+  the verdict trail; re-gathering refreshes the brief's title and Range
+  line instead of keeping a stale one.
+
+> **Key decision:** the graph is computed once, by one script, from the
+> project's own declarations; Atlas, and later Forge, Chisel and Reven
+> (#411), read its output and never extract anything themselves.
+
 ---
 
 ## 3. Final Architecture

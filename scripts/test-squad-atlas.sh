@@ -102,6 +102,67 @@ SQUAD_DIR="$RS" run feat
 check "A-12 context: repo: module map and criteria from SQUAD_DIR" "f/2" "$(key MODULES)/$(key CRITERIA)"
 check "A-12b atlas/ output stays in the vault" "yes" "$([ -f "$SD/atlas/feat/atlas.json" ] && echo yes)"
 
+# ---------------------------------------------------------------- #410
+# Graph page: mandatory graph, host links from the remote, no inline diffs,
+# no commit list; issue key from the branch name; stale brief header.
+arender() { OUT="$(cd "$CL" && python3 "$ATLAS" render "$@" 2>"$TMPROOT/err")"; RC=$?; }
+( cd "$CL" && git remote set-url origin git@bitbucket.org:ws/demo.git )
+run feat
+GATHER="$OUT"
+arender feat
+PAGE="$SD/atlas/feat/index.html"
+check "P-1 render exits 0" "0/applied" "$RC/$(key OUTCOME)"
+check "P-2 the page carries the change graph" "1/1" "$(grep -c 'id="cg-data"' "$PAGE")/$(grep -c 'id="graph"' "$PAGE")"
+check "P-3 no inline diffs, no commit list" "0/0/0" \
+  "$(grep -c '<pre class="diff"' "$PAGE")/$(grep -c '^@@\|<span class="a">' "$PAGE")/$(grep -ci 'id="commits"\|<h2>Commits' "$PAGE")"
+check "P-4 file list links to the host (Bitbucket shape)" "1" \
+  "$([ "$(grep -c 'https://bitbucket.org/ws/demo/src/[0-9a-f]\{40\}/f"' "$PAGE")" -ge 1 ] && echo 1)"
+check "P-5 node data carries a Bitbucket commit link" "1" "$([ "$(grep -c 'https://bitbucket.org/ws/demo/commits/' "$PAGE")" -ge 1 ] && echo 1)"
+check "P-6 page stays small" "yes" "$([ "$(wc -c < "$PAGE")" -lt 40000 ] && echo yes)"
+check "P-7 graph and units keys from gather" "folder/1/(root)" "$(OUT="$GATHER"; key UNIT_SOURCE)/$(OUT="$GATHER"; key UNITS)/$(OUT="$GATHER"; key MODULES)"
+python3 - "$SD/atlas/feat/atlas.json" "$TMPROOT/no-graph.json" <<'EOPY'
+import json, sys
+d = json.load(open(sys.argv[1])); d.pop("graph"); json.dump(d, open(sys.argv[2], "w"))
+EOPY
+mkdir -p "$SD/atlas/old" && cp "$TMPROOT/no-graph.json" "$SD/atlas/old/atlas.json" && cp "$SD/atlas/feat/brief.md" "$SD/atlas/old/brief.md"
+arender old
+check "P-8 atlas.json without a graph: render rc 10 (the graph is mandatory)" "10" "$RC"
+( cd "$CL" && git remote set-url origin "$UP" )
+run feat
+arender feat
+check "P-9 unknown host: page renders, no links, says why" "0/0/1" \
+  "$RC/$(grep -c 'href="https' "$PAGE")/$(grep -c 'No links' "$PAGE")"
+
+# Branch name as the issue key; hostile commit subject and file name.
+( cd "$CL" && git checkout -q -b 410-thing origin/main && printf 'x\n' > '<b>x.txt' && git add -A \
+  && git commit -qm '</script><script>alert(1)</script>' && git checkout -q main )
+printf '[#410] review: COMMENT r1 (obs: rename the helper)\n' >> "$SD/progress.txt"
+run 410-thing
+check "P-10 branch named like an issue key: verdicts collected" "1" "$(key VERDICTS)"
+arender 410-thing
+EVIL="$SD/atlas/410-thing/index.html"
+check "P-11 no raw closing script tag, no raw element from a file name" "0/0" \
+  "$(grep -c '</script><script>alert' "$EVIL")/$(grep -c '<b>x.txt' "$EVIL")"
+
+# Re-gather keeps the brief text, refreshes a stale header.
+printf '\nMY ANALYSIS\n' >> "$SD/atlas/feat/brief.md"
+run feat --base main
+check "P-12 stale Range line refreshed, text kept" "refreshed/1/1" \
+  "$(key BRIEF_HEADER)/$(grep -c 'MY ANALYSIS' "$SD/atlas/feat/brief.md")/$(grep -c 'Range: `main\.\.\.feat`' "$SD/atlas/feat/brief.md")"
+run feat --base main
+check "P-13 header already current" "current" "$(key BRIEF_HEADER)"
+sed -i.bak 's/^Range:.*$/Range: gone/' "$SD/atlas/feat/brief.md" && rm "$SD/atlas/feat/brief.md.bak"
+run feat --base main
+check "P-14 edited-away Range line: flagged, not overwritten" "unrecognised/1" "$(key BRIEF_HEADER)/$(grep -c '^Range: gone' "$SD/atlas/feat/brief.md")"
+
+# A project folder below the repository root: paths start with the prefix.
+( cd "$CL" && git checkout -q -b below origin/main && mkdir -p app/libs/a app/libs/b && printf '{"name":"a"}\n' > app/libs/a/project.json \
+  && printf '{"name":"b"}\n' > app/libs/b/project.json && printf 'export const a = 1;\n' > app/libs/a/x.ts && printf 'export const b = 1;\n' > app/libs/b/y.ts \
+  && echo outside > outside.txt && git add -A && git commit -qm below && git checkout -q main )
+mkdir -p "$CL/app"
+SQUAD_PROJECT_ROOT="$CL/app" run below
+check "P-15 below-root project: units grouped despite the repo-root prefix" "manifest/libs/a,libs/b" "$(key UNIT_SOURCE)/$(key MODULES)"
+
 ( cd "$CL" && git remote remove origin )
 run feat
 check "A-7 no origin: falls back to local main" "0/main/4" "$RC/$(key BASE)/$(key COMMITS)"

@@ -4,21 +4,27 @@
 Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
   gather <pr#|branch|--batch> [--base <ref>]
-                                Resolve the range, collect the diff per
-                                file grouped by the scout-cache module
-                                map, commits, tests touched, acceptance
-                                criteria and Reven's observations into
-                                .squad/atlas/<id>/atlas.json, and write
-                                brief.md from the section template when
-                                it does not exist yet.
+                                Resolve the range, collect the files (no
+                                diff text), commits, tests touched,
+                                acceptance criteria and Reven's
+                                observations, and the change graph from
+                                `squad-graph.py diff` (units, added and
+                                removed dependencies, affected units) into
+                                .squad/atlas/<id>/atlas.json. Writes
+                                brief.md from the section template when it
+                                does not exist yet; an existing brief keeps
+                                its text and gets its title and Range line
+                                refreshed (BRIEF_HEADER=refreshed|current|
+                                unrecognised).
   render <id>                   Read atlas.json + brief.md and write
                                 index.html: one file, no network, no
-                                external script. When <SQUAD_DIR>/graph.json
-                                exists (squad-graph.py extract, run by
-                                Seed), the page carries the module import
-                                graph with the diff's modules highlighted,
-                                drawn by squad-graph.py (one renderer for
-                                Seed and Atlas).
+                                external script. The page is the brief, the
+                                change graph (mandatory: every Atlas has
+                                one) and a file list; commits and files
+                                link to the PR host, built from the origin
+                                remote (GitHub, GitLab and Bitbucket Cloud
+                                shapes; no link when unknown). No inline
+                                diffs, no commit list.
 
 Range resolution:
   pr number   connected mode: `gh pr view` for head/base/title/body
@@ -36,9 +42,10 @@ Range resolution:
               --base <ref> overrides it as given, for every target.
               BASE= prints the ref actually compared against.
 
-Where files live: scout-cache.md, forge/output.yaml and graph.json are
-read from $SQUAD_DIR (the repo's .squad for `context: repo` projects);
-progress.txt, ralph-run.md and the atlas/ output stay in the vault's
+Where files live: scout-cache.md and forge/output.yaml are read from
+$SQUAD_DIR (the repo's .squad for `context: repo` projects);
+progress.txt, ralph-run.md, graph-cache.json (the incremental cache of
+unit edges) and the atlas/ output stay in the vault's
 projects/<name>/.squad. A head that exists only as origin/<head> is
 resolved like the base. In --batch a row that cannot be gathered is
 reported (ROW_ERROR) and the other rows still run.
@@ -46,7 +53,9 @@ reported (ROW_ERROR) and the other rows still run.
 Criteria: PR/issue body "Acceptance" section when fetched, else
 forge/output.yaml acceptance_criteria, else none.
 Verdicts: "[#ID] [date] review: <VERDICT> r<N> <anything>" lines of
-progress.txt for the issue that resolved into this PR or branch. The
+progress.txt for the issue that resolved into this PR or branch; a branch
+named like an issue key (`410-title`, `feature/PROJ-12-title`) is that
+issue when ralph-run.md does not list it. The
 observations are the text after "Obs:"/"obs:" when present, else the
 whole trailing text (one pair of surrounding parentheses dropped).
 
@@ -62,13 +71,15 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
 import squad_pylib as lib  # noqa: E402  (shared progress.txt parser)
 
-DIFF_CAP_LINES = 400
+BRANCH_KEY_RE = re.compile(r"^(?:[A-Za-z0-9_.-]+/)?(\d{1,6}|[A-Z][A-Z0-9]+-\d+)(?=[-_/]|$)")
+RANGE_RE = re.compile(r"^Range: `([^`]*)` \((\d+) commits, (\d+) files, \+(\d+) -(\d+)\)\. Written (\S+)\.$", re.M)
 RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
 
 BRIEF_TEMPLATE = """# Atlas brief: {title}
@@ -207,14 +218,21 @@ def _graph_module():
     return _GRAPH[0]
 
 
-def module_map(kd):
-    """The scout-cache Module map, parsed once by squad-graph.py so Seed,
-    Atlas and the graph agree on what a module is."""
-    return _graph_module().module_map(os.path.join(kd, "scout-cache.md"))
+def graph_diff(root, base, head, merge_base, kd, sd):
+    """The change graph from squad-graph.py (mandatory: failure is the caller's failure)."""
+    mod = _graph_module()
+    try:
+        return mod.build_diff(root, base, head, merge_base=merge_base,
+                              scout=os.path.join(kd, "scout-cache.md"),
+                              cache_path=os.path.join(sd, "graph-cache.json"))[0]
+    except mod.GraphError as e:
+        fail(e.code, "change graph: %s" % e.reason)
 
 
-def module_of(path, mods):
-    return _graph_module().group_of(path, mods)
+def branch_issue(name):
+    """An issue key at the start of a branch name (`410-title`, `feature/PROJ-12-x`), else None."""
+    m = BRANCH_KEY_RE.match(name or "")
+    return m.group(1) if m else None
 
 
 def criteria_from_text(body):
@@ -281,7 +299,8 @@ def resolve_target(target, paths, sd):
                 d = gh_json(["pr", "view", str(pr), "--json", "title,body,headRefName,baseRefName"])
                 return {"id": "pr-%d" % pr, "title": d.get("title") or "PR #%d" % pr,
                         "body": d.get("body") or "", "base": d["baseRefName"],
-                        "head": d["headRefName"], "issue": issue, "source": "vcs"}
+                        "head": d["headRefName"], "issue": issue or branch_issue(d["headRefName"]),
+                        "source": "vcs"}
             except (RuntimeError, KeyError, ValueError) as e:
                 sys.stderr.write("squad-atlas: gh: %s\n" % e)
         if issue is not None and issue in rows:
@@ -291,8 +310,8 @@ def resolve_target(target, paths, sd):
     # branch
     if head_ref(root, t) is None:
         fail(10, "no such branch: %s" % t)
-    issue = next((i for i, c in rows.items() if c[1] == t), None)
-    base = rows[issue][2] if issue is not None else default_branch(root)
+    issue = next((i for i, c in rows.items() if c[1] == t), None) or branch_issue(t)
+    base = rows[issue][2] if issue in rows else default_branch(root)
     return {"id": re.sub(r"[^A-Za-z0-9._-]+", "-", t), "title": t, "body": "", "base": base,
             "head": t, "issue": issue, "source": "git-only"}
 
@@ -325,6 +344,27 @@ def base_ref(root, base, override=None):
     fail(10, "no diff against base: neither origin/%s nor %s exists" % (base, base))
 
 
+def refresh_brief(path, data, added, deleted):
+    """Keep the brief's text; bring its title and Range line up to date.
+    -> refreshed | current | unrecognised (the Range line was edited away)."""
+    text = "\n".join(read_lines(path) or []) + "\n"
+    m = RANGE_RE.search(text)
+    if not m:
+        sys.stderr.write("squad-atlas: brief.md has no recognisable Range line; header not refreshed\n")
+        return "unrecognised"
+    want = (data["base"] + "..." + data["head"], str(len(data["commits"])), str(len(data["files"])), str(added), str(deleted))
+    new = text
+    if m.groups()[:5] != want:
+        line = "Range: `%s...%s` (%d commits, %d files, +%d -%d). Written %s." % (
+            data["base"], data["head"], len(data["commits"]), len(data["files"]), added, deleted, data["generated"])
+        new = text[:m.start()] + line + text[m.end():]
+    new = re.sub(r"^# Atlas brief: .*$", lambda _: "# Atlas brief: " + data["title"], new, count=1, flags=re.M)
+    if new == text:
+        return "current"
+    lib.write_if_changed(path, new)
+    return "refreshed"
+
+
 def gather_one(spec, paths, sd, base_override=None):
     root = paths["PROJECT_ROOT"]
     kd = knowledge_dir(paths)
@@ -346,18 +386,21 @@ def gather_one(spec, paths, sd, base_override=None):
             status[parts[-1]] = parts[0][0]
     if not numstat.strip():
         fail(10, "no diff against base: %s..%s is empty" % (base, head))
-    mods = module_map(kd)
-    test_re = _graph_module().TEST_RE
+    gmod = _graph_module()
+    doc = graph_diff(root, base, head, merge_base, kd, sd)
+    prefix, unit_of = doc["prefix"], {}
+    for g in doc["groups"]:
+        for f in g["files"]:
+            unit_of[prefix + f["path"]] = g["id"]
+            if f.get("from"):
+                unit_of[prefix + f["from"]] = g["id"]
     files = []
     for line in numstat.splitlines():
         a, d, path = line.split("\t", 2)
-        diff = git("diff", "--no-renames", "%s..%s" % (merge_base, head), "--", path, cwd=root, check=False)
-        lines = diff.splitlines()
-        capped = len(lines) > DIFF_CAP_LINES
         files.append({"path": path, "added": int(a) if a.isdigit() else 0,
                       "deleted": int(d) if d.isdigit() else 0, "status": status.get(path, "M"),
-                      "module": module_of(path, mods), "test": bool(test_re.search(path)),
-                      "diff": "\n".join(lines[:DIFF_CAP_LINES]), "capped": capped})
+                      "unit": unit_of.get(path) or ("(other)" if path.startswith(prefix) else "(outside project folder)"),
+                      "test": bool(gmod.TEST_RE.search(path))})
     commits = []
     for line in git("log", "--format=%h%x09%cs%x09%an%x09%s", "%s..%s" % (merge_base, head), cwd=root).splitlines():
         h, date, an, s = (line.split("\t", 3) + ["", "", ""])[:4]
@@ -366,8 +409,8 @@ def gather_one(spec, paths, sd, base_override=None):
     data = {"id": spec["id"], "title": spec["title"], "base": base, "head": head,
             "merge_base": merge_base[:12], "issue": spec["issue"], "source": spec["source"],
             "project": paths.get("DISPLAY_NAME"), "generated": dt.date.today().isoformat(),
-            "modules": {g["id"]: g["label"] for g in mods},
-            "files": files, "commits": commits, "criteria": criteria,
+            "head_sha": doc["head_sha"], "host": gmod.host_urls(git("remote", "get-url", "origin", cwd=root, check=False)),
+            "graph": doc, "files": files, "commits": commits, "criteria": criteria,
             "verdicts": verdicts_for(sd, spec["issue"]),
             "body": spec.get("body", "")}
     out = os.path.join(sd, "atlas", spec["id"])
@@ -381,6 +424,9 @@ def gather_one(spec, paths, sd, base_override=None):
                     title=data["title"], base=base, head=head, commits=len(commits),
                     files=len(files), added=sum(x["added"] for x in files),
                     deleted=sum(x["deleted"] for x in files), date=data["generated"]))
+            header = "new"
+        else:
+            header = refresh_brief(brief, data, sum(x["added"] for x in files), sum(x["deleted"] for x in files))
     except OSError as e:
         fail(20, "cannot write atlas: %s" % e)
     emit("ID", data["id"])
@@ -394,7 +440,13 @@ def gather_one(spec, paths, sd, base_override=None):
     emit("FILES", len(files))
     emit("ADDED", sum(x["added"] for x in files))
     emit("DELETED", sum(x["deleted"] for x in files))
-    emit("MODULES", ",".join(sorted({x["module"] for x in files})))
+    emit("MODULES", ",".join(g["id"] for g in doc["groups"] if g["state"] == "changed"))
+    emit("UNITS", len(doc["groups"]))
+    emit("UNIT_SOURCE", doc["unit_source"])
+    emit("EDGES_ADDED", sum(1 for e in doc["edges"] if e["kind"] == "added"))
+    emit("EDGES_REMOVED", sum(1 for e in doc["edges"] if e["kind"] == "removed"))
+    emit("AFFECTED", ",".join(g["id"] for g in doc["groups"] if g["state"] == "affected"))
+    emit("BRIEF_HEADER", header)
     emit("TESTS", sum(1 for x in files if x["test"]))
     emit("CRITERIA", len(criteria))
     emit("VERDICTS", sum(1 for v in data["verdicts"] if v["obs"]))
@@ -523,16 +575,14 @@ CSS = """
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14130f;--fg:#ece8df;--mut:#9f9a90;--line:#2b2924;--acc:#e0876a;--add:#7fc78a;--del:#f08a80;--code:#1f1d18}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif}
 header{padding:20px 16px;border-bottom:1px solid var(--line)}header h1{margin:0 0 4px;font-size:20px}header .meta{color:var(--mut);font-size:13px}
-nav{display:flex;gap:12px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px;position:sticky;top:0;background:var(--bg)}
+nav{display:flex;gap:12px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px;position:sticky;top:0;background:var(--bg);z-index:1}
 nav a{color:var(--acc);text-decoration:none}main{max-width:1100px;margin:0 auto;padding:16px}
 section{margin:0 0 32px}h2{font-size:17px;margin:24px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:15px;margin:16px 0 6px}
 code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre{background:var(--code);padding:10px;overflow:auto;border-radius:4px;font-size:12.5px;line-height:1.4}
 table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-.add{color:var(--add)}.del{color:var(--del)}.mut{color:var(--mut)}details{border:1px solid var(--line);border-radius:4px;margin:6px 0}
-summary{cursor:pointer;padding:6px 8px;font-family:ui-monospace,Menlo,monospace;font-size:13px}details pre{margin:0;border-radius:0 0 4px 4px}
-.diff .a{color:var(--add)}.diff .d{color:var(--del)}.diff .h{color:var(--acc)}input[type=search]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);margin:6px 0 10px}
-.bars text{font-size:12px;fill:var(--fg)}.bars rect{fill:var(--acc)}.bars .lab{fill:var(--mut)}.pill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;margin-right:4px}
-.brief p{max-width:75ch}.hidden{display:none}.gnode{cursor:pointer}.touched-row{border-left:3px solid var(--acc)}
+a{color:var(--acc)}.add{color:var(--add)}.del{color:var(--del)}.mut{color:var(--mut)}.hidden{display:none}
+input[type=search]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);margin:6px 0 10px}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;margin-right:4px}.brief p{max-width:75ch}
 """
 
 JS = """
@@ -540,81 +590,19 @@ JS = """
   var q=document.getElementById('q'); if(!q) return;
   q.addEventListener('input',function(){
     var v=q.value.toLowerCase();
-    document.querySelectorAll('#files details').forEach(function(d){
-      d.classList.toggle('hidden', v && d.dataset.path.toLowerCase().indexOf(v)<0);
-    });
-    document.querySelectorAll('#files h3').forEach(function(h){
-      var any=false, el=h.nextElementSibling;
-      while(el && el.tagName==='DETAILS'){ if(!el.classList.contains('hidden')) any=true; el=el.nextElementSibling; }
-      h.classList.toggle('hidden', !any);
+    document.querySelectorAll('#files tr[data-path]').forEach(function(r){
+      r.classList.toggle('hidden', v && r.dataset.path.toLowerCase().indexOf(v)<0);
     });
   });
 })();
 """
 
 
-GRAPH_JS = """
-(function(){
-  document.querySelectorAll('.gnode').forEach(function(g){
-    g.addEventListener('click',function(){
-      var m=g.dataset.module;
-      document.querySelectorAll('[data-files]').forEach(function(t){t.classList.toggle('hidden',t.dataset.files!==m);});
-      var el=document.getElementById('drill'); if(el) el.textContent='Files in '+m;
-    });
-  });
-})();
-"""
-
-
-def diff_html(text):
-    out = []
-    for line in text.splitlines():
-        cls = ""
-        if line.startswith("+++") or line.startswith("---"):
-            cls = "h"
-        elif line.startswith("@@"):
-            cls = "h"
-        elif line.startswith("+"):
-            cls = "a"
-        elif line.startswith("-"):
-            cls = "d"
-        out.append("<span class=\"%s\">%s</span>" % (cls, html.escape(line)) if cls else html.escape(line))
-    return "\n".join(out)
-
-
-def bars_svg(by_module):
-    items = sorted(by_module.items(), key=lambda kv: -(kv[1][0] + kv[1][1]))[:15]
-    if not items:
-        return ""
-    mx = max(a + d for _, (a, d, _) in items) or 1
-    w, rowh, labw = 900, 22, 260
-    h = rowh * len(items) + 10
-    parts = ["<svg class=\"bars\" viewBox=\"0 0 %d %d\" width=\"100%%\" role=\"img\" aria-label=\"lines changed per module\">" % (w, h)]
-    for i, (name, (a, d, n)) in enumerate(items):
-        y = i * rowh + 4
-        bw = int((w - labw - 120) * (a + d) / mx)
-        parts.append("<text x=\"0\" y=\"%d\">%s</text>" % (y + 15, html.escape(name[:34])))
-        parts.append("<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"14\" rx=\"2\"/>" % (labw, y + 3, max(bw, 2)))
-        parts.append("<text class=\"lab\" x=\"%d\" y=\"%d\">+%d -%d, %d files</text>" % (labw + bw + 6, y + 15, a, d, n))
-    parts.append("</svg>")
-    return "\n".join(parts)
-
-
-def graph_fragment(kd, atlas_json):
-    """Module graph section from squad-graph.py, or None when no graph.json."""
-    gpath = os.path.join(kd, "graph.json")
-    if not os.path.exists(gpath):
+def file_url(host, head_sha, path):
+    """Link to a file at the head commit on the PR host, or None."""
+    if not host or not head_sha:
         return None
-    try:
-        mod = _graph_module()
-        with open(gpath, encoding="utf-8") as f:
-            data = json.load(f)
-        ov = {"files": [x["path"] for x in atlas_json.get("files", [])], "title": atlas_json.get("title")}
-        frag, _ = mod.graph_section(data, ov, "")
-        return frag
-    except (OSError, ValueError, AttributeError, ImportError) as e:
-        sys.stderr.write("squad-atlas: graph section skipped: %s\n" % e)
-        return None
+    return _graph_module().safe_url(host["src"] + head_sha + "/" + quote(path))
 
 
 def cmd_render(argv):
@@ -628,18 +616,35 @@ def cmd_render(argv):
             data = json.load(f)
     except (OSError, ValueError):
         fail(10, "no atlas.json for %s; run gather first" % argv[0])
+    if not isinstance(data.get("graph"), dict):
+        fail(10, "atlas.json for %s has no change graph; run gather again" % argv[0])
     brief_path = os.path.join(adir, "brief.md")
     brief = "\n".join(read_lines(brief_path) or [])
     if not brief.strip():
         fail(10, "brief.md is empty")
 
-    files = data["files"]
-    by_module = {}
-    for x in files:
-        a, d, n = by_module.get(x["module"], (0, 0, 0))
-        by_module[x["module"]] = (a + x["added"], d + x["deleted"], n + 1)
+    files, host, head_sha = data["files"], data.get("host"), data.get("head_sha") or ""
     added = sum(x["added"] for x in files)
     deleted = sum(x["deleted"] for x in files)
+    graph = data["graph"]
+    label = dict((g["id"], g["label"]) for g in graph["groups"])
+    by_unit = {}
+    for x in files:
+        by_unit.setdefault(x.get("unit") or x.get("module") or "(other)", []).append(x)
+
+    rows = []
+    for unit in sorted(by_unit, key=lambda u: (-sum(f["added"] + f["deleted"] for f in by_unit[u]), u)):
+        for x in sorted(by_unit[unit], key=lambda f: f["path"]):
+            url = file_url(host, head_sha, x["path"])
+            name = html.escape(x["path"])
+            cell = "<a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">%s</a>" % (html.escape(url, quote=True), name) if url else name
+            rows.append("<tr data-path=\"%s\"><td>%s</td><td>%s</td><td><code>%s</code>%s</td><td><span class=\"add\">+%d</span> <span class=\"del\">-%d</span></td></tr>"
+                        % (html.escape(x["path"], quote=True), html.escape(label.get(unit, unit)), html.escape(x["status"]), cell,
+                           " <span class=\"pill\">test</span>" if x["test"] else "", x["added"], x["deleted"]))
+    added_e = sum(1 for e in graph["edges"] if e["kind"] == "added")
+    removed_e = sum(1 for e in graph["edges"] if e["kind"] == "removed")
+    nstate = dict((s_, sum(1 for g in graph["groups"] if g["state"] == s_)) for s_ in ("changed", "affected", "context"))
+    outside = graph.get("outside", 0)
 
     H = ["<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
          "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
@@ -648,25 +653,18 @@ def cmd_render(argv):
          "<span class=\"add\">+%d</span> <span class=\"del\">-%d</span> &middot; generated %s, source %s</div></header>"
          % (html.escape(data["title"]), html.escape(data.get("project") or ""), html.escape(data["base"]),
             html.escape(data["head"]), len(data["commits"]), len(files), added, deleted,
-            data["generated"], data["source"]),
-         "<nav><a href=\"#brief\">Brief</a><a href=\"#modules\">Modules</a><a href=\"#graph\">Graph</a><a href=\"#files\">Files</a>"
-         "<a href=\"#tests\">Tests</a><a href=\"#criteria\">Criteria</a><a href=\"#reven\">Reven</a><a href=\"#commits\">Commits</a></nav>",
+            html.escape(data["generated"]), html.escape(data["source"])),
+         "<nav><a href=\"#brief\">Brief</a><a href=\"#graph\">Graph</a><a href=\"#files\">Files</a>"
+         "<a href=\"#tests\">Tests</a><a href=\"#criteria\">Criteria</a><a href=\"#reven\">Reven</a></nav>",
          "<main>",
          "<section id=\"brief\" class=\"brief\">%s</section>" % md_to_html(brief),
-         "<section id=\"modules\"><h2>Lines changed per module</h2>%s</section>" % bars_svg(by_module),
-         "<section id=\"graph\"><h2>Where it falls in the project</h2>%s</section>" % (
-             graph_fragment(knowledge_dir(paths), data) or "<p class=\"mut\">No graph.json for this project; run /seed (squad-graph.py extract) to add the import graph.</p>"),
-         "<section id=\"files\"><h2>Files</h2><input id=\"q\" type=\"search\" placeholder=\"filter by path\" aria-label=\"filter files\">"]
-    for mod in sorted(by_module, key=lambda m: -(by_module[m][0] + by_module[m][1])):
-        a, d, n = by_module[mod]
-        H.append("<h3>%s <span class=\"mut\">(%d files, +%d -%d)</span></h3>" % (html.escape(mod), n, a, d))
-        for x in sorted((f for f in files if f["module"] == mod), key=lambda f: f["path"]):
-            note = " <span class=\"mut\">(diff cut at %d lines)</span>" % DIFF_CAP_LINES if x["capped"] else ""
-            H.append("<details data-path=\"%s\"><summary>%s %s <span class=\"add\">+%d</span> <span class=\"del\">-%d</span>%s%s</summary>"
-                     "<pre class=\"diff\">%s</pre></details>"
-                     % (html.escape(x["path"]), x["status"], html.escape(x["path"]), x["added"], x["deleted"],
-                        " <span class=\"pill\">test</span>" if x["test"] else "", note, diff_html(x["diff"])))
-    H.append("</section>")
+         "<section id=\"graph\"><h2>What the change touches</h2><p class=\"mut\">%d changed, %d affected, %d context units (%s); %d dependencies added, %d removed%s. "
+         "Centre: units the change touched. Left: units outside it that use a name it touched. Right: the other end of an added or removed dependency.</p>%s</section>"
+         % (nstate["changed"], nstate["affected"], nstate["context"], html.escape(graph.get("unit_source", "?")), added_e, removed_e,
+            ("; %d files outside the project folder" % outside) if outside else "", _graph_module().change_graph_fragment(graph, host)),
+         "<section id=\"files\"><h2>Files (%d)</h2><input id=\"q\" type=\"search\" placeholder=\"filter by path\" aria-label=\"filter files\">"
+         "<table><tr><th>unit</th><th></th><th>file</th><th>lines</th></tr>%s</table>%s</section>"
+         % (len(files), "".join(rows), "" if host else "<p class=\"mut\">No links: the origin remote is missing or on a host without known URL shapes.</p>")]
     tests = [x["path"] for x in files if x["test"]]
     H.append("<section id=\"tests\"><h2>Tests touched (%d)</h2>%s</section>" % (
         len(tests), "<ul>%s</ul>" % "".join("<li><code>%s</code></li>" % html.escape(t) for t in tests) if tests
@@ -677,12 +675,9 @@ def cmd_render(argv):
     V = data["verdicts"]
     H.append("<section id=\"reven\"><h2>Reven trail (%d rounds)</h2>%s</section>" % (
         len(V), "<table><tr><th>Round</th><th>Verdict</th><th>Observation</th></tr>%s</table>" % "".join(
-            "<tr><td>r%d</td><td>%s</td><td>%s</td></tr>" % (v["round"], v["verdict"], html.escape(v["obs"]) or "<span class=\"mut\">none</span>")
+            "<tr><td>r%d</td><td>%s</td><td>%s</td></tr>" % (v["round"], html.escape(v["verdict"]), html.escape(v["obs"]) or "<span class=\"mut\">none</span>")
             for v in V) if V else "<p class=\"mut\">No review recorded for this range.</p>"))
-    H.append("<section id=\"commits\"><h2>Commits (%d)</h2><table><tr><th>sha</th><th>date</th><th>subject</th></tr>%s</table></section>" % (
-        len(data["commits"]), "".join("<tr><td><code>%s</code></td><td>%s</td><td>%s</td></tr>" % (
-            c["sha"], c["date"], html.escape(c["subject"])) for c in data["commits"])))
-    H.append("</main><script>%s</script></body></html>" % (JS + GRAPH_JS))
+    H.append("</main><script>%s</script></body></html>" % JS)
     out = os.path.join(adir, "index.html")
     try:
         changed = lib.write_if_changed(out, "\n".join(H))
@@ -692,6 +687,7 @@ def cmd_render(argv):
     emit("CHANGED", "yes" if changed else "no")
     emit("HTML", out)
     emit("BRIEF", brief_path)
+    emit("BYTES", len("\n".join(H).encode("utf-8")))
 
 
 def main():
