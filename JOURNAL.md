@@ -1426,6 +1426,40 @@ exports reach subagents' Bash, so Ralph does not pass the values in prompts.
 > transport into the session environment; the prose that used to restate
 > the call is now a one-line fallback the linter can check.
 
+### Iteration 39: Reven reviews with the target repo's own knowledge
+
+**Problem:** on a real fix round Reven returned COMMENT or CHANGES
+REQUESTED three times on one PR; an automated reviewer that had loaded the
+target repo's skills then raised MAJOR findings Reven missed: a lazy-route
+boundary broken by a barrel import (the repo's architecture skill covers
+it), a date-preset serialization bug, a datetime column on the date-only
+cell, duplicated shared helpers, and test hooks the repo's e2e skill
+forbids. Reven never read the PR's existing comments either. Loading repo
+skills was a soft aside after triage, tied to nothing in the output.
+
+**Change (#408):**
+
+- *Repo skills as criteria.* Once the changed files are listed, Reven loads
+  the repo's skills whose descriptions cover them (its `.claude/skills/` and
+  skills of plugins its committed `.claude/settings.json` enables), ranks
+  their surfaces in the triage with the `[rule]` surface, and accounts for
+  each in `## Rules` (fired, not applicable, not checked). A loaded repo
+  skill ranks with `architecture.md` and can back a blocking finding. Other
+  skills in context (user-level or plugins the repo does not enable) are
+  advisory only: Observations, never a blocker, never an INCOMPLETE gap.
+  Generic best-practice skills would otherwise turn style advice into team
+  decisions.
+- *Reuse check.* Every new helper, component, utility, pipe or hook is
+  searched against the repo's shared code; a duplicate is a finding citing
+  both locations.
+- *Existing review.* On an open PR, Reven reads the review comments (human
+  and bot) first and reports which ones the diff leaves open under
+  `## Prior comments`. Still read-only.
+
+> **Key decision:** the target repo's own skills are review criteria with
+> the same standing as vault rules, and like rules every loaded one must be
+> accounted for in the output.
+
 ---
 
 ## 3. Final Architecture
@@ -1444,7 +1478,7 @@ Components that were designed but are not active are listed in section 4
 | **Chisel** | Skill | session | Turns YAML or PRD into tracker issues with test specs and `Owner:` lines. Connected: GitHub issues. Detached: a local batch file, handoff and Jira-importable CSV. |
 | **Ralph** | Skill (loop) | session | Runs issues in dependency order through Cody, one stacked branch and PR per issue; persists run state in `ralph-run.md`; classifies failures as retry or escalation. |
 | **Cody** | Agent | sonnet | Implements one issue test-first on a branch created only through `squad-branch.sh`; escalates on open specs, missing runner or ownership conflicts. |
-| **Reven** | Agent + skill | sonnet | Reviews a PR against its base, applies loaded `[rule]` entries, reads the issue neighbourhood. |
+| **Reven** | Agent + skill | sonnet | Reviews a PR against its base, applies loaded `[rule]` entries and the target repo's skills, flags duplicated shared code, reads the issue neighbourhood and the PR's existing comments. |
 | **Challenge** | Agent + skill | opus | Stateless stress test of a proposal; standalone and inside Forge. |
 | **Lore** | Agent + skill | sonnet | Vault memory: `lore start` (setup and repair), `lore prefer` (one rule, one file), `lore recover`. |
 | **Sidecar** | Skill | session | Opens and closes a worktree on an existing branch; Cody only on explicit opt-in. |
