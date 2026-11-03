@@ -283,6 +283,7 @@ case "$(ctx "$o")" in *LOCALMARK-clientx*) ok "inline fallback: local-only mappi
 # Vault checkout off its default branch (#422): one orientation line, no action.
 cp -R "$F_VAULT" "$TMPROOT/ov"; git -C "$TMPROOT/ov" init -q -b main 2>/dev/null
 git -C "$TMPROOT/ov" add -A >/dev/null 2>&1; git -C "$TMPROOT/ov" -c user.name=t -c user.email=t@t commit -qm init >/dev/null 2>&1
+git -C "$TMPROOT/ov" remote add origin "$TMPROOT/ov-origin.git"  # no origin = local-only (#427)
 o="$(cd "$F_PROJECT" && SQUAD_INCIDENTS_FILE="$TMPROOT/absent.tsv" SECOND_BRAIN_PATH="$TMPROOT/ov" bash "$TMPROOT/hooks/lore-orient.sh" 2>/dev/null)"
 case "$(ctx "$o")" in *"Vault checkout is on"*) bad "on main: no off-branch line";; *) ok "on main: no off-branch line";; esac
 git -C "$TMPROOT/ov" switch -qc lore/other-2026-11-03

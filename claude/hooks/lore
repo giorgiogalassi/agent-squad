@@ -2,6 +2,7 @@
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
 #   lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...
+#   lore push [--vault <dir>]
 #   lore version
 #
 # `commit` is the single committer: the only code that calls squad_vault_commit
@@ -12,6 +13,15 @@
 # 10 minutes, and the next caller breaks it with a stderr notice.
 # Stdout: OUTCOME=applied|unchanged, CHANGED=yes|no.
 # Exit: 0 ok, 2 usage, 20 vault not a git repo / lock wait timed out / commit failed.
+#
+# `push` (#427) wraps squad_vault_finish: push each lore/* session branch and open or
+# update its PR. SessionEnd starts it detached, SessionStart retries it. The vault lock
+# is taken only around the local git step that mutates worktrees (dropping a landed
+# session branch), never across a fetch, push or gh call. It writes
+# <git-common-dir>/lore-push-status (AT=<epoch>, OUTCOME=applied|unchanged|failed,
+# REASON=<one line>) and emits OUTCOME/CHANGED. A local-only vault (vault_main
+# "local-only", or no origin) is OUTCOME=unchanged and never calls gh.
+# Exit for push: 0 ok, 20 push or PR failure.
 # Env: LORE_LOCK_WAIT seconds to wait for a live lock (default 60).
 set -u
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -137,6 +147,52 @@ cmd_commit() {
   squad_emit OUTCOME applied; squad_emit CHANGED yes
 }
 
+# squad_vault_drop removes a landed session worktree: a local mutation, so it runs
+# under the vault lock (taken and released around that call alone).
+eval "_lore_vault_drop_unlocked() $(declare -f squad_vault_drop | sed '1d')"
+squad_vault_drop() {
+  local rc=0 gitdir
+  gitdir="$(cd "$1" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  [ -n "$gitdir" ] && LOCK="$gitdir/lore.lock" && lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "squad: vault lock busy; $3 not dropped" >&2; return 1; }
+  _lore_vault_drop_unlocked "$@" || rc=$?
+  lock_release; MY_OWNER=""
+  return "$rc"
+}
+
+push_status() {  # push_status <gitdir> <OUTCOME> [reason]
+  local reason
+  reason="$(printf '%s' "${3:-}" | tr '\n\r' '  ' | cut -c1-300)"
+  printf 'AT=%s\nOUTCOME=%s\nREASON=%s\n' "$(date +%s)" "$2" "$reason" > "$1/lore-push-status.$$" \
+    && mv "$1/lore-push-status.$$" "$1/lore-push-status"
+}
+
+cmd_push() {
+  local vault="" gitdir rc=0 errf outcome reason
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault) vault="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "usage: lore push [--vault <dir>]" ;;
+    esac
+  done
+  if [ -z "$vault" ]; then squad_resolve || exit 20; vault="$VAULT_PATH"; fi
+  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
+  errf="$gitdir/lore-push.err.$$"
+  squad_vault_finish "$vault" 2> "$errf" || rc=$?
+  cat "$errf" >&2
+  if [ "$rc" != 0 ]; then
+    reason="$(grep -v '^$' "$errf" | tail -n 1)"
+    rm -f "$errf"
+    push_status "$gitdir" failed "${reason:-push failed}"
+    squad_emit OUTCOME failed; squad_emit CHANGED no
+    exit 20
+  fi
+  rm -f "$errf"
+  if [ "${SQUAD_VAULT_PUSHED:-0}" -gt 0 ]; then outcome=applied; else outcome=unchanged; fi
+  push_status "$gitdir" "$outcome" ""
+  squad_emit OUTCOME "$outcome"; squad_emit CHANGED "$([ "$outcome" = applied ] && echo yes || echo no)"
+}
+
 cmd_version() {
   local pj="$HOOK_DIR/../.claude-plugin/plugin.json" v=""
   [ -f "$pj" ] || pj="$HOOK_DIR/../plugin.json"
@@ -148,6 +204,7 @@ cmd_version() {
 VERB="${1:-}"; [ $# -gt 0 ] && shift
 case "$VERB" in
   commit)  cmd_commit "$@" ;;
+  push)    cmd_push "$@" ;;
   version) cmd_version ;;
-  *) squad_fail 2 "usage: lore <commit|version> ..." ;;
+  *) squad_fail 2 "usage: lore <commit|push|version> ..." ;;
 esac
