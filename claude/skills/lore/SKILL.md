@@ -2,7 +2,7 @@
 name: lore
 description: >
   Slash-command entrypoint for the Lore second-brain agent. Triggers:
-  /lore start (setup/repair only), /lore prefer "<decision>", /lore decide, /lore supersede, /lore audit, /lore check, /lore recover.
+  /lore start (first contact, migration, re-mapping), /lore prefer "<decision>", /lore decide, /lore supersede, /lore audit, /lore check, /lore recover.
   This skill exists so Lore's subcommands work as slash-commands; it
   delegates immediately to the Lore agent and does no work itself.
   Do NOT use for planning, implementation, architecture, or code review.
@@ -18,7 +18,7 @@ to explicitly.
 Delegate to the `lore` agent immediately, passing the subcommand and
 arguments exactly as received:
 
-- `/lore start`            → lore start
+- `/lore start [--local]`  → lore start [--local]
 - `/lore prefer "<text>" [--global|--project|--decision]`  → lore prefer "<text>" [flag]
 - `/lore decide "<title>: <body>" [--supersedes "<date> <title>"] [--rule]`  → lore decide with the same arguments
 - `/lore supersede "<title>"... [--by "<title>"|--by-new "<title>: <body>"]`  → lore supersede with the same arguments

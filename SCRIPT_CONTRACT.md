@@ -55,6 +55,14 @@ verbs (`summary`, `resolve`) follow the contract above.
   repository, lock wait timed out (`LORE_LOCK_WAIT` seconds, default 60) or
   commit failed. A stale lock (dead pid, or older than 10 minutes) is broken
   with a stderr notice.
+- `map [--root <dir>] [--name <n>] [--local] [--create-vault]`: first contact; never
+  prompts. Resolves vault and root, creates `projects/<name>/` and records the mapping
+  through `lore-map.sh set` (committed through `commit`). Emits `OUTCOME=applied|unchanged`,
+  `CHANGED`, `NAME`, `TARGET=tracked|local`, `ROOT` (and `TRACKED_FILES`). Exit 0 done,
+  2 usage or the root is the vault, 10 a human must decide (`NEED=vault|name|migrate|jq`,
+  `SUGGESTED=<name>-2` with `name`; nothing written) or the commit was refused (vault off its
+  default branch), 20 resolution or I/O failure. `--create-vault` creates the vault with
+  `"state_dir": ".lore"`.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ## Exception: `squad-stats.py report`
