@@ -1440,10 +1440,15 @@ skills was a soft aside after triage, tied to nothing in the output.
 **Change (#408):**
 
 - *Repo skills as criteria.* Once the changed files are listed, Reven loads
-  the project and enabled plugin skills whose descriptions cover them, ranks
+  the repo's skills whose descriptions cover them (its `.claude/skills/` and
+  skills of plugins its committed `.claude/settings.json` enables), ranks
   their surfaces in the triage with the `[rule]` surface, and accounts for
-  each in `## Rules` (fired, not applicable, not checked). A loaded skill
-  ranks with `architecture.md` and can back a blocking finding.
+  each in `## Rules` (fired, not applicable, not checked). A loaded repo
+  skill ranks with `architecture.md` and can back a blocking finding. Other
+  skills in context (user-level or plugins the repo does not enable) are
+  advisory only: Observations, never a blocker, never an INCOMPLETE gap.
+  Generic best-practice skills would otherwise turn style advice into team
+  decisions.
 - *Reuse check.* Every new helper, component, utility, pipe or hook is
   searched against the repo's shared code; a duplicate is a finding citing
   both locations.

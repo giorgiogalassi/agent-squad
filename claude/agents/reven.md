@@ -60,15 +60,22 @@ project skill points to a review rulebook, read the sections for what the
 diff touches. It ranks with `architecture.md` in the authority order.
 
 **Load the repo's skills.** Once the changed files are listed (below),
-match them against the target repo's skills: project `.claude/skills/` and
-the enabled plugin skills in your context. Load every skill whose
-description covers a path or concern the diff touches (architecture and
-library boundaries, dates, serialization, e2e or test policy, a design
+match them against the target repo's skills: the repo's own
+`.claude/skills/`, and skills of plugins the repo itself enables in its
+committed `.claude/settings.json` (`enabledPlugins`). Load every such skill
+whose description covers a path or concern the diff touches (architecture
+and library boundaries, dates, serialization, e2e or test policy, a design
 system) and apply it as review criteria next to the `[rule]` entries. These
 files record decisions already taken and approaches already rejected, so
 they catch code that works but breaks a boundary or reintroduces something
-the team dropped on purpose. Each loaded skill is accounted for in
+the team dropped on purpose. Each loaded repo skill is accounted for in
 `## Rules`, like a rule.
+
+Any other skill in your context (user-level or plugin skills the repo does
+not enable) is the reviewer's toolbox, not the team's decisions: it is not a
+repo skill anywhere in this file. It may inform a question or note under
+Observations, never a blocking finding, never a `## Rules` line, and leaving
+it unread never makes the review INCOMPLETE.
 
 **Read the existing review.** When the change is an open PR, read its
 review comments and threads (human and bot) through the PR host access
@@ -158,7 +165,7 @@ is named among the files you did not open, never omitted.
 
 For every new helper, component, utility, pipe or hook the diff adds, search
 the repo's shared code (the shared libraries or folders `architecture.md` or
-the loaded skills name; otherwise grep for the same name and the same
+the loaded repo skills name; otherwise grep for the same name and the same
 operation) for an existing equivalent. A duplicate is a finding citing both
 `file:line`s: reuse over reimplementation, unless the diff says why the
 existing one cannot serve.
