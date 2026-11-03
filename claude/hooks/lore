@@ -133,12 +133,15 @@ cmd_commit() {
   LOCK="$gitdir/lore.lock"
   lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
   trap lock_release EXIT
-  commit_locked "$vault" "$proj" "$msg" "${paths[@]}" || squad_fail 20 "vault commit failed; change left uncommitted"
+  commit_locked "$vault" "$proj" "$msg" "${paths[@]}" || {
+    [ "$?" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing committed (see stderr above)"
+    squad_fail 20 "vault commit failed; change left uncommitted"
+  }
   squad_emit OUTCOME "$COMMIT_OUTCOME"; squad_emit CHANGED "$([ "$COMMIT_OUTCOME" = applied ] && echo yes || echo no)"
 }
 
 # commit_locked <vault> <project> <msg> <path>...: the committer internal; the
-# caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed.
+# caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed, 10 refused (direct-mode vault off its default branch).
 COMMIT_OUTCOME=unchanged
 commit_locked() {
   local vault="$1" proj="$2" msg="$3" pending rc=0
@@ -146,7 +149,7 @@ commit_locked() {
   COMMIT_OUTCOME=unchanged
   pending="$(git -C "$vault" status --porcelain -- "$@" 2>/dev/null)"
   [ -n "$pending" ] || return 0
-  squad_vault_commit "$vault" "$proj" "$msg" "$@" || rc=1
+  squad_vault_commit "$vault" "$proj" "$msg" "$@" || { rc=$?; [ "$rc" = 10 ] || rc=1; }
   [ "$rc" = 0 ] && COMMIT_OUTCOME=applied
   return "$rc"
 }
