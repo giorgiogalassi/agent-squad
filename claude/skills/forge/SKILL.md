@@ -285,6 +285,7 @@ owners:
 open_questions:
   - ""
 notes: ""
+planned_graph: ""
 ```
 
 YAML rules: English regardless of conversation language;
@@ -296,6 +297,50 @@ Chisel can carry it into the issue's `Owner:` line; no codebase scan,
 omit when none;
 `notes` = decisions or assumptions not captured elsewhere; omit empty
 optional fields.
+`planned_graph` = `forge/planned-graph.json` when the planned graph below was
+written; omit otherwise.
+
+## Planned graph (change_type code or mixed; best-effort)
+
+Intent, not truth: the expected structure of the change, derived from the
+project's real graph plus this session's analysis. Chisel slices and orders
+from it and Reven compares the finished change with it. Skip for
+`change_type: docs` and when `affected_modules` is empty and the project has
+no units.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py extract --level unit --out <SQUAD_DIR>/forge/current-graph.json
+```
+
+Read `OUTCOME`, `CHANGED`, `GRAPH`, `UNIT_SOURCE`. Act on the exit code:
+
+| Exit | Action |
+|---|---|
+| 0 | Continue. |
+| 10, 20 | Print the stderr reason, skip the planned graph, keep the YAML. |
+
+Read `groups` (unit ids) and `edges` of that file; never extract anything
+yourself. Write `<SQUAD_DIR>/forge/planned-graph.json` beside the YAML:
+
+```json
+{"version": 1, "kind": "planned", "generated": "YYYY-MM-DD",
+ "units": [{"id": "<unit id from groups, or a new one>", "note": "<why it changes>"}],
+ "edges": [{"from": "<unit id>", "to": "<unit id>"}],
+ "boundaries": [{"from": "<unit id or glob>", "to": "<unit id or glob>", "reason": "<why it must not exist>"}]}
+```
+
+`units` = every unit the analysis expects to change; `edges` = new
+dependencies it expects (an existing edge is not listed); `boundaries` =
+dependencies that must not exist, from the constraints and the project's
+rules. Then validate it:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py check --plan <SQUAD_DIR>/forge/planned-graph.json --validate
+```
+
+Read `PLANNED_UNITS`, `PLANNED_EDGES`, `PLANNED_BOUNDARIES`. Exit 0: set
+`planned_graph` in the YAML. Exit 10: fix the file once and re-run; still 10,
+delete it and omit `planned_graph`.
 
 ## Session log
 

@@ -236,6 +236,9 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 ## Description drift
 [mandatory in every review, whatever the verdict; grammar below]
 
+## Structure drift
+[only when `<SQUAD_DIR>/forge/planned-graph.json` exists; grammar below]
+
 ## Observations
 [optional, non-blocking notes and questions]
 ```
@@ -284,6 +287,40 @@ description does not cover. Ralph applies it to the PR through
   only the existing rules above decide that. A description that
   misstates the acceptance criteria stays an ordinary finding only if
   those rules already make it one.
+
+## Structure drift
+
+Only when Forge left a planned graph (`<SQUAD_DIR>/forge/planned-graph.json`);
+without one, omit the section. Compare the change with the plan through the
+shared script, never by reading imports yourself:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py check --plan <SQUAD_DIR>/forge/planned-graph.json --base <base ref from the Gather step> --head <branch ref> --out <scratch file outside the repo>
+```
+
+Read `OUTCOME`, `DRIFT_COUNT`, `DRIFT_UNITS`, `DRIFT_DEPENDENCIES`,
+`DRIFT_BOUNDARIES`, `UNREALIZED` and each `DRIFT_ITEM=<kind>:<subject>`.
+Act on the exit code:
+
+| Exit | Action |
+|---|---|
+| 0 | Report the items below. `DRIFT_COUNT=0`: one line `none: the change matches the plan`. |
+| 10, 20 | One line `not checked: <stderr reason>`; the review goes on. |
+
+One entry per item, naming the unit, the dependency (`from>to`, with the
+names it uses) or the boundary, and asking for the reason:
+
+```
+## Structure drift
+- unplanned unit: <unit> -> why does this change touch it?
+- unplanned dependency: <from>><to> (uses <names>) -> why is it needed?
+- broken boundary: <from>><to> (<boundary reason>) -> why does it hold here?
+```
+
+A drift item is a signal, not a defect: it is never a blocking issue, never
+changes the verdict and never makes the review INCOMPLETE. The PR or a
+fix-round reply that states a reason closes it; a stated reason that is
+plausible is accepted, not argued.
 
 ## Ground rules
 
