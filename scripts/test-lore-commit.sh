@@ -99,7 +99,6 @@ fixture() {
   mkdir -p "$1/scripts"
   cp -R "$REPO_ROOT/claude" "$1/claude"
   cp "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$REPO_ROOT/scripts/test-squad-labels.sh" "$1/scripts/"
-  [ -f "$REPO_ROOT/scripts/lint-allowlist-committer.txt" ] && cp "$REPO_ROOT/scripts/lint-allowlist-committer.txt" "$1/scripts/"
   cp -R "$REPO_ROOT/scripts/lib" "$1/scripts/lib"
   cp "$REPO_ROOT"/*.md "$1/" 2>/dev/null
   return 0

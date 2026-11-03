@@ -43,8 +43,8 @@
 #  13. single vault committer (#422): only claude/hooks/lore may call
 #      squad_vault_commit or run `git commit`/`git push`; squad-common.sh (the
 #      library that owns squad_vault_commit) is exempt. Transitional exceptions
-#      are listed in scripts/lint-allowlist-committer.txt (one basename per
-#      line), which the issues converting those writers empty. Escape:
+#      are listed in COMMITTER_ALLOWLIST below (basenames), which the
+#      issues converting those writers empty. Escape:
 #      `lint:committer-ok` on the same line.
 #
 # Exit code is non-zero if any check reports a violation. No external
@@ -581,10 +581,13 @@ EOF2
   [ "$VIOLATIONS" -eq "$before" ] && ok "no vault-side script spells the state directory"
 }
 
+# Transitional: writers converted in later issues of #420 (each removes its name).
+COMMITTER_ALLOWLIST="squad-progress.sh cody-checkpoint.sh lore-checkpoint.sh"
+
 check_single_committer() {
-  local before="$VIOLATIONS" f base hit line allow=""
+  local before="$VIOLATIONS" f base hit line allow
   section "13. single vault committer"
-  [ -f scripts/lint-allowlist-committer.txt ] && allow="$(grep -vE '^[[:space:]]*(#|$)' scripts/lint-allowlist-committer.txt)"
+  allow="$(printf '%s\n' $COMMITTER_ALLOWLIST)"
   while IFS= read -r f; do
     base="${f##*/}"
     case "$base" in lore|squad-common.sh) continue ;; esac
