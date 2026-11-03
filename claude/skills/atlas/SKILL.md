@@ -44,8 +44,13 @@ branch; `--base <ref>` overrides it for any target and is passed on to
 `--no-render` stops after the brief (no HTML).
 
 **Reads only.** Atlas never commits, never pushes, never comments on
-the tracker or the VCS. Everything it writes lives under
-`<SQUAD_DIR parent>/.squad/atlas/<id>/` in the vault.
+the tracker or the VCS. The script writes only under
+`<vault>/projects/<name>/.squad/atlas/<id>/` (`atlas.json`, `brief.md`,
+`index.html`); the one other write is the session-log line below, made
+through the progress script. It reads `scout-cache.md`,
+`forge/output.yaml` and `graph.json` from `$SQUAD_DIR` (the repo's
+`.squad` for `context: repo` projects) and `progress.txt` and
+`ralph-run.md` from the vault.
 
 ## Step 1: gather
 
@@ -53,9 +58,12 @@ the tracker or the VCS. Everything it writes lives under
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py gather <target> [--base <ref>]
 ```
 
-Read `ATLAS_DIR`, `ID`, `TITLE`, `BASE`, `HEAD`, `COMMITS`, `FILES`,
+Read `OUTCOME`, `CHANGED` (`unchanged` when `atlas.json` is identical
+to the previous run), `ATLAS_DIR`, `ID`, `TITLE`, `BASE`, `HEAD`, `COMMITS`, `FILES`,
 `ADDED`, `DELETED`, `MODULES`, `TESTS`, `CRITERIA`, `VERDICTS`,
-`SOURCE` (`vcs` or `git-only`).
+`SOURCE` (`vcs` or `git-only`). With `--batch` the keys repeat per row;
+a row that cannot be gathered prints `ROW_ERROR=<reason>` (the other
+rows still run) and the block ends with `ROWS` and `ROWS_FAILED`.
 
 | Exit | Action |
 |---|---|
@@ -118,7 +126,7 @@ Under 1500 words unless `FILES` is above 40, then under 2500.
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-atlas.py render <ID>
 ```
 
-Read `HTML`, `BRIEF`. Exit codes as in Step 1. The page is one file
+Read `OUTCOME`, `CHANGED`, `HTML`, `BRIEF`. Exit codes as in Step 1. The page is one file
 with no network access: the brief, a module bar chart, the project's
 module import graph with the diff's modules highlighted (from
 `<SQUAD_DIR>/graph.json`, written by Seed through `squad-graph.py`;

@@ -59,7 +59,30 @@ Observations. Skip any of this the prompt already handed you.
 project skill points to a review rulebook, read the sections for what the
 diff touches. It ranks with `architecture.md` in the authority order.
 
-**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` = the repo's review rulebook > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: under Observations.
+**Load the repo's skills.** Once the changed files are listed (below),
+match them against the target repo's skills: the repo's own
+`.claude/skills/`, and skills of plugins the repo itself enables in its
+committed `.claude/settings.json` (`enabledPlugins`). Load every such skill
+whose description covers a path or concern the diff touches (architecture
+and library boundaries, dates, serialization, e2e or test policy, a design
+system) and apply it as review criteria next to the `[rule]` entries. These
+files record decisions already taken and approaches already rejected, so
+they catch code that works but breaks a boundary or reintroduces something
+the team dropped on purpose. Each loaded repo skill is accounted for in
+`## Rules`, like a rule.
+
+Any other skill in your context (user-level or plugin skills the repo does
+not enable) is the reviewer's toolbox, not the team's decisions: it is not a
+repo skill anywhere in this file. It may inform a question or note under
+Observations, never a blocking finding, never a `## Rules` line, and leaving
+it unread never makes the review INCOMPLETE.
+
+**Read the existing review.** When the change is an open PR, read its
+review comments and threads (human and bot) through the PR host access
+path before judging. Do not assume no other reviewer ran: in
+`## Prior comments`, say which of them the diff still leaves open.
+
+**Authority order.** Context sources can disagree; rank them: issue text > `architecture.md` = the repo's review rulebook = a loaded repo skill > `scout-cache.md` > `decisions.md` > `development.md`. On conflict the higher source wins and the conflict is noted: under Observations.
 
 ## Gather the diff
 
@@ -104,8 +127,8 @@ diff will not fit in your budget, and an agent that spends it all reading and
 reports nothing has produced less than one that judged five files well. So:
 
 1. List the changed files first (`git diff --name-only …`).
-2. Rank them by rule surface first: the files the loaded `[rule]` entries
-   and the repo's review rulebook talk about (the files and kinds of code
+2. Rank them by rule surface first: the files the loaded `[rule]` entries,
+   the loaded repo skills and the repo's review rulebook talk about (the files and kinds of code
    they name). Then by where defects actually hide — state, effects and data
    serialization; components and templates next; barrels, config and
    generated bundles last, usually not at all.
@@ -121,12 +144,6 @@ hunk hides the guard three lines above it. Skim the rest through the diff.
 **Prefer being told over deriving.** If the prompt names the acceptance
 criteria, an API contract or the files that carry the risk, take them as given
 and go straight to judging. Do not re-derive a contract that was handed to you.
-
-**If the project ships skills** (`.claude/skills/`, or a skills list in your
-context), load the one covering the surface under review — accessibility,
-pagination, a design system. Those files record decisions already taken and
-approaches already rejected, so they catch a class of defect a diff read never
-will: code that works but reintroduces something the team dropped on purpose.
 
 **Scope boundaries.** Never promote to global config uninvited; never create
 `.squad/` or other state in the workspace; if review was concluded skipped or
@@ -144,11 +161,20 @@ finding, citing both `file:line`s: the dispatch or wait and the listener. This
 counts toward the reading budget like any high-ranked file; a trace you skipped
 is named among the files you did not open, never omitted.
 
+## Reuse check
+
+For every new helper, component, utility, pipe or hook the diff adds, search
+the repo's shared code (the shared libraries or folders `architecture.md` or
+the loaded repo skills name; otherwise grep for the same name and the same
+operation) for an existing equivalent. A duplicate is a finding citing both
+`file:line`s: reuse over reimplementation, unless the diff says why the
+existing one cannot serve.
+
 ## Rule pass
 
 After reading the diff, check every loaded `[rule]` entry of `decisions.md`
-against it, one by one, and record the outcome per rule in the `## Rules`
-section of the report. A rule you could not check (file not opened, out of
+and every loaded repo skill against it, one by one, and record the outcome
+per rule or skill in the `## Rules` section of the report. A rule you could not check (file not opened, out of
 budget) is `not checked (why)`, never silently dropped.
 
 - `not applicable (reason)` needs a one-line reason grounded in the diff
@@ -199,8 +225,13 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 - <file or rule> -> why it was not read / checked
 
 ## Rules
-[omit only when no `[rule]` entries were loaded]
-- <rule title> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
+[omit only when no `[rule]` entries and no repo skills were loaded]
+- <rule title | skill: name> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
+
+## Prior comments
+[only when the change is an open PR]
+- <author: comment gist> -> addressed (file:line) | still open (why)
+- or one line: none (no existing review comments)
 
 ## Description drift
 [mandatory in every review, whatever the verdict; grammar below]
@@ -213,8 +244,8 @@ APPROVED = all criteria met, nothing blocking. CHANGES REQUESTED = ≥1
 blocking issue. COMMENT = nothing blocking, observations worth noting.
 INCOMPLETE = at least one file of the triage's top tier (state, effects,
 services, serializers, or a rule's surface) was not read in full, or a rule
-touching the diff is `not checked`, and no blocker is confirmed. APPROVED and
-COMMENT require that tier fully read and every touching rule checked. A
+or skill touching the diff is `not checked`, and no blocker is confirmed. APPROVED and
+COMMENT require that tier fully read and every touching rule and skill checked. A
 confirmed blocker stands on its own: CHANGES REQUESTED stays available with
 gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
 not read, so a re-run (larger budget or model) can target it.
@@ -256,8 +287,9 @@ description does not cover. Ralph applies it to the PR through
 
 ## Ground rules
 
-- A finding backed by an active `[rule]` in `decisions.md` can be a blocking
-  issue, exactly like one backed by `architecture.md`. Cite the rule title.
+- A finding backed by an active `[rule]` in `decisions.md` or a loaded repo
+  skill can be a blocking issue, exactly like one backed by
+  `architecture.md`. Cite the rule title or the skill name.
 - A finding whose truth depends on the backend, data or intent (not provable
   from the code and the sources you read) goes under Observations as a
   question, never as a blocking issue.
@@ -266,7 +298,8 @@ description does not cover. Ralph applies it to the PR through
   `lore supersede "<entry title>"`; you never write to the vault.
 - Never approve a PR that misses acceptance criteria.
 - Never request changes for style preferences absent from
-  `architecture.md`, the repo's review rulebook or an active `[rule]`.
+  `architecture.md`, the repo's review rulebook, a loaded repo skill or an
+  active `[rule]`.
 - Never rewrite code in the review — describe what must change.
 - Cannot access the diff or branch → report the error and stop; never
   review without reading the code.

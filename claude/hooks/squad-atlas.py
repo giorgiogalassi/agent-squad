@@ -36,8 +36,15 @@ Range resolution:
               --base <ref> overrides it as given, for every target.
               BASE= prints the ref actually compared against.
 
+Where files live: scout-cache.md, forge/output.yaml and graph.json are
+read from $SQUAD_DIR (the repo's .squad for `context: repo` projects);
+progress.txt, ralph-run.md and the atlas/ output stay in the vault's
+projects/<name>/.squad. A head that exists only as origin/<head> is
+resolved like the base. In --batch a row that cannot be gathered is
+reported (ROW_ERROR) and the other rows still run.
+
 Criteria: PR/issue body "Acceptance" section when fetched, else
-.squad/forge/output.yaml acceptance_criteria, else none.
+forge/output.yaml acceptance_criteria, else none.
 Verdicts: "[#ID] [date] review: <VERDICT> r<N> <anything>" lines of
 progress.txt for the issue that resolved into this PR or branch. The
 observations are the text after "Obs:"/"obs:" when present, else the
@@ -57,11 +64,12 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.dont_write_bytecode = True
+sys.path.insert(0, HERE)
+import squad_pylib as lib  # noqa: E402  (shared progress.txt parser)
+
 DIFF_CAP_LINES = 400
-TEST_RE = re.compile(r"(^|/)(test|tests|spec|specs|__tests__|evals?)(/|$)|\.(test|spec)\.[a-z]+$|^scripts/test-.*\.sh$|_test\.(py|go)$")
 RESOLVED_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?resolved\.\s+PR:\s+#(\d+)")
-REVIEW_RE = re.compile(r"^\[#?([A-Za-z]+-\d+|\d+)\]\s+(?:\d{4}-\d{2}-\d{2}\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)\b(.*)$")
-OBS_RE = re.compile(r"\b[Oo]bs:\s*(.*)$")
 
 BRIEF_TEMPLATE = """# Atlas brief: {title}
 
@@ -100,9 +108,16 @@ def emit(key, value):
     sys.stdout.write("%s=%s\n" % (key, value))
 
 
+class Fatal(Exception):
+    """A failure with its exit code; `gather --batch` catches it per row."""
+
+    def __init__(self, code, reason):
+        Exception.__init__(self, reason)
+        self.code, self.reason = code, reason
+
+
 def fail(code, reason):
-    sys.stderr.write("squad-atlas: %s\n" % reason)
-    sys.exit(code)
+    raise Fatal(code, reason)
 
 
 def resolve_paths():
@@ -125,6 +140,13 @@ def resolve_paths():
 def squad_dir(paths):
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
     return os.path.join(paths.get("VAULT_PATH") or "", "projects", name, ".squad")
+
+
+def knowledge_dir(paths):
+    """$SQUAD_DIR: where scout-cache.md, forge/output.yaml and graph.json
+    live (the repo's .squad for `context: repo`, else the vault's). Run
+    state (progress.txt, ralph-run.md) and atlas/ output stay in squad_dir."""
+    return paths.get("DIR") or squad_dir(paths)
 
 
 def read_lines(path):
@@ -173,17 +195,22 @@ def ralph_rows(sd):
     return rows
 
 
+_GRAPH = []
+
+
 def _graph_module():
-    spec = importlib.util.spec_from_file_location("squad_graph", os.path.join(HERE, "squad-graph.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    if not _GRAPH:
+        spec = importlib.util.spec_from_file_location("squad_graph", os.path.join(HERE, "squad-graph.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _GRAPH.append(mod)
+    return _GRAPH[0]
 
 
-def module_map(sd):
+def module_map(kd):
     """The scout-cache Module map, parsed once by squad-graph.py so Seed,
     Atlas and the graph agree on what a module is."""
-    return _graph_module().module_map(os.path.join(sd, "scout-cache.md"))
+    return _graph_module().module_map(os.path.join(kd, "scout-cache.md"))
 
 
 def module_of(path, mods):
@@ -206,8 +233,8 @@ def criteria_from_text(body):
     return out
 
 
-def criteria_from_forge(sd):
-    lines = read_lines(os.path.join(sd, "forge", "output.yaml")) or []
+def criteria_from_forge(kd):
+    lines = read_lines(os.path.join(kd, "forge", "output.yaml")) or []
     out, inside = [], False
     for line in lines:
         if line.startswith("acceptance_criteria:"):
@@ -221,40 +248,14 @@ def criteria_from_forge(sd):
     return out
 
 
-def unwrap(text):
-    """Drop one pair of parentheses around the whole text."""
-    if text.startswith("(") and text.endswith(")"):
-        depth = 0
-        for i, c in enumerate(text):
-            depth += c == "("
-            depth -= c == ")"
-            if depth == 0:
-                return text[1:-1].strip() if i == len(text) - 1 else text
-    return text
-
-
-def review_obs(rest):
-    """Observations from the text after `rN`: the `Obs:` tail when present,
-    else the whole trailing text."""
-    rest = rest.strip().lstrip(".,;:-").strip()
-    m = OBS_RE.search(rest)
-    if m:
-        obs = m.group(1).strip()
-        if obs.endswith(")") and obs.count(")") > obs.count("("):
-            obs = obs[:-1].rstrip()
-        return obs
-    return unwrap(rest)
-
-
 def verdicts_for(sd, issue):
     out = []
     if issue is None:
         return out
     for line in read_lines(os.path.join(sd, "progress.txt")) or []:
-        m = REVIEW_RE.match(line)
-        if m and m.group(1) == issue:
-            out.append({"round": int(m.group(3)), "verdict": m.group(2).upper(),
-                        "obs": review_obs(m.group(4))})
+        rv = lib.parse_review(line)
+        if rv and rv["issue"] == issue:
+            out.append({"round": rv["round"], "verdict": rv["verdict"], "obs": rv["obs"]})
     return out
 
 
@@ -288,7 +289,7 @@ def resolve_target(target, paths, sd):
                     "base": rows[issue][2], "head": rows[issue][1], "issue": issue, "source": "git-only"}
         fail(10, "PR not found: #%d is not fetchable and has no ralph-run.md row" % pr)
     # branch
-    if subprocess.run(["git", "rev-parse", "--verify", "-q", t], cwd=root, capture_output=True).returncode != 0:
+    if head_ref(root, t) is None:
         fail(10, "no such branch: %s" % t)
     issue = next((i for i, c in rows.items() if c[1] == t), None)
     base = rows[issue][2] if issue is not None else default_branch(root)
@@ -299,6 +300,15 @@ def resolve_target(target, paths, sd):
 def ref_exists(root, ref):
     return subprocess.run(["git", "rev-parse", "--verify", "-q", ref + "^{commit}"], cwd=root,
                           capture_output=True).returncode == 0
+
+
+def head_ref(root, head):
+    """The PR head as a ref: the local branch, else origin/<head> (a head
+    that was never checked out locally), else None."""
+    for cand in (head, "refs/remotes/origin/" + head):
+        if ref_exists(root, cand):
+            return cand if cand == head else "origin/" + head
+    return None
 
 
 def base_ref(root, base, override=None):
@@ -317,36 +327,42 @@ def base_ref(root, base, override=None):
 
 def gather_one(spec, paths, sd, base_override=None):
     root = paths["PROJECT_ROOT"]
-    head = spec["head"]
+    kd = knowledge_dir(paths)
+    head = head_ref(root, spec["head"])
+    if head is None:
+        fail(10, "no diff against base: head %s exists neither locally nor as origin/%s" % (spec["head"], spec["head"]))
     base = base_ref(root, spec["base"], base_override)
     try:
         merge_base = git("merge-base", base, head, cwd=root).strip()
     except RuntimeError as e:
         fail(10, "no diff against base: %s" % e)
-    numstat = git("diff", "--numstat", "%s..%s" % (merge_base, head), cwd=root)
+    # --no-renames: a rename is a delete plus an add, so every path below is
+    # a plain path (no `old => new` in numstat, no two-path name-status).
+    numstat = git("diff", "--no-renames", "--numstat", "%s..%s" % (merge_base, head), cwd=root)
     status = dict()
-    for line in git("diff", "--name-status", "%s..%s" % (merge_base, head), cwd=root).splitlines():
+    for line in git("diff", "--no-renames", "--name-status", "%s..%s" % (merge_base, head), cwd=root).splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
             status[parts[-1]] = parts[0][0]
     if not numstat.strip():
         fail(10, "no diff against base: %s..%s is empty" % (base, head))
-    mods = module_map(sd)
+    mods = module_map(kd)
+    test_re = _graph_module().TEST_RE
     files = []
     for line in numstat.splitlines():
         a, d, path = line.split("\t", 2)
-        diff = git("diff", "%s..%s" % (merge_base, head), "--", path, cwd=root, check=False)
+        diff = git("diff", "--no-renames", "%s..%s" % (merge_base, head), "--", path, cwd=root, check=False)
         lines = diff.splitlines()
         capped = len(lines) > DIFF_CAP_LINES
         files.append({"path": path, "added": int(a) if a.isdigit() else 0,
                       "deleted": int(d) if d.isdigit() else 0, "status": status.get(path, "M"),
-                      "module": module_of(path, mods), "test": bool(TEST_RE.search(path)),
+                      "module": module_of(path, mods), "test": bool(test_re.search(path)),
                       "diff": "\n".join(lines[:DIFF_CAP_LINES]), "capped": capped})
     commits = []
     for line in git("log", "--format=%h%x09%cs%x09%an%x09%s", "%s..%s" % (merge_base, head), cwd=root).splitlines():
         h, date, an, s = (line.split("\t", 3) + ["", "", ""])[:4]
         commits.append({"sha": h, "date": date, "author": an, "subject": s})
-    criteria = criteria_from_text(spec.get("body")) or criteria_from_forge(sd)
+    criteria = criteria_from_text(spec.get("body")) or criteria_from_forge(kd)
     data = {"id": spec["id"], "title": spec["title"], "base": base, "head": head,
             "merge_base": merge_base[:12], "issue": spec["issue"], "source": spec["source"],
             "project": paths.get("DISPLAY_NAME"), "generated": dt.date.today().isoformat(),
@@ -357,8 +373,7 @@ def gather_one(spec, paths, sd, base_override=None):
     out = os.path.join(sd, "atlas", spec["id"])
     try:
         os.makedirs(out, exist_ok=True)
-        with open(os.path.join(out, "atlas.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=1)
+        changed = lib.write_if_changed(os.path.join(out, "atlas.json"), json.dumps(data, indent=1))
         brief = os.path.join(out, "brief.md")
         if not os.path.exists(brief):
             with open(brief, "w", encoding="utf-8") as f:
@@ -369,6 +384,8 @@ def gather_one(spec, paths, sd, base_override=None):
     except OSError as e:
         fail(20, "cannot write atlas: %s" % e)
     emit("ID", data["id"])
+    emit("OUTCOME", "applied" if changed else "unchanged")
+    emit("CHANGED", "yes" if changed else "no")
     emit("ATLAS_DIR", out)
     emit("TITLE", data["title"])
     emit("BASE", base)
@@ -413,8 +430,22 @@ def cmd_gather(argv):
         rows = ralph_rows(sd)
         if not rows:
             fail(10, "no ralph-run.md rows")
+        failed = 0
         for issue in sorted(rows, key=lambda i: (re.sub(r"\d+$", "", i), int(re.search(r"\d+$", i).group()))):
-            gather_one(resolve_target(rows[issue][1], paths, sd), paths, sd, base_override)
+            try:
+                gather_one(resolve_target(rows[issue][1], paths, sd), paths, sd, base_override)
+            except Fatal as e:
+                # One bad row (missing branch, empty diff) must not hide the rest.
+                failed += 1
+                sys.stderr.write("squad-atlas: %s: %s\n" % (issue, e.reason))
+                emit("ID", "issue-%s" % issue)
+                emit("OUTCOME", "unchanged")
+                emit("CHANGED", "no")
+                emit("ROW_ERROR", "%s (exit %d)" % (e.reason.replace("\n", " "), e.code))
+        emit("ROWS", len(rows))
+        emit("ROWS_FAILED", failed)
+        if failed == len(rows):
+            raise Fatal(10, "every row failed")
         return
     gather_one(resolve_target(argv[0], paths, sd), paths, sd, base_override)
 
@@ -569,9 +600,9 @@ def bars_svg(by_module):
     return "\n".join(parts)
 
 
-def graph_fragment(sd, atlas_json):
+def graph_fragment(kd, atlas_json):
     """Module graph section from squad-graph.py, or None when no graph.json."""
-    gpath = os.path.join(sd, "graph.json")
+    gpath = os.path.join(kd, "graph.json")
     if not os.path.exists(gpath):
         return None
     try:
@@ -624,7 +655,7 @@ def cmd_render(argv):
          "<section id=\"brief\" class=\"brief\">%s</section>" % md_to_html(brief),
          "<section id=\"modules\"><h2>Lines changed per module</h2>%s</section>" % bars_svg(by_module),
          "<section id=\"graph\"><h2>Where it falls in the project</h2>%s</section>" % (
-             graph_fragment(sd, data) or "<p class=\"mut\">No graph.json for this project; run /seed (squad-graph.py extract) to add the import graph.</p>"),
+             graph_fragment(knowledge_dir(paths), data) or "<p class=\"mut\">No graph.json for this project; run /seed (squad-graph.py extract) to add the import graph.</p>"),
          "<section id=\"files\"><h2>Files</h2><input id=\"q\" type=\"search\" placeholder=\"filter by path\" aria-label=\"filter files\">"]
     for mod in sorted(by_module, key=lambda m: -(by_module[m][0] + by_module[m][1])):
         a, d, n = by_module[mod]
@@ -654,10 +685,11 @@ def cmd_render(argv):
     H.append("</main><script>%s</script></body></html>" % (JS + GRAPH_JS))
     out = os.path.join(adir, "index.html")
     try:
-        with open(out, "w", encoding="utf-8") as f:
-            f.write("\n".join(H))
+        changed = lib.write_if_changed(out, "\n".join(H))
     except OSError as e:
         fail(20, "cannot write html: %s" % e)
+    emit("OUTCOME", "applied" if changed else "unchanged")
+    emit("CHANGED", "yes" if changed else "no")
     emit("HTML", out)
     emit("BRIEF", brief_path)
 
@@ -667,12 +699,16 @@ def main():
         sys.stderr.write(__doc__)
         sys.exit(2)
     verb, rest = sys.argv[1], sys.argv[2:]
-    if verb == "gather":
-        cmd_gather(rest)
-    elif verb == "render":
-        cmd_render(rest)
-    else:
-        fail(2, "unknown verb '%s'" % verb)
+    try:
+        if verb == "gather":
+            cmd_gather(rest)
+        elif verb == "render":
+            cmd_render(rest)
+        else:
+            fail(2, "unknown verb '%s'" % verb)
+    except Fatal as e:
+        sys.stderr.write("squad-atlas: %s\n" % e.reason)
+        sys.exit(e.code)
 
 
 if __name__ == "__main__":
