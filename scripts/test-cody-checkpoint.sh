@@ -193,8 +193,8 @@ echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: on main" > "$PROGR
 rm -f "$STATUS"  # the status note is a separate, legitimate vault write; keep it out of this check
 FAKE_PR="7 main" run_hook_nofold
 check "pr mode, no worktree: main copy dedupes" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
-check "pr mode, no worktree: no lore branch created" 0 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
-check "pr mode, no worktree: no worktree created" 1 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
+check "pr mode: working state lives in the session worktree (branch created)" 1 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
+check "pr mode: session worktree created" 2 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
 
 # 4c4. local-only project in a PR-mode vault: no worktree lookup (a worktree copy holding the
 #      line is ignored, so the line is appended to the main copy)
@@ -220,6 +220,18 @@ echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: uncommitted on mai
 FAKE_PR="7 main" run_hook_nofold
 check "pr mode: main-only line, no duplicate on main" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
 grep -q '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt" 2>/dev/null && bad "pr mode: main-only line, nothing added to worktree" || ok "pr mode: main-only line, nothing added to worktree"
+
+# 4c6. PR mode (#424): cody-checkpoint.env lands in the session worktree, the checkout stays
+#      clean, so another session can switch it; the env is still readable via the worktree.
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-e "[#296] env"
+FAKE_PR="7 main" run_hook_nofold
+[ -f "$ENVF" ] && bad "pr mode: env not in the vault checkout" || ok "pr mode: env not in the vault checkout"
+_wenv="$(ls "$F_VAULT"/.claude/worktrees/lore-*/projects/fixture/.squad/cody-checkpoint.env 2>/dev/null | head -n 1)"
+check "pr mode: env in the session worktree" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(sed -n 's/^SHA=//p' "$_wenv" 2>/dev/null)"
+check "pr mode: checkout has no dirty file of ours" "" "$(git -C "$F_VAULT" status --porcelain -- projects | grep -v status.md)"
+git -C "$F_VAULT" switch -qc lore/other-2026-11-03 && ok "pr mode: another session can switch the checkout" || bad "pr mode: another session can switch the checkout"
 
 # 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 setup connected

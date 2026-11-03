@@ -47,8 +47,16 @@ done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 PROJ="$VAULT/projects/$DISPLAY"
 STATE_NAME="$(squad_state_name "$VAULT")"
 LOG="$PROJ/.cody-checkpoint.log"
+# The summary is working state: a PR-mode vault holds it in the session worktree
+# (squad_vault_wroot), never in the vault checkout; Ralph reads it with
+# `squad-progress.sh where --file env`. Refused (rc 10): direct-mode vault off its default branch.
 ENVF="$PROJ/$STATE_NAME/cody-checkpoint.env"
-skip() { rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
+if [ -d "$PROJ" ]; then
+  _wr="$(squad_vault_wroot "$VAULT" "$DISPLAY" 2>/dev/null)"; _wrc=$?
+  if [ "$_wrc" = 0 ] && [ -n "$_wr" ]; then ENVF="$_wr/projects/$DISPLAY/$STATE_NAME/cody-checkpoint.env"
+  else ENVF=/dev/null; fi
+fi
+skip() { [ "$ENVF" = /dev/null ] || rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
 [ -d "$PROJ" ] || exit 0
 
 BRANCH="$(git branch --show-current 2>/dev/null)"
@@ -116,7 +124,8 @@ if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ]; then
     || echo "cody-checkpoint: progress line not written" >&2
 fi
 
-if [ -d "$PROJ/$STATE_NAME" ]; then
+if [ -d "$PROJ/$STATE_NAME" ] && [ "$ENVF" != /dev/null ]; then
+  mkdir -p "$(dirname "$ENVF")"
   printf 'STATE=%s\nISSUE=%s\nBRANCH=%s\nSHA=%s\nTREE=%s\nPR=%s\nBASE=%s\nAT=%s\n' \
     "$STATE" "$ISSUE" "$BRANCH" "$SHA" "$TREE" "$PR" "$BASE" "$NOW" > "$ENVF"
 fi

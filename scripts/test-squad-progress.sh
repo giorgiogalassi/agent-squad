@@ -175,14 +175,38 @@ sp "$V" log --source forge --line 'x\ty\\z'
 fold "$V"
 check "log: backslashes stay literal" 1 "$(git -C "$V" show "$B:projects/proj/.squad/session.log" | grep -cF 'x\ty\\z')"
 
-# Two writers: a line written on main (hook) before Ralph's append: both survive the fold.
-printf '[#40] hook line\n' >> "$P"
+# Two writers (the async hook and Ralph) both go through the script: one copy, both lines kept.
+sp "$V" append --issue '#40' --line 'hook line'
 sp "$V" append --issue '#41' --line 'ralph line'
 fold "$V"
 LP="$(git -C "$V" show "$B:projects/proj/.squad/progress.txt")"
 check "race: hook line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#40\] hook line$')"
 check "race: ralph line kept" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#41\] ralph line$')"
 check "race: earlier lines not duplicated" 1 "$(printf '%s\n' "$LP" | grep -c '^\[#5\] resolved')"
+check "pr: nothing of ours ever dirty in the checkout" "" "$(git -C "$V" status --porcelain)"
+
+# 9. Another session switches the vault checkout while our working state is unfolded (#424 fix round).
+mkvault w '{"vault_main": "pr"}'; V="$TMPROOT/w"; D="$(date +%Y-%m-%d)"; RUNREL=projects/proj/.squad/ralph-run.md
+printf '%s\n' "$RUN" > "$V/$RUNREL"; git -C "$V" add -A; git -C "$V" commit -qm run; git -C "$V" push -q origin main 2>/dev/null
+sp "$V" run-row --issue '#5' --set Attempts=2
+sp "$V" append --issue '#7' --line 'resolved. PR: #8 (base: main). Notes: n'
+check "switch: our files not dirty in the checkout" "" "$(git -C "$V" status --porcelain)"
+git -C "$V" switch -qc lore/other-2026-11-03; check "switch: other session's switch succeeds" 0 "$?"
+sp "$V" where --file run; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "switch: where reads Attempts=2" 1 "$(grep -c '^| #5 .*| 2 | 0 |' "$F")"
+sp "$V" where --file progress; F="$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')"
+check "switch: where reads the appended line" 1 "$(grep -c '^\[#7\] .*PR: #8' "$F")"
+fold "$V"
+check "switch: session branch has the row" 1 "$(git -C "$V" show "lore/proj-$D:$RUNREL" | grep -c '^| #5 .*| 2 | 0 |')"
+check "switch: session branch has the line" 1 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c '^\[#7\]')"
+check "switch: other branch has none of our files" 0 "$(git -C "$V" show lore/other-2026-11-03:projects/proj/.squad/progress.txt 2>/dev/null | grep -c '^\[#7\]')"
+check "switch: checkout still clean after the fold" "" "$(git -C "$V" status --porcelain)"
+# a fold off the default branch in a direct-mode vault applies nothing
+mkvault fd '{"vault_main": "direct"}'; V2="$TMPROOT/fd"
+sp "$V2" log --source forge --line 'wait'
+git -C "$V2" switch -qc feature/y; fold "$V2"
+[ -f "$V2/projects/proj/.squad/session.log" ] && bad "direct off main: fold leaves the checkout alone" || ok "direct off main: fold leaves the checkout alone"
+check "direct off main: event waits" 1 "$(ls "$V2"/projects/proj/.squad/inbox/*.ev | wc -l | tr -d ' ')"
 
 # 10. Vault checkout off its default branch (#422): another session's branch.
 mkdir -p "$TMPROOT/bin"; printf '#!/bin/sh\nexit 0\n' > "$TMPROOT/bin/gh"; chmod +x "$TMPROOT/bin/gh"
@@ -199,6 +223,7 @@ sp "$V" run-row --issue '#5' --set 'State=building'
 check "off main: run-row applied" "OUTCOME=applied" "$(printf '%s\n' "$OUT" | sed -n 1p)"
 sp "$V" where --file run
 check "off main: row reads back from where's path" 1 "$(grep -c '^| #5 .*building' "$(printf '%s\n' "$OUT" | sed -n 's/^FILE=//p')")"
+fold "$V"
 check "off main: row committed on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:$RUNREL" | grep -c '^| #5 .*building')"
 check "off main: checkout run file untouched" 0 "$(grep -c building "$V/$RUNREL")"
 sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
@@ -206,6 +231,7 @@ sp "$V" append --issue '#30' --line 'resolved. PR: #31 (base: main). Notes: n'
 check "off main: append dedupes on the session copy" "unchanged" "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
 check "off main: other session's uncommitted edit survives" 1 "$(grep -c 'other session wip' "$V/projects/proj/.squad/progress.txt")"
 check "off main: other session's edit not in our commit" 0 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c 'other session wip')"
+fold "$V"
 check "off main: our line on the session branch" 1 "$(git -C "$V" show "lore/proj-$D:projects/proj/.squad/progress.txt" | grep -c '^\[#30\]')"
 check "off main: our line not in the checkout" 0 "$(grep -c '^\[#30\]' "$V/projects/proj/.squad/progress.txt")"
 check "off main: other branch has no new commit" "run" "$(git -C "$V" log -1 --format=%s lore/other-2026-11-03)"

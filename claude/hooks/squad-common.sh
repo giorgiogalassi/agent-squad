@@ -411,16 +411,19 @@ squad_commit_fail() {
   squad_fail "$([ "$1" = 10 ] && echo 10 || echo 20)" "vault commit not made (lore commit exit $1); the written file is left uncommitted"
 }
 
-# squad_vault_wroot <vault> <project>: the directory a writer must edit before
-# squad_vault_commit: the session worktree when the checkout is off its default
-# branch in a PR-mode vault, else the vault itself. Rc 10 (nothing printed) when
-# the checkout is off its default branch in a direct-mode vault: do not write.
+# squad_vault_wroot <vault> <project>: the directory a writer edits its working state
+# in. PR-mode vault (any checkout branch): always this project's session worktree,
+# never the vault checkout, so nothing of ours is ever dirty there to be carried onto
+# another session's branch (#424). Direct-mode and local-only vaults: the vault itself;
+# rc 10 (nothing printed) when the checkout is off its default branch there: do not write.
 squad_vault_wroot() {
   local v="$1" proj="$2"
-  if git -C "$v" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$v" "$proj" && squad_vault_offdefault "$v"; then
-    squad_vault_pr_mode_any "$v" || return 10
-    squad_vault_wt "$v" "$proj" || return 1
-    return 0
+  if git -C "$v" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$v" "$proj"; then
+    if squad_vault_pr_mode_any "$v"; then
+      squad_vault_wt "$v" "$proj" || return 1
+      return 0
+    fi
+    squad_vault_offdefault "$v" && return 10
   fi
   printf '%s' "$v"
 }

@@ -240,8 +240,9 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh where --file progress|log|run
 
 `run-write --from` takes the whole file (write it to a `mktemp` file first).
 `--set` values contain no `|` and no newline. Call `append` unconditionally.
-`where` emits `FILE=<path>`: read run state, `progress.txt` and
-`session.log` from that path, never from the vault `.squad/` directory.
+`where --file progress|log|run|env` emits `FILE=<path>`: read run state,
+`progress.txt`, `session.log` and the Cody summary from that path, never from the
+vault `.squad/` directory. `log` lines show in `session.log` only after the next fold.
 Read `OUTCOME`, `CHANGED` (and `FILE`). Act on the exit code:
 
 | Exit | Action |
@@ -307,7 +308,8 @@ git -C <wd> branch --show-current
 ```
 
 Hook summary first: the plugin's `SubagentStop` hook leaves
-`<vault>/projects/<display-name>/.squad/cody-checkpoint.env`
+the file `squad-progress.sh where --file env` names (`FILE=`; in a PR-mode vault it
+sits in the session worktree, not the vault checkout; missing means no summary)
 (`STATE`, `ISSUE`, `BRANCH`, `SHA`, `TREE`, `PR`, `BASE`; `STATE` is `pr`,
 `committed` or `detached`). Read it before the git commands; use it only when
 `BRANCH` equals the assigned branch and `SHA` equals HEAD's short sha,
