@@ -76,10 +76,9 @@ check "state_dir .lore" ".lore" "$(jq -r '.state_dir' "$V/lore-config.json")"
 check "vault clean after create" "" "$(git -C "$V" status --porcelain)"
 check "project mapped" demo "$(jq -r '.projects[]' "$V/lore-config.json")"
 # event then fold land under .lore
-if SECOND_BRAIN_PATH="$V" bash "$LORE" event --help >/dev/null 2>&1 || SECOND_BRAIN_PATH="$V" bash "$LORE" version >/dev/null 2>&1; then
-  out="$(cd "$R" && SECOND_BRAIN_PATH="$V" bash "$REPO_ROOT/claude/hooks/path-resolve.sh" | sed -n 's/^STATE_DIR=//p')"
-  check "STATE_DIR uses .lore" "$V/projects/demo/.lore" "$out"
-fi
+# (event + fold landing under .lore is asserted once #423 merges.)
+out="$(cd "$R" && SECOND_BRAIN_PATH="$V" bash "$REPO_ROOT/claude/hooks/path-resolve.sh" 2>/dev/null | sed -n 's/^STATE_DIR=//p')"
+check "STATE_DIR uses .lore" "$(cd "$V" && pwd -P)/projects/demo/.lore" "$out"
 
 # legacy in-repo .squad
 V="$TMP/v4"; mkvault "$V"; R="$TMP/work4/demo"; mkrepo "$R"; mkdir -p "$R/.squad"
@@ -94,6 +93,32 @@ jq --arg r "$R" '.context[$r]="repo"' "$V/lore-config.json" > "$TMP/c.json" && m
 git -C "$V" commit -qam ctx
 out="$(map "$V" --root "$R")"; rc=$?
 check "context repo maps" 0 "$rc"
+
+# --create-vault + legacy .squad against a missing vault: nothing is created
+V="$TMP/v8"; R="$TMP/work8/demo"; mkrepo "$R"; mkdir -p "$R/.squad"
+out="$(map "$V" --root "$R" --create-vault)"; rc=$?
+check "create-vault + legacy exits 10" 10 "$rc"
+has "create-vault + legacy NEED=migrate" "NEED=migrate" "$out"
+check "create-vault + legacy: vault not created" no "$([ -e "$V" ] && echo yes || echo no)"
+
+# --adopt re-attaches an existing folder no other root maps
+V="$TMP/v9"; mkvault "$V"; mkdir -p "$V/projects/demo"; R="$TMP/moved/demo2"; mkrepo "$R"
+out="$(map "$V" --root "$R" --adopt --name demo)"; rc=$?
+check "adopt exits 0" 0 "$rc"
+has "adopt applied" "OUTCOME=applied" "$out"
+has "adopt NAME" "NAME=demo" "$out"
+check "adopt maps the root" demo "$(jq -r '.projects[]|select(.=="demo")' "$V/lore-config.json")"
+# adopt refuses a folder another root maps
+V="$TMP/v10"; mkvault "$V"; mkdir -p "$V/projects/other"; R="$TMP/moved/x"; mkrepo "$R"
+cp "$V/lore-config.json" "$TMP/cfg.before"
+out="$(map "$V" --root "$R" --adopt --name other)"; rc=$?
+check "adopt of owned project exits 10" 10 "$rc"
+has "adopt of owned project NEED=name" "NEED=name" "$out"
+cmp -s "$V/lore-config.json" "$TMP/cfg.before" && ok "adopt refusal writes nothing" || bad "adopt refusal wrote config"
+# adopt of a missing folder is a usage error
+out="$(map "$V" --root "$R" --adopt --name nothere)"; rc=$?
+check "adopt of missing folder exits 2" 2 "$rc"
+map "$V" --root "$R" --adopt >/dev/null; check "adopt without name exits 2" 2 "$?"
 
 # root is the vault
 V="$TMP/v5"; mkvault "$V"

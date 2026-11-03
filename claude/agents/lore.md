@@ -108,7 +108,12 @@ when explicitly requested or named by a context ref.
    - `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
      the user and never run it; until they do, write nothing else under that
      project's folder.
-3. Not a git repo: `lore map` uses the directory. Ambiguous/failed
+3. Not a git repo: `lore map` maps the directory itself (`ROOT` = its physical
+   path, `pwd -P`). Moved checkout (the project already has a vault folder
+   under its old name; the user confirms the name): rerun
+   `lore map --adopt --name <existing>`, which re-attaches `projects/<name>/`
+   to this root; `NEED=name` means another root already maps it, so ask for a
+   new name instead. Ambiguous/failed
    resolution: read INDEX.md active project and ask
    `Use last active project <name>? [Y/n]`.
 4. Open the session log: append

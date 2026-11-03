@@ -26,7 +26,7 @@ Second-brain: a SessionStart hook auto-orients (read-only); run
 `/lore start` (or `/seed`, which calls `lore map` first) on first contact
 with a project. Lore owns first contact; Seed scans. The hooks handle each
 session; `/lore start` also migrates a legacy `.squad/` and re-maps a moved
-checkout. Command surface: `lore start`,
+checkout. Command surface: `lore start [--local]`,
 `lore prefer`, `lore recover` (no session-end command — status
 is rebuilt by the SessionEnd hook or `lore recover`).
 

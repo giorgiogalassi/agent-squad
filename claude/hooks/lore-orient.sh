@@ -145,8 +145,12 @@ emit_json() {
   fi
 }
 
+# First-contact command: /seed when the squad skills ship beside these hooks,
+# else /lore start (a Lore-only install has no Seed).
+FIRST_CONTACT="/lore start"
+[ -d "$HOOK_DIR/../skills/seed" ] && FIRST_CONTACT="/seed"
 if [ ! -d "$VAULT" ]; then
-  emit_json "Lore: no vault at $VAULT. Run /seed to initialize." msg-only
+  emit_json "Lore: no vault at $VAULT. Run $FIRST_CONTACT to initialize." msg-only
   exit 0
 fi
 if [ -z "$ROOT" ]; then
@@ -168,14 +172,14 @@ if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
   fi
   if [ -z "$NAME_OWNED" ]; then
     DISPLAY="${ROOT##*/}"
-    UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run /seed."
+    UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run $FIRST_CONTACT."
   fi
 fi
 if [ -z "$DISPLAY" ]; then
   if [ -n "$NAME_OWNED" ]; then
-    emit_json "Lore: No vault mapping for this project — run /seed. projects/${ROOT##*/} belongs to another checkout." msg-only
+    emit_json "Lore: No vault mapping for this project — run $FIRST_CONTACT. projects/${ROOT##*/} belongs to another checkout." msg-only
   else
-    emit_json "Lore: No vault mapping for this project — run /seed." msg-only
+    emit_json "Lore: No vault mapping for this project — run $FIRST_CONTACT." msg-only
   fi
   exit 0
 fi
