@@ -36,8 +36,23 @@ test_tmp_safe() {
 
 TEST_TMP_ROOTS=""
 
+# Guard (#428): a test must never install the lore shim into the real
+# user-level data dir. test_tmp_init records whether $REAL_HOME/.local/share/lore
+# existed; the EXIT trap fails the run (exit 1) if it appeared during it.
+TEST_TMP_REAL_LORE=""
+TEST_TMP_LORE_PRE=0
+test_tmp_lore_guard() {
+  [ -n "$TEST_TMP_REAL_LORE" ] || return 0
+  if [ "$TEST_TMP_LORE_PRE" = 0 ] && [ -e "$TEST_TMP_REAL_LORE" ]; then
+    echo "test-tmp: FAIL - $TEST_TMP_REAL_LORE appeared during the run (test wrote to the real HOME; set HOME/XDG_DATA_HOME to a temp dir)" >&2
+    return 1
+  fi
+  return 0
+}
+
 test_tmp_cleanup() {
-  local p
+  local p rc=0
+  test_tmp_lore_guard || rc=1
   for p in $TEST_TMP_ROOTS ${FIXROOTS:-}; do
     if test_tmp_safe "$p"; then
       rm -rf "$p"
@@ -45,6 +60,7 @@ test_tmp_cleanup() {
       echo "test-tmp: refusing to delete '$p' (not inside the temp base)" >&2
     fi
   done
+  [ "$rc" = 0 ] || exit 1
 }
 
 test_tmp_init() {
@@ -60,6 +76,10 @@ test_tmp_init() {
     exit 2
   fi
   real="$(cd "$raw" && pwd -P)"
+  if [ -z "$TEST_TMP_REAL_LORE" ] && [ -n "${HOME:-}" ]; then
+    TEST_TMP_REAL_LORE="$HOME/.local/share/lore"
+    [ -e "$TEST_TMP_REAL_LORE" ] && TEST_TMP_LORE_PRE=1
+  fi
   TEST_TMP_ROOTS="$TEST_TMP_ROOTS $real"
   trap test_tmp_cleanup EXIT
   printf -v "$var" '%s' "$real"

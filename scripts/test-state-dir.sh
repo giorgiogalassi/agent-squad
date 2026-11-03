@@ -8,6 +8,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PR="$REPO_ROOT/claude/hooks/path-resolve.sh"
 . "$(dirname "$0")/lib/test-tmp.sh"
 test_tmp_init test-state-dir TMP
+# squad-env.sh installs the lore shim under HOME/XDG_DATA_HOME: keep it in the temp dir.
+mkdir -p "$TMP/home"; export HOME="$TMP/home" XDG_DATA_HOME="$TMP/xdg"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

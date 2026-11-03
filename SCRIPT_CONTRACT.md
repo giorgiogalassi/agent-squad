@@ -97,6 +97,32 @@ verbs (`summary`, `resolve`) follow the contract above.
   the next SessionStart orientation shows a `failed` status and retries.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
+### The shim and the client calling convention
+
+`claude/hooks/squad-env.sh` (SessionStart) installs a shim at
+`${XDG_DATA_HOME:-$HOME/.local/share}/lore/bin/lore`: a few lines carrying
+`LORE_PLUGIN_DIR=` and `LORE_VERSION=` before an `exec` of the plugin's
+`claude/hooks/lore`. It is replaced with a temp file and `mv`, only when the
+running plugin's version (from `plugin.json`) is the same or newer than the
+installed one, so an older plugin never downgrades it. It is not added to
+PATH; the session env exports `LORE_BIN` (the shim path) and `LORE_STATE_DIR`.
+
+If the plugin directory the shim points at is gone, `lore event` still exits 0
+silently (the client contract); every other verb prints `lore: plugin not found
+at <dir>` to stderr and exits 20. The newest SessionStart wins between a dev
+checkout and the released plugin at the same version (same version replaces);
+an older dev checkout never replaces a newer shim. `LORE_BIN` is not exported
+when neither `XDG_DATA_HOME` nor `HOME` is set.
+
+Clients (other plugins' hooks, headless runs) call it as below. A missing shim
+means do nothing: exit 0, write nothing.
+
+```bash
+LORE="${LORE_BIN:-$HOME/.local/share/lore/bin/lore}"
+[ -x "$LORE" ] || exit 0
+"$LORE" <verb> ...
+```
+
 ## Exception: `squad-stats.py report`
 
 A `gh` failure while reading PR outcomes does not exit 20: the report is
