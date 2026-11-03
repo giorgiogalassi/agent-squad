@@ -44,6 +44,19 @@ errors, so failure paths in other scripts can call it safely. It is
 best-effort capture, not a verb whose result callers act on. The other
 verbs (`summary`, `resolve`) follow the contract above.
 
+## The `lore` dispatcher
+
+`claude/hooks/lore <verb>` follows the contract above. Verbs so far:
+
+- `commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...`:
+  the only code that commits to the vault (lint check 13). Runs under one lock
+  shared by every checkout of the vault. Emits `OUTCOME=applied|unchanged` and
+  `CHANGED=yes|no`. Exit 0 done or nothing to commit, 2 usage, 20 not a git
+  repository, lock wait timed out (`LORE_LOCK_WAIT` seconds, default 60) or
+  commit failed. A stale lock (dead pid, or older than 10 minutes) is broken
+  with a stderr notice.
+- `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
+
 ## Exception: `squad-stats.py report`
 
 A `gh` failure while reading PR outcomes does not exit 20: the report is

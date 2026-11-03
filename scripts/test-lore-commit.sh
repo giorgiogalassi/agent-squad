@@ -87,6 +87,55 @@ check "live lock: not committed" "init" "$(git -C "$V" log -1 --format=%s)"
 check "live lock: lock kept" yes "$([ -d "$V/.git/lore.lock" ] && echo yes || echo no)"
 kill "$HOLDER" 2>/dev/null
 
+# ownerless lock (holder between mkdir and writing owner): not stale while fresh
+V="$TMP/v6"; mkvault "$V"
+echo x > "$V/projects/p/a.md"
+mkdir "$V/.git/lore.lock"
+LORE_LOCK_WAIT=2 bash "$LORE" commit --vault "$V" --project p --message "[lore] fresh" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
+check "fresh ownerless lock: exit 20" 20 "$rc"
+check "fresh ownerless lock: kept" yes "$([ -d "$V/.git/lore.lock" ] && echo yes || echo no)"
+touch -t 202001010000 "$V/.git/lore.lock"
+bash "$LORE" commit --vault "$V" --project p --message "[lore] old ownerless" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
+check "old ownerless lock: broken, exit 0" 0 "$rc"
+check "old ownerless lock: committed" "[lore] old ownerless" "$(git -C "$V" log -1 --format=%s)"
+
+# break race: a waiter that observed a stale lock must not remove a fresh live lock swapped in meanwhile
+V="$TMP/v7"; mkvault "$V"
+echo x > "$V/projects/p/a.md"
+sleep 30 & HOLDER2=$!
+mkdir "$V/.git/lore.lock"
+printf 'PID=999999\nAT=%s\n' "$(date +%s)" > "$V/.git/lore.lock/owner"
+LORE_TEST_BREAK_DELAY=3 LORE_LOCK_WAIT=1 bash "$LORE" commit --vault "$V" --project p --message "[lore] race" --paths projects/p/a.md >/dev/null 2>"$TMP/err" &
+WP=$!
+sleep 1
+rm -rf "$V/.git/lore.lock"; mkdir "$V/.git/lore.lock"
+printf 'PID=%s\nAT=%s\n' "$HOLDER2" "$(date +%s)" > "$V/.git/lore.lock/owner"
+wait $WP; rc=$?
+check "break race: waiter times out (exit 20)" 20 "$rc"
+check "break race: live holder's lock intact" "PID=$HOLDER2" "$(sed -n 1p "$V/.git/lore.lock/owner" 2>/dev/null)"
+check "break race: not committed" "init" "$(git -C "$V" log -1 --format=%s)"
+kill "$HOLDER2" 2>/dev/null
+
+# one lock for every checkout of the vault (linked worktree)
+V="$TMP/v8"; mkvault "$V"
+git -C "$V" worktree add -q "$TMP/v8wt" -b side
+mkdir -p "$TMP/v8wt/projects/p"; echo x > "$TMP/v8wt/projects/p/a.md"
+mkdir "$V/.git/lore.lock"
+sleep 30 & HOLDER3=$!
+printf 'PID=%s\nAT=%s\n' "$HOLDER3" "$(date +%s)" > "$V/.git/lore.lock/owner"
+LORE_LOCK_WAIT=1 bash "$LORE" commit --vault "$TMP/v8wt" --project p --message "[lore] wt" --paths projects/p/a.md >/dev/null 2>&1; rc=$?
+check "linked worktree shares the main lock (exit 20)" 20 "$rc"
+kill "$HOLDER3" 2>/dev/null; rm -rf "$V/.git/lore.lock"
+bash "$LORE" commit --vault "$TMP/v8wt" --project p --message "[lore] wt" --paths projects/p/a.md >/dev/null 2>&1
+check "linked worktree commits when free" "[lore] wt" "$(git -C "$TMP/v8wt" log -1 --format=%s)"
+check "linked worktree leaves no lock in its own git dir" 0 "$(ls "$V/.git/worktrees/v8wt" | grep -c lore.lock)"
+
+# release only our own lock
+V="$TMP/v9"; mkvault "$V"
+echo x > "$V/projects/p/a.md"
+LORE_TEST_RELEASE_SWAP=1 bash "$LORE" commit --vault "$V" --project p --message "[lore] rel" --paths projects/p/a.md >/dev/null 2>&1
+check "release keeps a newer holder's lock" "PID=424242" "$(sed -n 1p "$V/.git/lore.lock/owner" 2>/dev/null)"
+
 # writers commit through lore: no direct commit in the scripts
 for s in lore-decide lore-map vault-check batch-audit lore-journal-pointer vault-pr; do
   n="$(grep -v '^[[:space:]]*#' "$REPO_ROOT/claude/hooks/$s.sh" | grep -cE 'squad_vault_commit|git .*(commit|push)')"

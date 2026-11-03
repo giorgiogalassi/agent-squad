@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vault-pr.sh -- vault commits and the session-end PR when the vault's main takes
 # changes only through pull requests (#350). Thin wrapper over squad-common.sh
-# (lore commit, squad_vault_finish). Contract: SCRIPT_CONTRACT.md.
+# (squad_vault_finish; commits go through `lore commit`). Contract: SCRIPT_CONTRACT.md.
 #
 # Usage: vault-pr.sh commit "<message>" <vault-relative path>...
 #        vault-pr.sh finish

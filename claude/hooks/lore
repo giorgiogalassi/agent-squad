@@ -19,45 +19,85 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$HOOK_DIR/squad-common.sh"
 
 LOCK_MAX_AGE=600
+LOCK_GRACE=10   # seconds an ownerless lock directory is left alone
+MY_OWNER=""
 LOCK=""  # global: the EXIT trap runs after cmd_commit returns
 
 lock_owner_field() {  # lock_owner_field <file> <KEY>
   sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
 }
 
-# lock_is_stale <lockdir>: 0 when the owner is gone, malformed or too old.
+# lock_owner_text <lockdir>: the owner file verbatim on one line ("" when absent).
+lock_owner_text() {
+  tr '\n' ' ' < "$1/owner" 2>/dev/null
+}
+
+# lock_mtime <path>: modification time in epoch seconds (BSD or GNU stat).
+lock_mtime() {
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+}
+
+# lock_is_stale <lockdir>: 0 when the owner is gone, malformed or too old. A lock
+# without an owner file is a holder between mkdir and writing `owner`: stale only
+# once the directory itself is older than the grace period.
 lock_is_stale() {
-  local f="$1/owner" pid at now
-  [ -f "$f" ] || return 0
+  local f="$1/owner" pid at now m
+  now="$(date +%s)"
+  if [ ! -f "$f" ]; then
+    m="$(lock_mtime "$1")"
+    case "$m" in ''|*[!0-9]*) return 1 ;; esac
+    [ $((now - m)) -gt "$LOCK_GRACE" ] && return 0
+    return 1
+  fi
   pid="$(lock_owner_field "$f" PID)"; at="$(lock_owner_field "$f" AT)"
   case "$pid" in ''|*[!0-9]*) return 0 ;; esac
   case "$at" in ''|*[!0-9]*) return 0 ;; esac
   kill -0 "$pid" 2>/dev/null || return 0
-  now="$(date +%s)"
   [ $((now - at)) -gt "$LOCK_MAX_AGE" ] && return 0
   return 1
 }
 
 # lock_acquire <lockdir> <wait-seconds>: 0 held, 1 timed out.
 lock_acquire() {
-  local lock="$1" wait="$2" waited=0 gone
+  local lock="$1" wait="$2" waited=0 gone seen
   while :; do
     if mkdir "$lock" 2>/dev/null; then
-      printf 'PID=%s\nAT=%s\n' "$$" "$(date +%s)" > "$lock/owner"
+      # owner appears whole (rename), never as an empty file a waiter could misread.
+      printf 'PID=%s\nAT=%s\n' "$$" "$(date +%s)" > "$lock/owner.$$" && mv "$lock/owner.$$" "$lock/owner"
+      MY_OWNER="$(lock_owner_text "$lock")"
       return 0
     fi
     if lock_is_stale "$lock"; then
-      # rename is atomic: of several breakers only one moves the directory.
+      seen="$(lock_owner_text "$lock")"
+      [ -n "${LORE_TEST_BREAK_DELAY:-}" ] && sleep "$LORE_TEST_BREAK_DELAY"
+      # rename is atomic: of several breakers only one moves the directory. What
+      # it moved must still be the owner it judged stale; else it took a lock
+      # acquired in between, which goes back untouched.
       gone="$lock.stale.$$"
       if mv "$lock" "$gone" 2>/dev/null; then
-        echo "lore: broke stale vault lock ($(tr '\n' ' ' < "$gone/owner" 2>/dev/null))" >&2
-        rm -rf "$gone"
+        if [ "$(lock_owner_text "$gone")" = "$seen" ]; then
+          echo "lore: broke stale vault lock (${seen:-no owner})" >&2
+          rm -rf "$gone"
+        else
+          [ -e "$lock" ] || mv "$gone" "$lock" 2>/dev/null
+          [ -e "$gone" ] && rm -rf "$gone"
+        fi
       fi
       continue
     fi
     [ "$waited" -ge "$wait" ] && return 1
     sleep 1; waited=$((waited + 1))
   done
+}
+
+# lock_release: remove the lock only while it is still ours.
+lock_release() {
+  [ -n "$LOCK" ] && [ -n "$MY_OWNER" ] || return 0
+  if [ -n "${LORE_TEST_RELEASE_SWAP:-}" ]; then
+    printf 'PID=424242\nAT=%s\n' "$(date +%s)" > "$LOCK/owner"
+  fi
+  [ "$(lock_owner_text "$LOCK")" = "$MY_OWNER" ] && rm -rf "$LOCK"
+  return 0
 }
 
 cmd_commit() {
@@ -80,10 +120,12 @@ cmd_commit() {
   fi
   [ -n "$proj" ] || proj=vault
   [ -n "$msg" ] || msg="[lore] $(squad_public_name "$vault" "$proj") update $(date '+%Y-%m-%d %H:%M')"
-  gitdir="$(git -C "$vault" rev-parse --absolute-git-dir 2>/dev/null)" || squad_fail 20 "$vault is not a git repository"
+  # The common git dir, so every linked worktree of the vault shares one lock.
+  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
   LOCK="$gitdir/lore.lock"
   lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
-  trap 'rm -rf "$LOCK"' EXIT
+  trap lock_release EXIT
   pending="$(git -C "$vault" status --porcelain -- "${paths[@]}" 2>/dev/null)"
   if [ -z "$pending" ]; then
     squad_emit OUTCOME unchanged; squad_emit CHANGED no
