@@ -50,6 +50,10 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.dont_write_bytecode = True
+sys.path.insert(0, HERE)
+import squad_pylib as lib  # noqa: E402  (write_if_changed)
+
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "out", ".angular", ".nx", "coverage",
              "__pycache__", ".venv", "venv", ".squad", "tmp", ".cache", "target"}
 EXTS = {".ts": "ts", ".tsx": "ts", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js",
@@ -305,11 +309,11 @@ def cmd_extract(argv):
             "groups": [{"id": k, "label": v} for k, v in sorted(seen_groups.items())],
             "nodes": nodes, "edges": [{"from": a, "to": b} for a, b in sorted(edges)]}
     try:
-        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=1)
+        changed = lib.write_if_changed(out, json.dumps(data, indent=1))
     except OSError as e:
         fail(20, "cannot write graph: %s" % e)
+    emit("OUTCOME", "applied" if changed else "unchanged")
+    emit("CHANGED", "yes" if changed else "no")
     emit("GRAPH", out)
     emit("FILES", len(nodes))
     emit("EDGES", len(edges))
@@ -503,11 +507,11 @@ def cmd_render(argv):
                   data.get("generated", "?"), data.get("extractor", "?"),
                   (", overlay: %s" % html.escape(ov["title"] or overlay)) if ov else "", body, PAGE_JS))
     try:
-        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            f.write(doc)
+        changed = lib.write_if_changed(out, doc)
     except OSError as e:
         fail(20, "cannot write: %s" % e)
+    emit("OUTCOME", "applied" if changed else "unchanged")
+    emit("CHANGED", "yes" if changed else "no")
     emit("OUT", out)
     if stats:
         emit("MODULES", stats["modules"])

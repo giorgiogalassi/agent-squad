@@ -38,9 +38,10 @@ how many PRs a pattern needs before it becomes a candidate; default 3.
 Anything else: ask once.
 
 **Reads only.** Retro never writes to the tracker or the VCS, in either
-mode. The script reads post-merge state through the VCS and tracker
-facades, which refuse writes by construction; in detached mode it reads
-git only and says so in the report.
+mode. Until the VCS facade (#397) lands, the script reads post-merge
+state with `gh` directly (`pr view` only, no write verb) and moves onto
+the facade unchanged; in detached mode it reads git only and says so in
+the report.
 
 ## Step 1: collect the trail
 
@@ -52,10 +53,11 @@ or
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-retro.py collect --batch [<path>]
 ```
 
-Read `PRS`, `REVIEWED`, `ESCALATED`, `SKIPPED`, `MERGED`, `REVERTED`,
-`FOLLOWED_UP`, `UNKNOWN`, `SOURCE` (`vcs`, `git-only` or `local-only`),
-`WINDOW`. Issue ids are whatever `progress.txt` holds (`#327` or
-`HV-22` on detached projects).
+Read `OUTCOME`, `CHANGED`, `PRS`, `REVIEWED`, `ESCALATED`, `SKIPPED`, `MERGED`, `REVERTED`,
+`FOLLOWED_UP` (`?` when unknowable), `UNKNOWN`, `SOURCE` (`vcs` or
+`git-only`), `WINDOW`. `--days <n>` keeps issues whose latest dated
+line is inside the window; lines with no date at all are left out. Issue ids are whatever `progress.txt` holds (`#327` or
+`ABC-12` on detached projects).
 
 | Exit | Action |
 |---|---|
@@ -63,10 +65,10 @@ Read `PRS`, `REVIEWED`, `ESCALATED`, `SKIPPED`, `MERGED`, `REVERTED`,
 | 10 | Print the stderr reason (`no verdicts in the window`, `no ralph-run.md`, `vault not found`) and stop. |
 | 2, 20 | Print the stderr reason. Stop. |
 
-`SOURCE=git-only` means the facade was unavailable (detached mode, or
-no credentials): merge and revert state comes from the local clone and
-follow-up commits only; human review comments and reopened issues are
-`UNKNOWN`. Say so in Step 3.
+`SOURCE=git-only` means the VCS was unavailable (detached mode, or no
+credentials): merge and revert state comes from the local clone;
+follow-up commits, human review comments and reopened issues are unknown
+(`?`), never zero. Say so in Step 3.
 
 ## Step 2: report
 
@@ -74,7 +76,7 @@ follow-up commits only; human review comments and reopened issues are
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-retro.py report
 ```
 
-Read `REPORT`, `ROUNDS_AVG`, `FIRST_PASS_PCT`, `HELD_PCT`,
+Read `OUTCOME`, `CHANGED`, `REPORT`, `ROUNDS_AVG`, `FIRST_PASS_PCT`, `HELD_PCT`,
 `TOP_BLOCKER_KIND`, `TOP_BLOCKER_COUNT`, `COST_PER_MERGED_PR`,
 `CANDIDATES`. Exit codes as in Step 1.
 
@@ -85,11 +87,14 @@ The report (Markdown, under `.squad/retro/<date>.md`) holds, in order:
    the same files within 14 days, human review comments, issue
    reopened), cost from `/stats` when the branch is known.
 2. **Approvals that held** against approvals followed by a fix or a
-   revert; `HELD_PCT` is the share that held.
-3. **Blockers by kind**: Reven's blocking issues grouped by the kind
-   the script assigns from the review text (tests, naming, scope,
-   error handling, docs, performance, security, other), with counts and
-   the PRs where each appeared.
+   revert; `HELD_PCT` is the share that held among approvals whose
+   follow-ups are known (`?` when none are, as in git-only mode).
+3. **Blockers by kind**: the blocking part of Reven's CHANGES_REQUESTED
+   rounds (COMMENT rounds and `non-blocking:` text excluded) grouped by
+   the kind the script assigns by whole-word keyword (tests, naming,
+   scope, error handling, docs, performance, security, other), with
+   counts and the PRs where each appeared. The keyword table is
+   unvalidated until #403.
 4. **Escalations and blocked skips**: every issue Ralph escalated in
    the window (date, attempts, the recorded reason) and the issues
    skipped because blocked by one. These are a fact about Chisel's
@@ -105,6 +110,7 @@ The report (Markdown, under `.squad/retro/<date>.md`) holds, in order:
    /lore decide "<title>: <body>" --rule
    ```
 
+   each marked `unvalidated` in the report until #403 tunes the kinds;
    or, when the pattern is cross-project in wording, as
    `/lore prefer "<rule>"`. The script writes the candidate; you do not
    add, merge or reword candidates.
@@ -144,10 +150,11 @@ asks Lore to. Retro never calls Lore, never edits `decisions.md` or
 
 ## Rules
 
-- Writes only `.squad/retro/<date>.md`, through the script. Nothing
-  else, in no mode.
-- No `gh` or vendor CLI calls of your own; the script owns every read,
-  through the facades.
+- The script writes only under `.squad/retro/` (`<date>.md` and the
+  cached `.trail.json`); the one other write is the session-log line
+  below, through the progress script. Nothing else, in no mode.
+- No `gh` or vendor CLI calls of your own; the script owns every read
+  (`gh` directly until #397, then the facades).
 - Never reviews code, never reopens a verdict, never re-runs Reven.
 - Proposals are the script's; you may explain one when asked, never
   invent one.
