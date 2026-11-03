@@ -65,6 +65,12 @@ on:
       - "scripts/gh-shim/**"
       - "claude/hooks/squad-stats.py"
       - "scripts/test-squad-stats.sh"
+      - "claude/hooks/squad-atlas.py"
+      - "claude/hooks/squad-retro.py"
+      - "claude/hooks/squad-graph.py"
+      - "claude/hooks/squad_pylib.py"
+      - "scripts/test-squad-graph.sh"
+      - "scripts/test-squad-atlas.sh"
       - "scripts/fixtures/**"
       - "scripts/plugin-version-bump.sh"
       - "scripts/test-plugin-version-bump.sh"
@@ -212,3 +218,11 @@ jobs:
       - name: Run scripts/test-eval-scaffold.sh (bash 3.2 on macOS)
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-eval-scaffold.sh; else bash scripts/test-eval-scaffold.sh; fi
+
+      - name: Run scripts/test-squad-atlas.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-atlas.sh; else bash scripts/test-squad-atlas.sh; fi
+
+      - name: Run scripts/test-squad-graph.sh (bash 3.2 on macOS)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then /bin/bash scripts/test-squad-graph.sh; else bash scripts/test-squad-graph.sh; fi
