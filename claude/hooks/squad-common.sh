@@ -74,6 +74,16 @@ EOF2
   return 0
 }
 
+# squad_git_common_dir <dir>: the physical common git dir of <dir>'s repository
+# (shared by every linked worktree), "" when <dir> is not in one. rev-parse is
+# checked before the cd: `cd ""` succeeds, so a failed rev-parse must not reach it.
+squad_git_common_dir() {
+  local d
+  d="$(cd "$1" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" && [ -n "$d" ] || return 0
+  (cd "$1" && cd "$d" && pwd -P) 2>/dev/null
+  return 0
+}
+
 # squad_state_name <vault>: the per-project state directory name of that vault
 # (path-resolve.sh --state-name; the only place the name is decided).
 squad_state_name() {

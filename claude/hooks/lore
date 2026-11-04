@@ -169,7 +169,7 @@ cmd_commit() {
   [ -n "$proj" ] || squad_fail 10 "no project for this commit; pass --project <name> or --vault-level for vault-level files"
   [ -n "$msg" ] || msg="[lore] $(squad_public_name "$vault" "$proj") update $(date '+%Y-%m-%d %H:%M')"
   # The common git dir, so every linked worktree of the vault shares one lock.
-  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
   [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
   LOCK="$gitdir/lore.lock"
   lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
@@ -227,7 +227,7 @@ cmd_root() {
     squad_emit STATE_DIR "$root/$name/$(squad_state_name "$vault")"
     return 0
   fi
-  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
   if [ -n "$gitdir" ]; then
     squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1 && existed=1
     LOCK="$gitdir/lore.lock"
@@ -627,7 +627,7 @@ cmd_fold() {
   done
   [ -n "$vault" ] || vault="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
   [ -d "$vault" ] || squad_fail 10 "no vault: $vault"
-  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
   [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
   sn="$(squad_state_name "$vault")"; [ -n "$sn" ] || squad_fail 20 "cannot resolve the state directory name"
   trap lock_release EXIT
@@ -659,7 +659,7 @@ EOF2
 eval "_lore_vault_drop_unlocked() $(declare -f squad_vault_drop | sed '1d')"
 squad_vault_drop() {
   local rc=0 gitdir
-  gitdir="$(cd "$1" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  gitdir="$(squad_git_common_dir "$1")" || gitdir=""
   [ -n "$gitdir" ] && LOCK="$gitdir/lore.lock" && lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "squad: vault lock busy; $3 not dropped" >&2; return 1; }
   _lore_vault_drop_unlocked "$@" || rc=$?
   lock_release; MY_OWNER=""
@@ -682,7 +682,7 @@ cmd_push() {
     esac
   done
   if [ -z "$vault" ]; then squad_resolve || exit 20; vault="$VAULT_PATH"; fi
-  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
   [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
   errf="$gitdir/lore-push.err.$$"
   squad_vault_finish "$vault" 2> "$errf" || rc=$?

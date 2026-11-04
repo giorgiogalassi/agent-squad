@@ -60,7 +60,7 @@ case "$BASE$SLOTS$TTL" in *[!0-9]*) squad_fail 2 "--base, --slots and --ttl must
 if [ "$VERB" = owner ]; then
   [ -n "$WTPATH" ] || squad_fail 2 "--worktree is required"
   cd=""; cd="$(git -C "$WTPATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || cd=""
-  [ -n "$cd" ] || cd="$(cd "$WTPATH" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)"
+  [ -n "$cd" ] || cd="$(squad_git_common_dir "$WTPATH")"
   [ -n "$cd" ] || squad_fail 10 "$WTPATH is not in a git repository"
   k="$(printf '%s' "$cd" | cksum | cut -d' ' -f1)"
   squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit OWNER "$k-$(basename "$WTPATH")"

@@ -39,6 +39,13 @@ state_name() {
   n="$(SECOND_BRAIN_PATH="$1" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/path-resolve.sh" --state-name 2>/dev/null)"
   printf '%s' "${n:-.lore}"
 }
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# squad-common.sh is sourced once, here (each source costs ~13 ms; SessionStart
+# used it a dozen times), before the resume path, which needs it too. Every use
+# checks SQUAD_COMMON_OK: without the file the hook still orients, with less.
+SQUAD_COMMON_OK=""
+[ -f "$HOOK_DIR/squad-common.sh" ] && . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && SQUAD_COMMON_OK=1
+
 # record_start_head <proj-dir>: first write wins, so a compact or clear in the
 # same session (same session_id) never moves the starting HEAD that SessionEnd
 # counts commits from. Consumed by lore-checkpoint.sh at SessionEnd.
@@ -46,7 +53,7 @@ record_start_head() {
   [ -n "$HOOK_SESSION" ] || return 0
   local _sd; _sd="$1/$(state_name "${1%/projects/*}")"
   [ -f "$_sd/sessions/$HOOK_SESSION" ] && return 0
-  [ -f "$HOOK_DIR/squad-common.sh" ] && ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_excludes "$1" "${_sd##*/}" ) 2>/dev/null
+  [ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_excludes "$1" "${_sd##*/}" ) 2>/dev/null
   mkdir -p "$_sd/sessions" 2>/dev/null \
     && git rev-parse HEAD > "$_sd/sessions/$HOOK_SESSION" 2>/dev/null
 }
@@ -76,7 +83,6 @@ fi
 # Parsed line-by-line (not `eval`'d): path-resolve.sh's output is not
 # shell-quoted, so eval-ing it would break on a path containing a space
 # and execute anything shaped like $(...) or `...` in a directory name.
-HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 if [ -n "${SQUAD_PROJECT_ROOT:-}" ] && [ -n "${SQUAD_VAULT_PATH:-}" ]; then
   # Values already exported by squad-env.sh earlier in this session (clear,
   # compact): reuse them instead of resolving a second time.
@@ -153,8 +159,8 @@ SIGNALS=""
 NL=$'\n'
 vault_signals() {
 # Vault checkout on another session's branch (#422): say so; nothing is changed here.
-if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-  _vdef="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
+if [ -n "$SQUAD_COMMON_OK" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vdef="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
   if [ -n "$_vdef" ]; then
     _vcur="$(git -C "$VAULT" symbolic-ref -q --short HEAD 2>/dev/null)"
     SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
@@ -163,14 +169,14 @@ fi
 # Vault push (#427): show a failed last push, and retry in the background when the
 # last push failed or a lore/* session branch is ahead of its remote tip (a push killed
 # at SessionEnd). Detached: orientation never waits on the network.
-if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+if [ -n "$SQUAD_COMMON_OK" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
   _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
   if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
     _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
     _vfail="Last vault push failed${_vreason:+: $_vreason}"
   else _vfail=""
   fi
-  if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
+  if ( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
     [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
   else
     [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
@@ -188,7 +194,7 @@ if [ ! -d "$VAULT" ]; then
 fi
 # PR-mode vault: bring the checkout level with origin (ff-only, clean default branch
 # only) so its INDEX.md, mapping and Obsidian view match what merged (#460).
-[ -f "$HOOK_DIR/squad-common.sh" ] && ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_ff "$VAULT" </dev/null ) >/dev/null || true
+[ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_ff "$VAULT" </dev/null ) >/dev/null || true
 # No project (no root, or an unmapped one) but a vault: skip the per-project work,
 # still flush pending vault branches and print the vault-level signals, if any.
 # $1: message for an unmapped project (printed even without signals), empty for no root.
@@ -235,7 +241,7 @@ PROJ="$VAULT/projects/$DISPLAY"
 LORE_LOCK_WAIT=3 SECOND_BRAIN_PATH="$VAULT" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true
 # Project files (status.md, progress.txt, session.log, context refs) are read where a
 # PR-mode vault holds them until its PR merges: the session worktree (#453, squad_vault_rroot).
-RROOT="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && squad_vault_rroot "$VAULT" "$DISPLAY" )"
+RROOT="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_rroot "$VAULT" "$DISPLAY" )"
 [ -n "$RROOT" ] || RROOT="$VAULT"
 RPROJ="$RROOT/projects/$DISPLAY"
 STATE="$RPROJ/$(state_name "$VAULT")"
@@ -253,7 +259,7 @@ OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
 
 if [ -f "$STATUS" ]; then
   # Third-party lines (notes, checkpoints from other plugins) come out as one fenced data block (#426).
-  OUTPUT="${OUTPUT}### Last recorded status${NL}$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && squad_fence_render status "$STATUS" || echo "(status withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
+  OUTPUT="${OUTPUT}### Last recorded status${NL}$( [ -n "$SQUAD_COMMON_OK" ] && squad_fence_render status "$STATUS" || echo "(status withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
   # Older versions live in the vault's git history (the checkpoints commit them).
   OUTPUT="${OUTPUT}Previous versions: git -C $VAULT log --oneline -- projects/$DISPLAY/status.md${NL}"
 else
@@ -304,7 +310,7 @@ fi
 # JOURNAL tail (#330): a `context: repo` project keeps its decisions in the
 # repository's JOURNAL.md, so show the last 40 lines (at most 2400 chars, the
 # same budget as the context refs). Silent when the file is absent.
-if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && [ -f "$ROOT/JOURNAL.md" ]; then
+if ( [ -n "$SQUAD_COMMON_OK" ] && squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && [ -f "$ROOT/JOURNAL.md" ]; then
   _jt="$(tail -n 40 "$ROOT/JOURNAL.md" | tail -c 2400)"
   [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
 fi
@@ -493,7 +499,7 @@ if [ -f "$STATE/progress.txt" ]; then
 fi
 
 if [ -f "$STATE/session.log" ]; then
-  OUTPUT="${OUTPUT}session.log (tail):${NL}$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && { tail -n 5 "$STATE/session.log" | squad_fence_render log -; } || echo "(session.log withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$( [ -n "$SQUAD_COMMON_OK" ] && { tail -n 5 "$STATE/session.log" | squad_fence_render log -; } || echo "(session.log withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
 fi
 
 # Staleness and budget signals. Each line is omitted when not applicable.
@@ -520,7 +526,7 @@ fi
 HEALTH=""
 if [ -x "$HOOK_DIR/vault-check.sh" ]; then
   _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
-  ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && _vc_args+=(--context repo)
+  ( [ -n "$SQUAD_COMMON_OK" ] && squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && _vc_args+=(--context repo)
   _projs=("$VAULT"/projects/*/)
   [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
   HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"

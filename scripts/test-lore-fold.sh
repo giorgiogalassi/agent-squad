@@ -201,5 +201,14 @@ kill $H 2>/dev/null; wait $H 2>/dev/null; rm -rf "$V/.git/lore.lock"
 fold >/dev/null 2>&1
 check "event left for the next fold" 1 "$(grep -c held "$V/projects/p/.lore/session.log")"
 
+# A non-git vault is refused before any fold work: `cd ""` on a failed rev-parse
+# once made the guard pass and ran the whole fold against a plain directory.
+NG="$TMP/nongit"; mkdir -p "$NG/projects/p/.lore/inbox"
+(cd "$TMP" && SECOND_BRAIN_PATH="$NG" bash "$LORE" fold --project p >/dev/null 2>&1); rc=$?
+check "non-git vault: fold exits 20" 20 "$rc"
+check "non-git vault: no lock directory created" no "$([ -e "$NG/lore.lock" ] && echo yes || echo no)"
+(cd "$TMP" && bash "$LORE" commit --vault "$NG" --project p --message m --paths projects/p/x >/dev/null 2>&1); rc=$?
+check "non-git vault: commit exits 20" 20 "$rc"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
