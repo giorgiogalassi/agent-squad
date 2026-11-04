@@ -275,7 +275,7 @@ _squad_vault_pr_mode_on() {
 # carry them into a new PR. Needs gh; without gh, offline or on any error: 1, the
 # branch is reused as before. Write path only: one gh call per local branch.
 squad_vault_pr_closed() {
-  local v="$1" b="$2" o c
+  local v="$1" b="$2" o c cd
   # Already found closed in this call (the open-worktree scan, then the suffix scan).
   case "
 ${_SQUAD_PR_CLOSED:-}
@@ -289,7 +289,15 @@ $b
   [ -n "$c" ] || return 1
   _SQUAD_PR_CLOSED="${_SQUAD_PR_CLOSED:-}${_SQUAD_PR_CLOSED:+
 }$b"
-  echo "squad: vault branch $b has a PR closed without merging; starting a new session branch, leaving $b and its worktree in place (delete them yourself)" >&2
+  # One notice per branch, ever: later calls (every write, every SessionEnd) are silent.
+  # Rule: a closed-unmerged branch is never pushed or re-PR'd by automation, whatever
+  # was committed to it after the close; reopening the PR makes it open again.
+  cd="$(git -C "$v" rev-parse --git-common-dir 2>/dev/null)"
+  case "$cd" in /*|"") ;; *) cd="$v/$cd" ;; esac
+  if [ -n "$cd" ] && ! grep -qxF "$b" "$cd/lore-closed-notified" 2>/dev/null; then
+    echo "squad: vault branch $b has a PR closed without merging; it is not pushed or re-opened, and a new session branch is used. $b and its worktree stay in place (delete them yourself)" >&2
+    echo "$b" >> "$cd/lore-closed-notified" 2>/dev/null
+  fi
   return 0
 }
 
@@ -610,6 +618,8 @@ squad_vault_finish() {
     if squad_vault_landed "$v" "$b" "$([ "$hasgh" = 1 ] && echo gh)"; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
     n="$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)"
     [ "${n:-0}" -gt 0 ] || continue
+    # Closed unmerged (#467): rejected work is neither pushed nor re-PR'd, nor dropped.
+    [ "$hasgh" = 1 ] && squad_vault_pr_closed "$v" "$b" && continue
     tip="$(git -C "$v" rev-parse "refs/heads/$b")"
     rtip="$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)"
     if [ "$tip" != "$rtip" ]; then
@@ -655,7 +665,9 @@ squad_vault_push_pending() {
     [ "$_wtb" = 1 ] || continue
     squad_local_only "$v" "$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')" && continue
     [ "$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)" -gt 0 ] || continue
-    [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] || return 0
+    [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] && continue
+    squad_vault_pr_closed "$v" "$b" && continue
+    return 0
   done <<EOL
 $(git -C "$v" for-each-ref --format='%(refname:short)' 'refs/heads/lore/*')
 EOL
