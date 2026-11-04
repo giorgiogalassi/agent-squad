@@ -24,13 +24,13 @@ val() { printf '%s\n' "$1" | sed -n "s/^$2=//p"; }
 mkproj "$TMP/p"
 
 # 1. existing vault, no key -> .squad
-V1="$TMP/v1"; mkdir -p "$V1/projects/demo/.squad"
+V1="$TMP/v1"; mkdir -p "$V1/projects/demo/.squad"; : > "$V1/projects/demo/.squad/session.log"
 O="$(resolve "$V1")"
 case "$(val "$O" STATE_DIR)" in */projects/demo/.squad) ok "no key + existing .squad dir -> .squad" ;; *) bad "fallback .squad: $O" ;; esac
 [ -d "$V1/projects/demo/.squad" ] && [ ! -e "$V1/projects/demo/.lore" ] && ok "no file moved or created" || bad "moved"
 
 # 2. explicit key wins; SQUAD_DIR unchanged
-V2="$TMP/v2"; mkdir -p "$V2/projects/demo/.squad"
+V2="$TMP/v2"; mkdir -p "$V2/projects/demo/.squad"; : > "$V2/projects/demo/.squad/session.log"
 printf '{"state_dir": ".lore"}\n' > "$V2/lore-config.json"
 O="$(resolve "$V2")"
 case "$(val "$O" STATE_DIR)" in */projects/demo/.lore) ok "state_dir key -> .lore" ;; *) bad "key: $O" ;; esac
@@ -76,6 +76,16 @@ c12 "$TMP/b" | grep -q 'squad-route.sh:[0-9]*: literal' && ok "literal state dir
 fixture "$TMP/c"
 printf '# see .squad/ docs\n' >> "$TMP/c/claude/hooks/squad-route.sh"
 c12 "$TMP/c" | grep -q '\[FAIL\]' && bad "comment line is not a violation" || ok "comment line is not a violation"
+
+# #442: Seed writing SQUAD_DIR content must not flip STATE_DIR.
+V8="$TMP/v8"; mkdir -p "$V8"; printf '{ "vault_main": "pr" }\n' > "$V8/lore-config.json"
+B="$(SECOND_BRAIN_PATH="$V8" bash "$PR" --state-name)"
+mkdir -p "$V8/projects/roma-ai/.squad/forge" "$V8/projects/roma-ai/.squad/prd"
+: > "$V8/projects/roma-ai/.squad/architecture.md"; : > "$V8/projects/roma-ai/.squad/scout-cache.md"
+A="$(SECOND_BRAIN_PATH="$V8" bash "$PR" --state-name)"
+[ "$B" = ".lore" ] && [ "$A" = "$B" ] && ok "Seed SQUAD_DIR files do not flip STATE_DIR" || bad "flip: before=$B after=$A"
+: > "$V8/projects/roma-ai/.squad/progress.txt"
+[ "$(SECOND_BRAIN_PATH="$V8" bash "$PR" --state-name)" = ".squad" ] && ok "a state file under .squad keeps .squad" || bad "state file legacy"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

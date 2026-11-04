@@ -152,8 +152,15 @@ to the prompt, local files and, when connected, `gh`.
 `STATE_DIR` is the per-project vault state directory. Its name comes only
 from the top-level `state_dir` key of `lore-config.local.json` /
 `lore-config.json` (a single path segment; the local file wins). Key absent:
-`.squad` when any `<vault>/projects/*/.squad/` already exists (existing vaults
-keep working, nothing moves), else `.lore`. No env var or client flag changes
+`.squad` when any `<vault>/projects/*/.squad/` already holds a state file
+(`session.log`, `progress.txt`, `ralph-run.md`, `chisel-config.json`, `inbox/`,
+`issues/`; existing vaults keep working, nothing moves), else `.lore`.
+Project knowledge in `SQUAD_DIR` (`architecture.md`, `scout-cache.md`, `forge/`,
+`prd/`) does not count: `SQUAD_DIR` stays `.squad` by design, and if it counted,
+Seed's first write would flip the name for the whole vault (#442). This keeps
+`path-resolve.sh` read-only; pinning the value into `lore-config.json` on first
+write was not taken because it would turn a read path into a commit (and, in a
+PR-mode vault, a session-branch commit). No env var or client flag changes
 the name, so two clients resolving the same project agree. `STATE_DIR` is always
 in the vault, also for `context: repo` projects, and `squad-env.sh` exports it as
 `SQUAD_STATE_DIR` and `LORE_STATE_DIR`. `path-resolve.sh --state-name` prints

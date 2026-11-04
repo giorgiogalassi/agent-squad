@@ -66,8 +66,10 @@
 # <vault>/projects/<name>/<state_dir>. The directory name comes only from
 # the top-level `state_dir` key of lore-config.local.json / lore-config.json
 # (a single path segment; the local file wins). Key absent: `.squad` when any
-# projects/*/.squad/ already exists in the vault (existing vaults keep working,
-# nothing moves), else `.lore`. No env var or client flag changes the name.
+# projects/*/.squad/ already holds a state file (session.log, progress.txt,
+# ralph-run.md, chisel-config.json, inbox/, issues/; existing vaults keep working,
+# nothing moves), else `.lore`. SQUAD_DIR content (architecture.md, forge/, prd/)
+# does not count, so Seed cannot flip the name (#442). No env var or client flag changes the name.
 # STATE_DIR is always in the vault, also for `context: repo` projects.
 # `path-resolve.sh --state-name` prints just the directory name (for scripts
 # that hold a vault and a project name but no project root).
@@ -97,9 +99,15 @@ state_name() {
       *) printf '%s' "$v"; return 0 ;;
     esac
   done
-  # Fallback for vaults without the key: keep `.squad` when it is already there.
+  # Fallback for vaults without the key: keep `.squad` when it already holds STATE
+  # (#442). Only state files count; project knowledge (architecture.md, forge/, prd/)
+  # lives in SQUAD_DIR, which stays `.squad` by design, so Seed writing it must not
+  # flip the name. Read-only: nothing is pinned or written.
   for f in "$VAULT"/projects/*/.squad; do
-    if [ -d "$f" ]; then printf '.squad'; return 0; fi
+    [ -d "$f" ] || continue
+    for s in session.log progress.txt ralph-run.md chisel-config.json inbox issues; do
+      if [ -e "$f/$s" ]; then printf '.squad'; return 0; fi
+    done
   done
   printf '.lore'
 }
