@@ -202,7 +202,9 @@ from `render`.
 | 0 | Continue; mention `CYCLES` and `UNTESTED_MODULES` in the closing summary when above 0. |
 | 10, 20 | Print the stderr reason and continue; the graph is optional. |
 
-`graph.json` is the one import graph of the project (format in the
+`graph.json` is knowledge: it is written under the `lore root` write root (the session
+worktree in a PR-mode vault, whatever `$SQUAD_DIR` the env holds) and committed in the
+Seed commit below. It is the one import graph of the project (format in the
 `squad-graph.py` docstring); `graph.html` is its page. Atlas does not
 read it: it asks `squad-graph.py diff` for the change graph of each
 range. Never write either by hand and never describe the graph in
