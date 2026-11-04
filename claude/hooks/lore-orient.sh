@@ -86,6 +86,9 @@ if [ "$HOOK_SOURCE" = "resume" ]; then
   if [ -n "$_rd" ] && [ -n "$_rr" ] && [ -n "$_rt" ] && [ "$_rt" != "$_rr" ] && [ -f "$_rt/.git" ]; then
     record_start_head "$_rv/projects/$_rd"
   fi
+  if [ -z "$_rd" ] && [ -n "$SQUAD_COMMON_OK" ]; then
+    record_vault_head "$_rv" "$SQUAD_VAULT_LEVEL" "$_rv" "$(state_name "$_rv")"
+  fi
   if [ -n "$_rd" ]; then
     _rw="$_rv"
     [ -n "$SQUAD_COMMON_OK" ] && _rw="$(squad_vault_rroot "$_rv" "$_rd")"
@@ -219,6 +222,10 @@ fi
 # $1: message for an unmapped project (printed even without signals), empty for no root.
 vault_only() {
   vault_signals
+  # First contact (#473): /seed maps the project during the session, so this start has no
+  # project to key the vault HEAD record on (a non-git directory has no root either); key
+  # it on the vault level instead. SessionEnd removes it, mapped or not.
+  [ -n "$SQUAD_COMMON_OK" ] && record_vault_head "$VAULT" "$SQUAD_VAULT_LEVEL" "$VAULT" "$(state_name "$VAULT")"
   local body="$1"
   [ -n "$SIGNALS" ] && body="${body}${body:+$NL}### Signals${NL}${SIGNALS}"
   if [ -z "$body" ]; then echo "{}"
