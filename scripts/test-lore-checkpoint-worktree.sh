@@ -33,11 +33,12 @@ printf '#!/bin/sh\nexit 1\n' > "$TMP/fakebin/claude"; chmod +x "$TMP/fakebin/cla
 export PATH="$TMP/fakebin:$PATH"
 
 mkenv() {  # mkenv <name> <with-status:0|1>: PR-mode vault + origin + mapped project + session worktree
-  local n="$1" ws="$2"
+  local n="$1" ws="$2" cfg='{"vault_main": "pr"}'
+  [ "${3:-}" = direct ] && cfg='{}'
   V="$TMP/$n/vault"; P="$TMP/$n/roma"; mkdir -p "$V" "$P"
   git init -q --bare -b main "$TMP/$n/origin.git"
   git -C "$V" init -q -b main; git -C "$V" remote add origin "$TMP/$n/origin.git"
-  printf '{"vault_main": "pr"}\n' > "$V/lore-config.json"
+  printf '%s\n' "$cfg" > "$V/lore-config.json"
   echo seed > "$V/seed.md"; git -C "$V" add -A; git -C "$V" commit -qm init; git -C "$V" push -q origin main
   git -C "$P" init -q -b main; git -C "$P" commit -q --allow-empty -m init
   export SECOND_BRAIN_PATH="$V"
@@ -115,6 +116,39 @@ check "committed-writes fixture: clean tree" "" "$(git -C "$WT" status --porcela
 sid_end s-work
 check "non-git committed writes: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
 check "non-git committed writes: checkpoint committed" "" "$(git -C "$WT" status --porcelain -- projects/roma/status.md)"
+
+# 7. #464 r3: resume start (no startup record) + committed writes -> one line
+mkenv seven 1
+rm -rf "$P/.git"
+sid_start_src() { ( cd "$P" && printf '{"cwd":"%s","source":"%s","session_id":"%s"}' "$P" "$2" "$1" | bash "$H/lore-orient.sh" >/dev/null 2>&1 ); }
+sid_start_src s-res resume
+SD7="$(ls -d "$V"/projects/roma/.*/sessions 2>/dev/null | head -n 1)"
+[ -f "$SD7/s-res.vault" ] && ok "resume writes the vault HEAD record" || bad "resume writes the vault HEAD record"
+echo "note" >> "$WT/projects/roma/decisions.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[work] roma" --paths projects/roma ) >/dev/null 2>&1
+sid_end s-res
+check "resume + committed writes: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
+[ ! -f "$SD7/s-res.vault" ] && ok "record removed at SessionEnd" || bad "record removed at SessionEnd"
+
+# 8. #464 r3: fresh direct vault (no exclude entries), no-op session -> nothing written
+mkenv eight 1 direct
+rm -rf "$P/.git"; : > "$V/.git/info/exclude"
+sid_start s-fresh
+before="$(cat "$WT/projects/roma/status.md")"; head0="$(git -C "$WT" rev-parse HEAD)"
+sid_end s-fresh
+check "fresh vault no-op: status.md untouched" "$before" "$(cat "$WT/projects/roma/status.md")"
+check "fresh vault no-op: no commit" "$head0" "$(git -C "$WT" rev-parse HEAD)"
+
+# 9. #464 r3: early-exit paths. A bailing SessionEnd removes its record; --note keeps it.
+mkenv nine 0
+rm -rf "$P/.git"
+sid_start s-bail
+SD9="$(ls -d "$V"/projects/roma/.*/sessions 2>/dev/null | head -n 1)"
+[ -f "$SD9/s-bail.vault" ] && ok "bail fixture: record present" || bad "bail fixture: record present"
+( cd "$P" && bash "$H/lore-checkpoint.sh" --note "mid-session" >/dev/null 2>&1 )
+[ -f "$SD9/s-bail.vault" ] && ok "--note keeps the record" || bad "--note keeps the record"
+sid_end s-bail
+[ ! -f "$SD9/s-bail.vault" ] && ok "early bail removes the record" || bad "early bail removes the record"
 
 # 5. #461: git root keeps the branch/sha form (worktree session on branch feat)
 mkenv five 1
