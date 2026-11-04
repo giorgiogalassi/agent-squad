@@ -83,7 +83,8 @@ verbs (`summary`, `resolve`) follow the contract above.
   first); `note` keeps one line per SOURCE+KEY, at most 10 per SOURCE, under
   `## Other sources`. Unparsable events and unknown kinds move to
   `inbox/quarantine/` with a `.why` file and are never committed. `inbox/` is
-  listed in the vault's `.git/info/exclude`.
+  listed in the vault's `.git/info/exclude`, with the rest of the local-only state
+  (see "Local-only vault state" in PATH_RESOLUTION.md).
 - `push [--vault <dir>]`: pushes each `lore/*` session branch of the vault and
   opens or updates its PR (wraps `squad_vault_finish`). Started detached by
   SessionEnd and retried by SessionStart; never run it where a wait matters.

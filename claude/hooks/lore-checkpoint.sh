@@ -188,6 +188,8 @@ if [ "$MODE" = note ]; then
 fi
 
 [ "$MODE" = hook ] && LOG="$VAULT/projects/$DISPLAY/.lore-checkpoint.log"
+# The log and the other local-only files must not show in `git status` (#455).
+[ "$MODE" = hook ] && squad_vault_excludes "$VAULT" "$STATE_NAME"
 
 # The vault checkout sits on another session's branch (#422): its files are not ours
 # to write, so nothing is folded, written or committed here. Only the session
