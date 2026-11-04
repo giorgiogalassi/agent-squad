@@ -288,12 +288,41 @@ squad_vault_bounded_gh() {
   [ "$rc" = 0 ]
 }
 
-# squad_vault_pr_closed <vault> <branch>: 0 when the branch has a PR closed without
-# merging and no open PR (#467): its commits were rejected, so a session must not
-# carry them into a new PR. Needs gh; without gh, offline or on any error: 1, the
-# branch is reused as before. Write path only: one gh call per local branch.
+# squad_vault_tip_in_heads <vault> <branch> <oids>: 0 when the branch's current tip is
+# the head commit of one of the PRs (<oids>, one per line) or an ancestor of it, i.e.
+# the PR carries this branch's work. The ancestor case needs the branch to be ahead of
+# the default branch: an empty branch sits at main, an ancestor of nearly everything.
+# A recreated branch or one with newer commits has another tip: not in the heads (#472).
+squad_vault_tip_in_heads() {
+  local v="$1" b="$2" oids="$3" tip br0 base n o
+  tip="$(git -C "$v" rev-parse -q --verify "refs/heads/$b")" || return 1
+  case "
+$oids
+" in *"
+$tip
+"*) return 0 ;; esac
+  br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 1
+  case "$br0" in main|master) ;; *) br0="$(squad_vault_default_branch "$v")" || return 1 ;; esac
+  base="$br0"; git -C "$v" rev-parse -q --verify "origin/$br0" >/dev/null 2>&1 && base="origin/$br0"
+  n="$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)"
+  [ "${n:-0}" -gt 0 ] || return 1
+  while IFS= read -r o; do
+    [ -n "$o" ] || continue
+    git -C "$v" merge-base --is-ancestor "$tip" "$o" 2>/dev/null && return 0
+  done <<EOL
+$oids
+EOL
+  return 1
+}
+
+# squad_vault_pr_closed <vault> <branch>: 0 when the branch's tip belongs to a PR closed
+# without merging and no PR of the name is open (#467, #472): those commits were
+# rejected, so a session must not carry them into a new PR. Decided by the tip, not the
+# name: a branch recreated under the name of a closed PR, or with commits added after
+# the close, is new work and is reused. Needs gh; without gh, offline or on any error:
+# 1, the branch is reused as before. Write path only: one gh call per local branch.
 squad_vault_pr_closed() {
-  local v="$1" b="$2" st cd
+  local v="$1" b="$2" st oids cd tip key
   # Already found closed in this call (the open-worktree scan, then the suffix scan).
   case "
 ${_SQUAD_PR_CLOSED:-}
@@ -303,24 +332,25 @@ $b
   command -v gh >/dev/null 2>&1 || return 1
   # One bounded call (SQUAD_FETCH_TIMEOUT, default 8 s): a slow or hung network counts
   # as "not known closed", so SessionStart never waits on it for long.
-  st="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state all --json state --jq '.[].state')" || return 1
+  st="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state all --json state,headRefOid --jq '.[]|"\(.state) \(.headRefOid)"')" || return 1
   case "
 $st
 " in *"
-OPEN
-"*) return 1 ;; *"
-CLOSED
-"*) ;; *) return 1 ;; esac
+OPEN "*) return 1 ;; *"
+CLOSED "*) ;; *) return 1 ;; esac
+  oids="$(printf '%s\n' "$st" | sed -n 's/^CLOSED //p')"
+  squad_vault_tip_in_heads "$v" "$b" "$oids" || return 1
   _SQUAD_PR_CLOSED="${_SQUAD_PR_CLOSED:-}${_SQUAD_PR_CLOSED:+
 }$b"
-  # One notice per branch, ever: later calls (every write, every SessionEnd) are silent.
-  # Rule: a closed-unmerged branch is never pushed or re-PR'd by automation, whatever
-  # was committed to it after the close; reopening the PR makes it open again.
+  # One notice per branch tip: later calls (every write, every SessionEnd) are silent.
+  # Rule: a closed-unmerged tip is never pushed or re-PR'd by automation; commits added
+  # after the close change the tip, so the branch is open work again.
+  tip="$(git -C "$v" rev-parse "refs/heads/$b")"; key="$b $tip"
   cd="$(git -C "$v" rev-parse --git-common-dir 2>/dev/null)"
   case "$cd" in /*|"") ;; *) cd="$v/$cd" ;; esac
-  if [ -n "$cd" ] && ! grep -qxF "$b" "$cd/lore-closed-notified" 2>/dev/null; then
+  if [ -n "$cd" ] && ! grep -qxF "$key" "$cd/lore-closed-notified" 2>/dev/null; then
     echo "squad: vault branch $b has a PR closed without merging; it is not pushed or re-opened, and a new session branch is used. $b and its worktree stay in place (delete them yourself)" >&2
-    echo "$b" >> "$cd/lore-closed-notified" 2>/dev/null
+    echo "$key" >> "$cd/lore-closed-notified" 2>/dev/null
   fi
   return 0
 }
@@ -340,12 +370,8 @@ squad_vault_landed() {
     [ "$tip" != "$(git -C "$v" rev-parse "$base")" ]; return
   fi
   if [ "${3:-}" = gh ]; then
-    oid="$(cd "$v" && gh pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)"
-    case "
-$oid
-" in *"
-$tip
-"*) return 0 ;; esac
+    oid="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid')"
+    squad_vault_tip_in_heads "$v" "$b" "$oid" && return 0
   fi
   mb="$(git -C "$v" merge-base "$base" "$b" 2>/dev/null)" || return 1
   while IFS= read -r f; do
