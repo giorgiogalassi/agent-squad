@@ -270,6 +270,61 @@ _squad_vault_pr_mode_on() {
   return "$rc"
 }
 
+# squad_vault_bounded_gh <vault> <gh args...>: run gh in <vault>, print its stdout, stop it
+# after SQUAD_FETCH_TIMEOUT seconds (default 8; background pid + watcher, as in
+# squad_vault_ff: macOS has no `timeout`). Returns gh's status, 1 on timeout or error.
+squad_vault_bounded_gh() {
+  local v="$1" bound="${SQUAD_FETCH_TIMEOUT:-8}" out gpid wpid rc
+  shift
+  out="$(mktemp 2>/dev/null)" || return 1
+  ( cd "$v" && exec gh "$@" ) >"$out" 2>/dev/null </dev/null &
+  gpid=$!
+  ( sleep "$bound"; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wpid=$!
+  wait "$gpid" 2>/dev/null; rc=$?
+  pkill -P "$wpid" 2>/dev/null; kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  [ "$rc" = 0 ] && cat "$out"
+  rm -f "$out"
+  [ "$rc" = 0 ]
+}
+
+# squad_vault_pr_closed <vault> <branch>: 0 when the branch has a PR closed without
+# merging and no open PR (#467): its commits were rejected, so a session must not
+# carry them into a new PR. Needs gh; without gh, offline or on any error: 1, the
+# branch is reused as before. Write path only: one gh call per local branch.
+squad_vault_pr_closed() {
+  local v="$1" b="$2" st cd
+  # Already found closed in this call (the open-worktree scan, then the suffix scan).
+  case "
+${_SQUAD_PR_CLOSED:-}
+" in *"
+$b
+"*) return 0 ;; esac
+  command -v gh >/dev/null 2>&1 || return 1
+  # One bounded call (SQUAD_FETCH_TIMEOUT, default 8 s): a slow or hung network counts
+  # as "not known closed", so SessionStart never waits on it for long.
+  st="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state all --json state --jq '.[].state')" || return 1
+  case "
+$st
+" in *"
+OPEN
+"*) return 1 ;; *"
+CLOSED
+"*) ;; *) return 1 ;; esac
+  _SQUAD_PR_CLOSED="${_SQUAD_PR_CLOSED:-}${_SQUAD_PR_CLOSED:+
+}$b"
+  # One notice per branch, ever: later calls (every write, every SessionEnd) are silent.
+  # Rule: a closed-unmerged branch is never pushed or re-PR'd by automation, whatever
+  # was committed to it after the close; reopening the PR makes it open again.
+  cd="$(git -C "$v" rev-parse --git-common-dir 2>/dev/null)"
+  case "$cd" in /*|"") ;; *) cd="$v/$cd" ;; esac
+  if [ -n "$cd" ] && ! grep -qxF "$b" "$cd/lore-closed-notified" 2>/dev/null; then
+    echo "squad: vault branch $b has a PR closed without merging; it is not pushed or re-opened, and a new session branch is used. $b and its worktree stay in place (delete them yourself)" >&2
+    echo "$b" >> "$cd/lore-closed-notified" 2>/dev/null
+  fi
+  return 0
+}
+
 # squad_vault_landed <vault> <branch> [gh]: 0 when the branch's work already reached
 # origin's main (merge, squash or rebase): its commits are ahead of main but every
 # file it changed equals main's, or (gh given, connected) a merged PR has this tip
@@ -353,6 +408,7 @@ SQUAD_VAULT_LEVEL="_vault"
 # in case" (#444); an empty <project> returns 10 and creates nothing.
 squad_vault_wt() {
   local v="$1" pub d br0 base b wt ex i=1 sfx cur nopen open_wt
+  _SQUAD_PR_CLOSED=""
   [ -n "${2:-}" ] || { echo "squad: no project for a vault session worktree; none created" >&2; return 10; }
   pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
@@ -373,6 +429,7 @@ squad_vault_wt() {
         git -C "$v" fetch -q --prune origin >/dev/null 2>&1
       fi
       if squad_vault_landed "$v" "$b"; then continue; fi
+      if squad_vault_pr_closed "$v" "$b"; then continue; fi
     fi
     open_wt="$ex"; nopen=$((nopen+1))
   done < <(squad_vault_wt_existing "$v" "$2")
@@ -391,6 +448,7 @@ squad_vault_wt() {
         git -C "$v" fetch -q --prune origin >/dev/null 2>&1
       fi
       if squad_vault_landed "$v" "$b"; then i=$((i+1)); continue; fi
+      if squad_vault_pr_closed "$v" "$b"; then i=$((i+1)); continue; fi
     fi
     break
   done
@@ -584,6 +642,8 @@ squad_vault_finish() {
     if squad_vault_landed "$v" "$b" "$([ "$hasgh" = 1 ] && echo gh)"; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
     n="$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)"
     [ "${n:-0}" -gt 0 ] || continue
+    # Closed unmerged (#467): rejected work is neither pushed nor re-PR'd, nor dropped.
+    [ "$hasgh" = 1 ] && squad_vault_pr_closed "$v" "$b" && continue
     tip="$(git -C "$v" rev-parse "refs/heads/$b")"
     rtip="$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)"
     if [ "$tip" != "$rtip" ]; then
@@ -629,7 +689,9 @@ squad_vault_push_pending() {
     [ "$_wtb" = 1 ] || continue
     squad_local_only "$v" "$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')" && continue
     [ "$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)" -gt 0 ] || continue
-    [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] || return 0
+    [ "$(git -C "$v" rev-parse "refs/heads/$b")" = "$(git -C "$v" rev-parse -q --verify "refs/remotes/origin/$b" 2>/dev/null)" ] && continue
+    squad_vault_pr_closed "$v" "$b" && continue
+    return 0
   done <<EOL
 $(git -C "$v" for-each-ref --format='%(refname:short)' 'refs/heads/lore/*')
 EOL
