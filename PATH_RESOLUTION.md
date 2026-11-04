@@ -239,3 +239,12 @@ Grep for `path-resolve.sh` to verify:
 - `claude/hooks/lore-orient.sh`
 - `claude/hooks/path-resolve.sh` — the actual implementation; everything
   else calls it.
+
+## No project (#441)
+
+When there is no project (no git root and no config mapping the directory),
+`path-resolve.sh` emits `PROJECT_ROOT=`, `DISPLAY_NAME=`, `SQUAD_DIR=` and
+`STATE_DIR=` empty and stays silent about `chisel-config.json`; it never builds
+a path with an empty `projects//` segment. Writers (`squad-progress.sh`,
+`lore event`) exit 10 with `no project mapped for <root>; run /seed or /lore
+start`; `cody-checkpoint.sh` (a hook) notes it on stderr and exits 0.

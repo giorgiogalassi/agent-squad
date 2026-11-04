@@ -44,6 +44,8 @@ case "$VERB" in append|log|run-write|run-row|run-status|where) ;; *) squad_fail 
 
 squad_resolve || squad_fail 20 "path resolution failed"
 V="$VAULT_PATH"; PROJ="${DISPLAY_NAME:-$(basename "$PROJECT_ROOT")}"
+# No project (#441): exit 10, never a usage error from a writer further down.
+[ -n "$PROJ" ] || squad_fail 10 "no project mapped for ${PROJECT_ROOT:-$PWD}; run /seed or /lore start"
 LORE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lore"
 REL_DIR="projects/$PROJ/$(squad_state_name "$V")"
 
