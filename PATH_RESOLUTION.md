@@ -124,6 +124,15 @@ and the lookup is a no-op. It is read-only; direct and local-only vaults reach i
 A session that just ran `lore map` re-runs `path-resolve.sh` (or `squad-env.sh`) to
 pick the mapping up; a new session gets it from SessionStart.
 
+`graph.json` is knowledge, not state (#454): it lives in `SQUAD_DIR` beside
+`architecture.md`, `scout-cache.md` and `graph.html`, and Seed commits it with them.
+`squad-graph.py` therefore resolves it through `lore root` rather than trusting a
+`SQUAD_DIR` from the environment, which predates a session worktree created later:
+`extract` (no `--out`) writes under the write root, and `render` (no `--graph`)
+reads the session worktree's copy. Only the run-state files (`graph-cache.json`,
+`graph-timeline.jsonl`) follow `STATE_DIR`. The vault checkout never holds an
+untracked `graph.json`.
+
 The root is the physical path (`pwd -P`), and `lore map --root` stores the physical
 path too, so `/var` vs `/private/var` and symlinks match. A directory that is not a git
 repository has no git root: its physical cwd is a candidate and becomes `PROJECT_ROOT`

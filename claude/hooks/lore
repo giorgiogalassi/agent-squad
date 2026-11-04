@@ -181,6 +181,18 @@ cmd_commit() {
   squad_emit OUTCOME "$COMMIT_OUTCOME"; squad_emit CHANGED "$([ "$COMMIT_OUTCOME" = applied ] && echo yes || echo no)"
 }
 
+# root_repo_sq <vault> <project>: the repo SQUAD_DIR of a `context: repo` project
+# (empty for a vault project), judged from the cwd when it resolves to that same
+# vault and project. Runs in a subshell so squad_resolve's exports do not leak.
+root_repo_sq() {
+  squad_resolve >/dev/null 2>&1 || return 0
+  [ "${VAULT_PATH:-}" = "$1" ] && [ "${DISPLAY_NAME:-}" = "$2" ] || return 0
+  case "${SQUAD_DIR:-}" in
+    "$1"/*|"") ;;
+    *) printf '%s' "$SQUAD_DIR" ;;
+  esac
+}
+
 # cmd_root: see the header. Takes the vault lock around worktree creation.
 cmd_root() {
   local vault="" proj="" vlevel=0 root rc existed=0 sq="" gitdir name rd=0 wt
@@ -199,6 +211,11 @@ cmd_root() {
     [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
     # `context: repo`: SQUAD_DIR stays in the repo, whatever the root.
     case "${SQUAD_DIR:-}" in "$vault"/*|"") ;; *) sq="$SQUAD_DIR" ;; esac
+  elif [ -n "$proj" ] && [ "$vlevel" = 0 ]; then
+    # An explicit --vault/--project (squad_pylib.lore_root) must not lose
+    # `context: repo` either: when the cwd resolves to this same vault and project
+    # and its SQUAD_DIR is outside the vault, that repo SQUAD_DIR is kept.
+    sq="$(root_repo_sq "$vault" "$proj")"
   fi
   [ "$vlevel" = 1 ] && { proj="$SQUAD_VAULT_LEVEL"; sq=""; }
   [ -n "$proj" ] || squad_fail 10 "no project for this root; pass --project <name> or --vault-level"

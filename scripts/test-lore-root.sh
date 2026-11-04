@@ -193,5 +193,59 @@ check "vault-check --context repo not inferred" "" "$(cd "$P" && bash "$HK/vault
 orient="$(cd "$P" && SQUAD_VAULT_PATH="" bash "$HK/lore-orient.sh" 2>&1 </dev/null)"
 case "$orient" in *"JOURNAL"*) bad "orient: worktree SQUAD_DIR read as repo (JOURNAL tail shown)" ;; *) ok "orient: no JOURNAL tail for a vault project" ;; esac
 
+# --- graph.json follows the session worktree (#454) ---------------------------------
+V="$TMP/vgraph"; mkvault "$V" pr; P="$TMP/graphproj"; mkproj "$P"
+mkdir -p "$P/src"; echo 'export const a = 1' > "$P/src/a.ts"; echo "import './a'" > "$P/src/b.ts"
+git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm init
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name graphproj ) >/dev/null 2>&1
+STALE="$V/projects/graphproj/.squad"   # what a session env that predates the worktree holds
+out="$(cd "$P" && SQUAD_VAULT_PATH="$V" SQUAD_PROJECT_ROOT="$P" SQUAD_DISPLAY_NAME=graphproj SQUAD_DIR="$STALE" python3 "$HK/squad-graph.py" extract 2>&1)"; rc=$?
+check "graph extract exits 0" 0 "$rc"
+wt="$V/.claude/worktrees/lore-graphproj-$D/projects/graphproj/.squad"
+check "graph.json under the session worktree" 1 "$([ -s "$wt/graph.json" ] && echo 1 || echo 0)"
+check "graph: vault checkout clean" "" "$(git -C "$V" status --porcelain)"
+out="$(cd "$P" && SQUAD_VAULT_PATH="$V" SQUAD_PROJECT_ROOT="$P" SQUAD_DISPLAY_NAME=graphproj SQUAD_DIR="$STALE" python3 "$HK/squad-graph.py" render 2>&1)"; rc=$?
+check "graph render with no --graph exits 0" 0 "$rc"
+check "graph.html beside graph.json in the worktree" 1 "$([ -s "$wt/graph.html" ] && echo 1 || echo 0)"
+( cd "$P" && bash "$LORE" commit --message "[seed] graph" --paths projects/graphproj/.squad/graph.json projects/graphproj/.squad/graph.html ) >/dev/null 2>&1
+has "graph.json on the session branch" "projects/graphproj/.squad/graph.json" "$(git -C "$V" ls-tree -r --name-only "lore/graphproj-$D")"
+check "graph: checkout still clean after commit" "" "$(git -C "$V" status --porcelain)"
+# explicit env with no vault in it: the vault is found, still the worktree
+rm -f "$wt/graph.json"
+( cd "$P" && SQUAD_PROJECT_ROOT="$P" SQUAD_DIR="$STALE" python3 "$HK/squad-graph.py" extract ) >/dev/null 2>&1
+check "graph: env without a vault still writes the worktree" 1 "$([ -s "$wt/graph.json" ] && echo 1 || echo 0)"
+check "graph: no graph.json in the checkout" 0 "$(find "$V/projects" -path '*/.claude' -prune -o -name graph.json -print 2>/dev/null | grep -vc '/.claude/')"
+
+# --- context: repo keeps the repo SQUAD_DIR for the graph commands (#454 fix round 1) --
+V="$TMP/vgrepo"; mkvault "$V" pr; P="$TMP/grepoproj"; mkproj "$P"
+mkdir -p "$P/src"; echo 'export const a = 1' > "$P/src/a.ts"; echo "import './a'" > "$P/src/b.ts"
+git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm init
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name grepoproj ) >/dev/null 2>&1
+python3 - "$V/lore-config.json" "$(cd "$P" && pwd -P)" <<'PYEOF'
+import json, sys
+c = json.load(open(sys.argv[1])); c["context"] = {sys.argv[2]: "repo"}
+json.dump(c, open(sys.argv[1], "w"))
+PYEOF
+git -C "$V" -c user.name=t -c user.email=t@t commit -qam cfg
+out="$(cd "$P" && bash "$LORE" root --vault "$V" --project grepoproj 2>&1)"
+check "explicit --vault keeps the repo SQUAD_DIR" "$(cd "$P" && pwd -P)/.squad" "$(kv SQUAD_DIR "$out")"
+wt0="$(git -C "$V" worktree list | wc -l)"
+out="$(cd "$P" && python3 "$HK/squad-graph.py" extract 2>&1)"; rc=$?
+check "repo-context graph extract exits 0" 0 "$rc"
+check "repo-context graph.json in <root>/.squad" 1 "$([ -s "$P/.squad/graph.json" ] && echo 1 || echo 0)"
+check "repo-context: no vault projects dir" 0 "$([ -e "$V/projects/grepoproj/.squad/graph.json" ] && echo 1 || echo 0)"
+check "repo-context: extract created no session worktree" "$wt0" "$(git -C "$V" worktree list | wc -l)"
+check "repo-context: vault checkout clean" "" "$(git -C "$V" status --porcelain)"
+
+# diff with no --out writes a throwaway outside the session worktree (PR mode)
+V="$TMP/vgraph"; P="$TMP/graphproj"; export SECOND_BRAIN_PATH="$V"
+echo 'export const c = 3' > "$P/src/c.ts"; git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm two
+out="$(cd "$P" && python3 "$HK/squad-graph.py" diff --base HEAD~1 --head HEAD 2>&1)"; rc=$?
+check "graph diff with no --out exits 0" 0 "$rc"
+check "graph-diff.json not in the worktree" 0 "$(find "$V/.claude/worktrees" -name 'graph-diff.json' 2>/dev/null | wc -l | tr -d ' ')"
+check "graph worktree has no untracked file" "" "$(git -C "$V/.claude/worktrees/lore-graphproj-$D" status --porcelain | grep -v 'graph\.\(json\|html\)\|\.lore/')"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
