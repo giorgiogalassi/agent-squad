@@ -98,6 +98,15 @@ check "log: applied" "OUTCOME=applied CHANGED=yes" "$(printf '%s' "$OUT" | tr '\
 check "log: one event in the inbox" 1 "$(ls "$V"/projects/proj/.squad/inbox/*.ev | wc -l | tr -d ' ')"
 fold "$V"
 check "direct: log line carries the caller's source" 1 "$(cnt "$V/projects/proj/.squad/session.log" '^\[[0-9-]{10} [0-9:]{8}\] \[forge\] start -- batch')"
+# #466: non-git project root -> "branch: detached" is logged as "branch: none"
+sp "$V" log --source seed --line 'start — branch: detached'
+fold "$V"
+check "log: non-git root, detached becomes none" 1 "$(cnt "$V/projects/proj/.squad/session.log" '\[seed\] start — branch: none$')"
+# a real git root keeps "detached"
+(cd "$TMPROOT" && git init -q gitroot) ; mkdir -p "$TMPROOT/gitroot"
+(cd "$TMPROOT/gitroot" && SECOND_BRAIN_PATH="$V" bash "$TMPROOT/hooks/squad-progress.sh" log --source ralph --line 'start — branch: detached' >/dev/null 2>&1)
+fold "$V"
+check "log: git root keeps detached" 1 "$(cnt "$V/projects/proj/.squad/session.log" '\[ralph\] start — branch: detached$')"
 # the ID prefix is never doubled, whether or not the caller passes it
 sp "$V" append --issue '#60' --line '[#60] with prefix'
 sp "$V" append --issue '#61' --line 'no prefix'

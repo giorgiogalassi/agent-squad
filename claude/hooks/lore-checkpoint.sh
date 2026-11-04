@@ -270,6 +270,8 @@ close_session_log() {
   [ -n "$epoch" ] || return 0
   since="$(date -d "@$epoch" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r "$epoch" "+%Y-%m-%d %H:%M" 2>/dev/null)"
   br="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  # Not a git repository: skills log "branch: none" (#466), so that is the key.
+  [ -n "$br" ] || git rev-parse --is-inside-work-tree >/dev/null 2>&1 || br=none
   [ -n "$since" ] && [ -n "$br" ] && [ "$br" != HEAD ] || return 0
   n="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; close_session_starts "$log" "$since" "$br" 2>/dev/null )"
   [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
