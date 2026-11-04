@@ -120,9 +120,15 @@ session branch until the vault PR merges, so without this lookup `DISPLAY_NAME` 
 empty for the rest of the session and every later one. If two session branches map
 the root to different names, the newest wins and one stderr line names the conflict.
 After the PR merges and the worktree is cleaned up, the checkout's config answers
-and the lookup is a no-op. It is read-only; direct and local-only vaults never reach it.
+and the lookup is a no-op. It is read-only; direct and local-only vaults reach it too, but it matches nothing there.
 A session that just ran `lore map` re-runs `path-resolve.sh` (or `squad-env.sh`) to
 pick the mapping up; a new session gets it from SessionStart.
+
+The root is the physical path (`pwd -P`), and `lore map --root` stores the physical
+path too, so `/var` vs `/private/var` and symlinks match. A directory that is not a git
+repository has no git root: its physical cwd is a candidate and becomes `PROJECT_ROOT`
+only when a config (local, tracked or session worktree) maps it. An unmapped non-git
+directory keeps `PROJECT_ROOT` and `DISPLAY_NAME` empty.
 
 `TRACKER_MODE` is resolved by the script, never passed by the model:
 detached mode is a safety property (privacy, user-owned tickets). It is

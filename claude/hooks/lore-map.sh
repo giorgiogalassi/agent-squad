@@ -41,6 +41,8 @@ done
 case "$VERB" in set|ignore) ;; *) squad_fail 2 "usage: lore-map.sh set|ignore [options]" ;; esac
 if [ "$VERB" = set ]; then
   [ -n "$ROOT" ] && [ -n "$NAME" ] || squad_fail 2 "set needs --root and --name"
+  # Canonical key (#440): the same physical path path-resolve.sh looks up.
+  [ -d "$ROOT" ] && ROOT="$(cd "$ROOT" && pwd -P)"
 fi
 
 if [ -z "$VAULT" ]; then

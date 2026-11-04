@@ -118,6 +118,15 @@ fi
 if [ -z "$ROOT" ]; then
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 fi
+# Canonical (physical) root: /var vs /private/var and symlinks must match the keys
+# `lore map` writes (#440). A non-git directory has no git root; its physical cwd is
+# only a candidate and becomes PROJECT_ROOT when a config maps it (checked below).
+CAND=""
+if [ -n "$ROOT" ]; then
+  ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P || printf '%s' "$ROOT")"
+else
+  CAND="$(pwd -P 2>/dev/null)"
+fi
 
 # lore-config.local.json (#355) is an optional, untracked file with the same
 # `projects`/`context` schema, for projects whose name must stay out of the
@@ -139,32 +148,51 @@ sess_configs() {
     [ -f "$wt/lore-config.json" ] || continue
     ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null)"
     printf '%s %s\n' "${ts:-0}" "$wt/lore-config.json"
-  done | sort -rn | sed 's/^[0-9]* //'
+  done | sort -k1,1nr -k2 | sed 's/^[0-9]* //'
 }
 # cfg_get <map> <root>: first non-empty value from the local, the tracked, then the
-# session-worktree configs (newest first).
+# session-worktree configs (newest first, one path per line in SESSION_CONFIGS).
 cfg_get() {
   local f v
-  for f in "$LOCAL_CONFIG" "$CONFIG" $SESSION_CONFIGS; do
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     v="$(jq -r --arg k "$2" ".$1[\$k] // empty" "$f" 2>/dev/null)"
     if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
-  done
+  done <<EOF2
+$LOCAL_CONFIG
+$CONFIG
+$SESSION_CONFIGS
+EOF2
   return 0
 }
-if [ -n "$ROOT" ] && command -v jq >/dev/null 2>&1; then
-  DISPLAY="$(cfg_get projects "$ROOT")"
-  if [ -z "$DISPLAY" ]; then
-    # Word splitting on the list is intended; a vault path with spaces is not supported here.
-    SESSION_CONFIGS="$(sess_configs | tr '\n' ' ')"
-    DISPLAY="$(cfg_get projects "$ROOT")"
-    if [ -n "$DISPLAY" ]; then
-      for f in $SESSION_CONFIGS; do
-        o="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$f" 2>/dev/null)"
-        [ -n "$o" ] && [ "$o" != "$DISPLAY" ] \
-          && echo "path-resolve: session branches map $ROOT to different names ('$DISPLAY' newest wins, '$o' in $f)" >&2
-      done
+# resolve_display <root>: DISPLAY from the checkout configs, then the session worktrees;
+# names a conflict between session branches on stderr.
+resolve_display() {
+  local d f o
+  d="$(cfg_get projects "$1")"
+  if [ -z "$d" ]; then
+    SESSION_CONFIGS="$(sess_configs)"
+    d="$(cfg_get projects "$1")"
+    if [ -n "$d" ]; then
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        o="$(jq -r --arg k "$1" '.projects[$k] // empty' "$f" 2>/dev/null)"
+        [ -n "$o" ] && [ "$o" != "$d" ] \
+          && echo "path-resolve: session branches map $1 to different names ('$d' newest wins, '$o' in $f)" >&2
+      done <<EOF3
+$SESSION_CONFIGS
+EOF3
     fi
+  fi
+  printf '%s' "$d"
+}
+if command -v jq >/dev/null 2>&1; then
+  if [ -n "$ROOT" ]; then
+    DISPLAY="$(resolve_display "$ROOT")"
+  elif [ -n "$CAND" ]; then
+    # Non-git directory: it is a project only when a config maps it.
+    DISPLAY="$(resolve_display "$CAND")"
+    [ -n "$DISPLAY" ] && ROOT="$CAND"
   fi
 fi
 

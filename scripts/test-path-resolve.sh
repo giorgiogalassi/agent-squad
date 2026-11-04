@@ -130,5 +130,36 @@ if command -v jq >/dev/null 2>&1; then
   case "$O" in *"DISPLAY_NAME=pr-named"*) ok "#440: resolution unchanged after cleanup (checkout)" ;; *) bad "#440 cleanup: $O" ;; esac
 fi
 
+# --- #440 fix round: non-git roots and canonical keys ---------------------------
+if command -v jq >/dev/null 2>&1; then
+  V5="$TMPROOT/v 440b"; N5="$TMPROOT/nongit440"; U5="$TMPROOT/unmapped440"; mkdir -p "$V5" "$N5" "$U5"
+  printf '{"projects":{},"vault_main":"pr"}\n' > "$V5/lore-config.json"
+  git -C "$V5" init -q -b main
+  git -C "$V5" add -A && git -C "$V5" -c user.email=t@t -c user.name=t commit -qm init
+  r5() { (cd "$1" && SECOND_BRAIN_PATH="$V5" bash "$H/path-resolve.sh" 2>/dev/null); }
+  P5="$(cd "$N5" && pwd -P)"
+  bash "$H/lore-map.sh" set --vault "$V5" --root "$N5" --name nongit-name >/dev/null 2>&1
+  O="$(r5 "$N5")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: non-git root resolves from session worktree (vault path with space)" ;; *) bad "#440 non-git session: $O" ;; esac
+  case "$O" in *"SQUAD_DIR=$V5/projects/nongit-name/.squad"*) ok "#440: non-git SQUAD_DIR uses mapped name" ;; *) bad "#440 non-git dir: $O" ;; esac
+  O="$(r5 "$U5")"
+  case "$O" in *"PROJECT_ROOT="$'\n'*"DISPLAY_NAME="$'\n'*) ok "#440: unmapped non-git dir keeps PROJECT_ROOT empty" ;; *) bad "#440 unmapped: $O" ;; esac
+  # Same mapping through the checkout config (merged PR, worktree cleaned up).
+  for w in "$V5"/.claude/worktrees/lore-*; do git -C "$V5" worktree remove --force "$w"; done
+  jq --arg r "$P5" '.projects[$r]="nongit-name"' "$V5/lore-config.json" > "$V5/c.tmp" && mv "$V5/c.tmp" "$V5/lore-config.json"
+  O="$(r5 "$N5")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: non-git root resolves from checkout config" ;; *) bad "#440 non-git checkout: $O" ;; esac
+  # Non-physical spelling (symlink, /var vs /private/var) matches the canonical key.
+  ln -s "$N5" "$TMPROOT/link440"
+  O="$(r5 "$TMPROOT/link440")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: symlinked root matches canonical key" ;; *) bad "#440 symlink: $O" ;; esac
+  # lore map given a symlinked root stores the physical path.
+  N6="$TMPROOT/nongit440b"; mkdir -p "$N6"; ln -s "$N6" "$TMPROOT/link440b"
+  bash "$H/lore-map.sh" set --vault "$V5" --root "$TMPROOT/link440b" --name viaLink >/dev/null 2>&1
+  W6="$(ls -d "$V5"/.claude/worktrees/lore-* | head -1)"
+  [ "$(jq -r --arg r "$(cd "$N6" && pwd -P)" '.projects[$r]' "$W6/lore-config.json")" = viaLink ] \
+    && ok "#440: lore map stores the physical root" || bad "#440 map canonical"
+fi
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
