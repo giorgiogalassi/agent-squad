@@ -77,5 +77,25 @@ mkenv three 1
 out="$(cd "$P" && printf '{"cwd":"%s","source":"startup"}' "$P" | bash "$H/lore-orient.sh" 2>/dev/null)"
 has "orientation has the worktree status" "Worktree goal" "$out"
 
+# 4. #461: non-git mapped root -> bare checkpoint line, no empty Branch/Recent commits
+mkenv four 1
+rm -rf "$P/.git"
+session_end
+has "non-git: bare checkpoint line" "] [claude-code] Session ended.
+" "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
+hasnt "non-git: no branch fragment" "worktree branch" "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
+hasnt "non-git: no double space" "  @" "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
+out="$(cd "$P" && printf '{"cwd":"%s","source":"startup"}' "$P" | bash "$H/lore-orient.sh" 2>/dev/null)"
+hasnt "non-git: orientation has no Branch: line" "Branch:" "$out"
+hasnt "non-git: orientation has no Recent commits" "Recent commits:" "$out"
+
+# 5. #461: git root keeps the branch/sha form (worktree session on branch feat)
+mkenv five 1
+git -C "$P" worktree add -q -b feat "$TMP/five/wt" >/dev/null 2>&1
+git -C "$TMP/five/wt" commit -q --allow-empty -m w
+sha="$(git -C "$TMP/five/wt" rev-parse --short HEAD)"
+printf '{"cwd":"%s"}' "$TMP/five/wt" | bash "$H/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1.5
+has "git: line names branch @ sha" "Session ended on worktree branch feat @ $sha." "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" = 0 ]

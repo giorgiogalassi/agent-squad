@@ -385,9 +385,14 @@ if [ "$TOP" != "$ROOT" ]; then
     LINE="[$NOW] [claude-code] uncommitted work on $BRANCH: $DIRTY files"
     if grep -qF "uncommitted work on $BRANCH: $DIRTY files" "$STATUS" 2>/dev/null; then exit 0; fi
   else
-    LINE="[$NOW] [claude-code] Session ended on worktree branch $BRANCH @ $SHA."
-    # Idempotent: same branch at same commit already recorded -> nothing new.
-    if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
+    if [ -n "$BRANCH" ] && [ -n "$SHA" ]; then
+      LINE="[$NOW] [claude-code] Session ended on worktree branch $BRANCH @ $SHA."
+      # Idempotent: same branch at same commit already recorded -> nothing new.
+      if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
+    else
+      # Not a git repository: no branch or commit to name.
+      LINE="[$NOW] [claude-code] Session ended."
+    fi
   fi
   add_checkpoint "$LINE" || bail "append failed"
   commit_vault "checkpoint"
