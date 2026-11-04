@@ -163,4 +163,36 @@ o="$(cd "$NOGIT" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/n
 check "no pending: stub never called" 0 "$(wc -l < "$STUB_LOG" | tr -d ' ')"
 check "no pending: orient prints nothing" "{}" "$o"
 
+# 9. No empty session worktree (#444). The caller that made lore/vault-<date>: a PR-mode
+# vault whose commit/fold ran with no project (the removed `vault` default).
+wtn() { git -C "$1" worktree list | wc -l | tr -d ' '; }
+lbr() { git -C "$1" branch --list 'lore/*' | wc -l | tr -d ' '; }
+mkvault j '"vault_main":"pr"'; V="$TMPROOT/j"
+( . "$HOOKS/squad-common.sh"; squad_vault_wt "$V" "" ) >/dev/null 2>&1; check "wt: empty project refused (10)" 10 "$?"
+( . "$HOOKS/squad-common.sh"; squad_vault_wroot "$V" "" ) >/dev/null 2>&1; check "wroot: empty project refused (10)" 10 "$?"
+( . "$HOOKS/squad-common.sh"; squad_vault_wt_existing "$V" "" ) >/dev/null 2>&1; check "wt_existing: empty project: none" 1 "$?"
+echo n >> "$V/projects/proj/decisions.md"
+out="$(env -u DISPLAY_NAME SECOND_BRAIN_PATH="$V" bash "$LORE" commit --vault "$V" --message m --paths projects/proj/decisions.md 2>&1)"; rc=$?
+check "commit without project: exit 10" 10 "$rc"
+has "commit without project: reason" "no project for this commit" "$out"
+check "commit without project: no worktree" 1 "$(wtn "$V")"; check "commit without project: no lore branch" 0 "$(lbr "$V")"
+git -C "$V" checkout -q -- .
+# SessionStart in an unmapped root, then a mapped project with an empty inbox
+UN2="$TMPROOT/unmapped2"; mkdir -p "$UN2"; git init -q -b main "$UN2"; echo x > "$UN2/f"; git -C "$UN2" add -A; git -C "$UN2" commit -qm init
+mkdir -p "$V/projects/proj/.lore/inbox"
+( cd "$UN2" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+check "unmapped SessionStart: one worktree" 1 "$(wtn "$V")"; check "unmapped SessionStart: no lore branch" 0 "$(lbr "$V")"
+SECOND_BRAIN_PATH="$V" bash "$LORE" fold >/dev/null 2>&1; check "fold (all projects), empty inbox: no worktree" 1 "$(wtn "$V")"
+( cd "$TMPROOT/j-proj" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+check "mapped SessionStart, nothing pending: one worktree" 1 "$(wtn "$V")"; check "mapped SessionStart: no lore branch" 0 "$(lbr "$V")"
+# with an event waiting the fold does create the project's session worktree
+SECOND_BRAIN_PATH="$V" bash "$LORE" event --project proj --source t --kind log --line hi >/dev/null 2>&1
+SECOND_BRAIN_PATH="$V" bash "$LORE" fold >/dev/null 2>&1
+check "fold with an event: the project's worktree" 1 "$(git -C "$V" branch --list "$BR" | wc -l | tr -d ' ')"
+# vault-level files: explicit, documented branch lore/_vault-<date>
+mkvault k '"vault_main":"pr"'; V="$TMPROOT/k"; echo '# n' >> "$V/.gitignore"
+SECOND_BRAIN_PATH="$V" bash "$LORE" commit --vault "$V" --vault-level --message m --paths .gitignore >/dev/null 2>&1
+check "vault-level commit: lore/_vault-<date>" 1 "$(git -C "$V" branch --list "lore/_vault-$(date +%Y-%m-%d)" | wc -l | tr -d ' ')"
+check "vault-level commit: no lore/vault-* branch" 0 "$(git -C "$V" branch --list 'lore/vault-*' | wc -l | tr -d ' ')"
+
 echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]

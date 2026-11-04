@@ -424,7 +424,9 @@ main() {
       case " ${paths[*]:-} " in *" $f "*) continue ;; esac
       paths+=("$f")
     done <<< "$FIXED_FILES"
-    [ "${#paths[@]}" -gt 0 ] && { bash "$VC_HOOK_DIR/lore" commit --vault "$vault" --project "${name:-vault}" --message "[lore] check --fix $(now_ts)" --paths "${paths[@]}" >/dev/null || squad_commit_fail $?; }
+    # --all (no project name): the fixes span projects, so they are vault-level (#444).
+    local who=(--vault-level); [ -n "$name" ] && who=(--project "$name")
+    [ "${#paths[@]}" -gt 0 ] && { bash "$VC_HOOK_DIR/lore" commit --vault "$vault" "${who[@]}" --message "[lore] check --fix $(now_ts)" --paths "${paths[@]}" >/dev/null || squad_commit_fail $?; }
   fi
   return 0
 }
