@@ -159,6 +159,14 @@ push_only_bail() {
 # Same fallback as lore-orient.sh: an unmapped checkout uses projects/<basename>
 # only when that folder exists; otherwise there is nowhere to write.
 if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then DISPLAY="$(basename "$ROOT")"; fi
+# The session's start-HEAD record (#464) is removed on every exit of a real SessionEnd
+# (MODE=hook, own session_id, project resolved): early bails and the normal paths alike.
+# --note, --incidents and the SQUAD_LORE_HOOK nested run exit earlier and never get here,
+# so a mid-session note from Ralph leaves the record for the real SessionEnd.
+if [ "$MODE" = hook ] && [ -n "$SESSION_ID" ] && [ -n "${DISPLAY:-}" ]; then
+  VREC="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID.vault"
+  trap 'rm -f "$VREC"' EXIT   # replaced by the fuller EXIT trap below, which removes it too
+fi
 [ -n "${DISPLAY:-}" ] || push_only_bail "no vault mapping for this project, skipped"
 # Project files are read and edited where a PR-mode vault holds them until its PR
 # merges: the project's session worktree (#453, squad_vault_rroot, the owner `lore root
@@ -167,6 +175,19 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 RROOT="$(squad_vault_rroot "$VAULT" "$DISPLAY")"
 PDIR="$RROOT/projects/$DISPLAY"
 STATUS="$PDIR/status.md"
+# Uncommitted vault changes in the project folder, read before this hook's own
+# writes (decisions lint, commits) can consume them: the session's change signal
+# for a project root that is not a git repository (#464).
+PRE_DIRTY="$(git -C "$PDIR" status --porcelain -- . 2>/dev/null)"
+# Commits to the project folder since the vault HEAD SessionStart recorded (a session
+# whose writes went through `lore commit`), also read before this hook commits. No
+# record (older session) -> PRE_DIRTY alone decides.
+_vrec="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID"
+PRE_MOVED=""
+if [ -n "$SESSION_ID" ] && [ -f "$_vrec.vault" ]; then
+  _vstart="$(cat "$_vrec.vault" 2>/dev/null)"
+  [ -n "$_vstart" ] && PRE_MOVED="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- . 2>/dev/null | head -n 1)"
+fi
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
 lcommit() {
@@ -329,7 +350,7 @@ sync_index() {
 }
 # Session end (#350, #427): start `lore push` detached after the local commit; it pushes
 # the vault's lore/* branches and opens or updates their PR without this hook waiting.
-trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
+trap 'rm -f "$TMPC" "$TMPB" "${VREC:-}"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended
@@ -390,7 +411,10 @@ if [ "$TOP" != "$ROOT" ]; then
       # Idempotent: same branch at same commit already recorded -> nothing new.
       if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
     else
-      # Not a git repository: no branch or commit to name.
+      # Not a git repository: no branch or commit to name, so no idempotency key
+      # either (#464). The session's own signal is a change in the vault project
+      # dir: none -> nothing to record, no commit, no PR.
+      [ -z "$PRE_DIRTY" ] && [ -z "$PRE_MOVED" ] && exit 0
       LINE="[$NOW] [claude-code] Session ended."
     fi
   fi

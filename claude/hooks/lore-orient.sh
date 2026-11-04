@@ -57,6 +57,20 @@ record_start_head() {
   mkdir -p "$_sd/sessions" 2>/dev/null \
     && git rev-parse HEAD > "$_sd/sessions/$HOOK_SESSION" 2>/dev/null
 }
+# record_vault_head <vault> <display> <rroot> <state-name>: vault HEAD at session start
+# (one rev-parse, no network), first write wins. SessionEnd tells a session that
+# committed vault writes (lore commit) from a no-op one (#464). A PR-mode vault with
+# no session worktree yet records the checkout's HEAD; a worktree created later then
+# counts as moved. The local-only exclude goes in first so the file never shows in
+# `git status` (a fresh vault has no entries yet).
+record_vault_head() {
+  [ -n "$HOOK_SESSION" ] && [ -n "$2" ] || return 0
+  local _f="$1/projects/$2/$4/sessions/$HOOK_SESSION.vault" _h
+  [ -f "$_f" ] && return 0
+  _h="$(git -C "$3" rev-parse HEAD 2>/dev/null)"; [ -n "$_h" ] || return 0
+  [ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_excludes "$1" "$4" ) 2>/dev/null
+  mkdir -p "${_f%/*}" 2>/dev/null && printf '%s\n' "$_h" > "$_f" 2>/dev/null
+}
 if [ "$HOOK_SOURCE" = "resume" ]; then
   # No orientation, but a resumed worktree session (`claude -w <b> --resume`)
   # still needs a starting HEAD: SessionEnd deletes the previous record.
@@ -71,6 +85,11 @@ if [ "$HOOK_SOURCE" = "resume" ]; then
   _rt="$(git rev-parse --show-toplevel 2>/dev/null)"
   if [ -n "$_rd" ] && [ -n "$_rr" ] && [ -n "$_rt" ] && [ "$_rt" != "$_rr" ] && [ -f "$_rt/.git" ]; then
     record_start_head "$_rv/projects/$_rd"
+  fi
+  if [ -n "$_rd" ]; then
+    _rw="$_rv"
+    [ -n "$SQUAD_COMMON_OK" ] && _rw="$(squad_vault_rroot "$_rv" "$_rd")"
+    record_vault_head "$_rv" "$_rd" "${_rw:-$_rv}" "$(state_name "$_rv")"
   fi
   echo "{}"
   exit 0
@@ -245,6 +264,7 @@ RROOT="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_rroot "$VAULT" "$DISPLAY" )"
 [ -n "$RROOT" ] || RROOT="$VAULT"
 RPROJ="$RROOT/projects/$DISPLAY"
 STATE="$RPROJ/$(state_name "$VAULT")"
+record_vault_head "$VAULT" "$DISPLAY" "$RROOT" "${STATE##*/}"
 # Project knowledge location (vault or repo); progress.txt and session.log
 # stay under the vault state directory regardless.
 [ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$STATE"
