@@ -270,6 +270,29 @@ _squad_vault_pr_mode_on() {
   return "$rc"
 }
 
+# squad_vault_pr_closed <vault> <branch>: 0 when the branch has a PR closed without
+# merging and no open PR (#467): its commits were rejected, so a session must not
+# carry them into a new PR. Needs gh; without gh, offline or on any error: 1, the
+# branch is reused as before. Write path only: one gh call per local branch.
+squad_vault_pr_closed() {
+  local v="$1" b="$2" o c
+  # Already found closed in this call (the open-worktree scan, then the suffix scan).
+  case "
+${_SQUAD_PR_CLOSED:-}
+" in *"
+$b
+"*) return 0 ;; esac
+  command -v gh >/dev/null 2>&1 || return 1
+  o="$(cd "$v" && gh pr list --head "$b" --state open --json number --jq '.[].number' 2>/dev/null)" || return 1
+  [ -z "$o" ] || return 1
+  c="$(cd "$v" && gh pr list --head "$b" --state closed --json number --jq '.[].number' 2>/dev/null)" || return 1
+  [ -n "$c" ] || return 1
+  _SQUAD_PR_CLOSED="${_SQUAD_PR_CLOSED:-}${_SQUAD_PR_CLOSED:+
+}$b"
+  echo "squad: vault branch $b has a PR closed without merging; starting a new session branch, leaving $b and its worktree in place (delete them yourself)" >&2
+  return 0
+}
+
 # squad_vault_landed <vault> <branch> [gh]: 0 when the branch's work already reached
 # origin's main (merge, squash or rebase): its commits are ahead of main but every
 # file it changed equals main's, or (gh given, connected) a merged PR has this tip
@@ -353,6 +376,7 @@ SQUAD_VAULT_LEVEL="_vault"
 # in case" (#444); an empty <project> returns 10 and creates nothing.
 squad_vault_wt() {
   local v="$1" pub d br0 base b wt ex i=1 sfx cur nopen open_wt
+  _SQUAD_PR_CLOSED=""
   [ -n "${2:-}" ] || { echo "squad: no project for a vault session worktree; none created" >&2; return 10; }
   pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
@@ -373,6 +397,7 @@ squad_vault_wt() {
         git -C "$v" fetch -q --prune origin >/dev/null 2>&1
       fi
       if squad_vault_landed "$v" "$b"; then continue; fi
+      if squad_vault_pr_closed "$v" "$b"; then continue; fi
     fi
     open_wt="$ex"; nopen=$((nopen+1))
   done < <(squad_vault_wt_existing "$v" "$2")
@@ -391,6 +416,7 @@ squad_vault_wt() {
         git -C "$v" fetch -q --prune origin >/dev/null 2>&1
       fi
       if squad_vault_landed "$v" "$b"; then i=$((i+1)); continue; fi
+      if squad_vault_pr_closed "$v" "$b"; then i=$((i+1)); continue; fi
     fi
     break
   done
