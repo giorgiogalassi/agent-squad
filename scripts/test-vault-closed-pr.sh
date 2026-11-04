@@ -24,8 +24,12 @@ cat > "$TMP/gh/gh" <<'GH'
 echo "$*" >> "$GHLOG"
 state=""; head=""
 while [ $# -gt 0 ]; do [ "$1" = --state ] && state="$2"; [ "$1" = --head ] && head="$2"; shift; done
+[ -n "${GHSLEEP:-}" ] && sleep "$GHSLEEP"
 case "$head" in *-2|*-3) exit 0 ;; esac
-[ "$state" = "$GHSTATE" ] && echo 7
+case "$state" in
+  all) [ "$GHSTATE" = none ] || echo "$GHSTATE" | tr a-z A-Z ;;
+  *) [ "$state" = "$GHSTATE" ] && echo 7 ;;
+esac
 exit 0
 GH
 chmod +x "$TMP/gh/gh"
@@ -77,6 +81,17 @@ git -C "$V" show-ref -q --verify "refs/remotes/origin/lore/p-$D" && bad "finish:
 check "no second notice at finish or on later calls" "0" "$(grep -c "lore/p-$D " "$TMP/ferr")"
 resolve 1 >/dev/null
 check "later resolve is silent" "0" "$(grep -c 'closed without merging' "$TMP/err")"
+
+# A gh that hangs past SQUAD_FETCH_TIMEOUT: push_pending returns promptly, as before #467
+# (the unpushed branch counts as pending), nothing on stderr.
+mkenv slow; export GHSTATE=closed
+printf '{"vault_main": "pr"}\n' > "$V/lore-config.json"
+pp() { PATH="$TMP/gh:$SAFE_PATH" bash -c '. "$1/claude/hooks/squad-common.sh"; squad_vault_push_pending "$2"; echo "rc=$?"' _ "$REPO_ROOT" "$V" 2>"$TMP/perr"; }
+check "push_pending, gh fast: closed branch not pending" "rc=1" "$(GHSLEEP= pp)"
+t0=$(date +%s); o="$(GHSLEEP=5 SQUAD_FETCH_TIMEOUT=1 pp)"; t1=$(date +%s)
+check "push_pending, gh hangs: pending as before #467" "rc=0" "$o"
+[ $((t1-t0)) -le 3 ] && ok "push_pending returns within the bound" || bad "push_pending took $((t1-t0)) s"
+[ ! -s "$TMP/perr" ] && ok "timeout: nothing on stderr" || bad "timeout stderr [$(cat "$TMP/perr")]"
 
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" = 0 ]

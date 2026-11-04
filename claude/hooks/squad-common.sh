@@ -270,12 +270,30 @@ _squad_vault_pr_mode_on() {
   return "$rc"
 }
 
+# squad_vault_bounded_gh <vault> <gh args...>: run gh in <vault>, print its stdout, stop it
+# after SQUAD_FETCH_TIMEOUT seconds (default 8; background pid + watcher, as in
+# squad_vault_ff: macOS has no `timeout`). Returns gh's status, 1 on timeout or error.
+squad_vault_bounded_gh() {
+  local v="$1" bound="${SQUAD_FETCH_TIMEOUT:-8}" out gpid wpid rc
+  shift
+  out="$(mktemp 2>/dev/null)" || return 1
+  ( cd "$v" && exec gh "$@" ) >"$out" 2>/dev/null </dev/null &
+  gpid=$!
+  ( sleep "$bound"; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wpid=$!
+  wait "$gpid" 2>/dev/null; rc=$?
+  pkill -P "$wpid" 2>/dev/null; kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  [ "$rc" = 0 ] && cat "$out"
+  rm -f "$out"
+  [ "$rc" = 0 ]
+}
+
 # squad_vault_pr_closed <vault> <branch>: 0 when the branch has a PR closed without
 # merging and no open PR (#467): its commits were rejected, so a session must not
 # carry them into a new PR. Needs gh; without gh, offline or on any error: 1, the
 # branch is reused as before. Write path only: one gh call per local branch.
 squad_vault_pr_closed() {
-  local v="$1" b="$2" o c cd
+  local v="$1" b="$2" st cd
   # Already found closed in this call (the open-worktree scan, then the suffix scan).
   case "
 ${_SQUAD_PR_CLOSED:-}
@@ -283,10 +301,16 @@ ${_SQUAD_PR_CLOSED:-}
 $b
 "*) return 0 ;; esac
   command -v gh >/dev/null 2>&1 || return 1
-  o="$(cd "$v" && gh pr list --head "$b" --state open --json number --jq '.[].number' 2>/dev/null)" || return 1
-  [ -z "$o" ] || return 1
-  c="$(cd "$v" && gh pr list --head "$b" --state closed --json number --jq '.[].number' 2>/dev/null)" || return 1
-  [ -n "$c" ] || return 1
+  # One bounded call (SQUAD_FETCH_TIMEOUT, default 8 s): a slow or hung network counts
+  # as "not known closed", so SessionStart never waits on it for long.
+  st="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state all --json state --jq '.[].state')" || return 1
+  case "
+$st
+" in *"
+OPEN
+"*) return 1 ;; *"
+CLOSED
+"*) ;; *) return 1 ;; esac
   _SQUAD_PR_CLOSED="${_SQUAD_PR_CLOSED:-}${_SQUAD_PR_CLOSED:+
 }$b"
   # One notice per branch, ever: later calls (every write, every SessionEnd) are silent.
