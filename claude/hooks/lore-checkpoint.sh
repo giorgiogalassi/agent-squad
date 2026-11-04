@@ -159,6 +159,14 @@ push_only_bail() {
 # Same fallback as lore-orient.sh: an unmapped checkout uses projects/<basename>
 # only when that folder exists; otherwise there is nowhere to write.
 if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then DISPLAY="$(basename "$ROOT")"; fi
+# The session's start-HEAD record (#464) is removed on every exit of a real SessionEnd
+# (MODE=hook, own session_id, project resolved): early bails and the normal paths alike.
+# --note, --incidents and the SQUAD_LORE_HOOK nested run exit earlier and never get here,
+# so a mid-session note from Ralph leaves the record for the real SessionEnd.
+if [ "$MODE" = hook ] && [ -n "$SESSION_ID" ] && [ -n "${DISPLAY:-}" ]; then
+  VREC="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID.vault"
+  trap 'rm -f "$VREC"' EXIT   # replaced by the fuller EXIT trap below, which removes it too
+fi
 [ -n "${DISPLAY:-}" ] || push_only_bail "no vault mapping for this project, skipped"
 # Project files are read and edited where a PR-mode vault holds them until its PR
 # merges: the project's session worktree (#453, squad_vault_rroot, the owner `lore root
@@ -179,7 +187,6 @@ PRE_MOVED=""
 if [ -n "$SESSION_ID" ] && [ -f "$_vrec.vault" ]; then
   _vstart="$(cat "$_vrec.vault" 2>/dev/null)"
   [ -n "$_vstart" ] && PRE_MOVED="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- . 2>/dev/null | head -n 1)"
-  [ "$MODE" = hook ] && rm -f "$_vrec.vault"
 fi
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
@@ -343,7 +350,7 @@ sync_index() {
 }
 # Session end (#350, #427): start `lore push` detached after the local commit; it pushes
 # the vault's lore/* branches and opens or updates their PR without this hook waiting.
-trap 'rm -f "$TMPC" "$TMPB"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
+trap 'rm -f "$TMPC" "$TMPB" "${VREC:-}"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended
