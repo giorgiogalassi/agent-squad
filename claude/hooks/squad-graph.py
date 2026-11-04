@@ -24,14 +24,17 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
        [--out <graph.json>] [--scout <scout-cache.md>] [--cache <file>]
       The structural change between merge-base(base, head) and head, scoped
       to the changed units plus the units that use something they changed.
-      Default out: <SQUAD_DIR>/graph-diff.json.
+      Default out: <tmp>/squad-graph-<project>/graph-diff.json
+      (a throwaway; never inside the session worktree, where it would block
+      the worktree drop).
   check --plan <planned-graph.json> (--diff <graph.json> | --base <ref> --head <ref>)
         [--root <dir>] [--out <drift.json>] [--scout <file>] [--cache <file>]
   check --plan <planned-graph.json> --validate
       Actual versus planned. The actual side is a `diff` graph (given, or
       built from --base/--head). Drift never changes the exit code: 0 with
       DRIFT_COUNT=n, so a caller reports it and asks for a reason, it does not
-      block. Writes <drift.json> (default <SQUAD_DIR>/graph-drift.json).
+      block. Writes <drift.json> (default <tmp>/squad-graph-<project>/graph-drift.json,
+      a throwaway kept out of the session worktree).
       Keys: DRIFT (file), DRIFT_COUNT, DRIFT_UNITS, DRIFT_DEPENDENCIES,
       DRIFT_BOUNDARIES, UNREALIZED, one DRIFT_ITEM=<kind>:<subject> per item.
       `--validate` only checks the plan (exit 10 when malformed) and prints
@@ -156,6 +159,7 @@ import math
 import os
 import posixpath
 import re
+import tempfile
 import shutil
 import subprocess
 import sys
@@ -263,14 +267,28 @@ def knowledge_dir(paths, write=False):
     In a PR-mode vault that is the project's session worktree, which a stale
     $SQUAD_DIR (the session env, or one a caller passed) can predate: ask `lore root`
     (write=True creates the worktree; otherwise nothing is created). A context: repo
-    project keeps its repo SQUAD_DIR, which lore root reports unchanged. Falls back
+    project keeps its repo SQUAD_DIR (lore root reports it whatever --vault says), and
+    no worktree is created for it. Falls back
     to paths["DIR"] when there is no vault/project; "" when there is neither."""
-    rc, kv = lib.lore_root(paths, read=not write)
+    rc, kv = lib.lore_root(paths, read=True)
+    vault = os.path.realpath(paths.get("VAULT_PATH") or "")
+    repo = rc == 0 and kv.get("SQUAD_DIR") and not os.path.realpath(kv["SQUAD_DIR"]).startswith(vault + os.sep)
+    if write and not repo:  # only a vault SQUAD_DIR needs (and creates) the worktree
+        rc, kv = lib.lore_root(paths)
     if rc == 0 and kv.get("SQUAD_DIR"):
-        if write:
+        if write and not repo:
             paths["WROOT"] = kv.get("ROOT", "")
         return kv["SQUAD_DIR"]
     return paths.get("DIR") or ""
+
+
+def scratch_file(paths, name):
+    """A throwaway output (graph-diff.json, graph-drift.json) under $TMPDIR, never in
+    the SQUAD_DIR or the session worktree: an untracked file there makes the
+    non-forced `git worktree remove` of the worktree drop refuse."""
+    d = os.path.join(tempfile.gettempdir(), "squad-graph-%s" % (lib._project(paths) or "project"))
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, name)
 
 
 def write_file(paths, name):
@@ -1291,8 +1309,8 @@ def cmd_diff(argv):
     root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
     if not root or not os.path.isdir(root):
         fail(10, "no root: pass --root or resolve the project")
-    squad_dir = knowledge_dir(paths, write=not o.get("out"))
-    out = o.get("out") or (os.path.join(squad_dir, "graph-diff.json") if squad_dir else None)
+    squad_dir = knowledge_dir(paths)
+    out = o.get("out") or (scratch_file(paths, "graph-diff.json") if squad_dir else None)
     if not out:
         fail(10, "no --out and no project mapped; run /seed or /lore start")
     scout = o.get("scout") or (os.path.join(knowledge_dir(paths), "scout-cache.md") if squad_dir else None)
@@ -1401,7 +1419,7 @@ def cmd_check(argv):
     if not o.get("diff") and not (o.get("base") and o.get("head")):
         fail(2, usage)
     doc = diff_from_opts(o, paths)
-    out = o.get("out") or (os.path.join(knowledge_dir(paths, write=True), "graph-drift.json") if squad_dir else None)
+    out = o.get("out") or (scratch_file(paths, "graph-drift.json") if squad_dir else None)
     if not out:
         fail(10, "no --out and no project mapped; run /seed or /lore start")
     items, unrealized = compute_drift(doc, plan)

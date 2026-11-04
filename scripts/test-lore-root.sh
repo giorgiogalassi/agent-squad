@@ -217,5 +217,35 @@ rm -f "$wt/graph.json"
 check "graph: env without a vault still writes the worktree" 1 "$([ -s "$wt/graph.json" ] && echo 1 || echo 0)"
 check "graph: no graph.json in the checkout" 0 "$(find "$V/projects" -path '*/.claude' -prune -o -name graph.json -print 2>/dev/null | grep -vc '/.claude/')"
 
+# --- context: repo keeps the repo SQUAD_DIR for the graph commands (#454 fix round 1) --
+V="$TMP/vgrepo"; mkvault "$V" pr; P="$TMP/grepoproj"; mkproj "$P"
+mkdir -p "$P/src"; echo 'export const a = 1' > "$P/src/a.ts"; echo "import './a'" > "$P/src/b.ts"
+git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm init
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name grepoproj ) >/dev/null 2>&1
+python3 - "$V/lore-config.json" "$(cd "$P" && pwd -P)" <<'PYEOF'
+import json, sys
+c = json.load(open(sys.argv[1])); c["context"] = {sys.argv[2]: "repo"}
+json.dump(c, open(sys.argv[1], "w"))
+PYEOF
+git -C "$V" -c user.name=t -c user.email=t@t commit -qam cfg
+out="$(cd "$P" && bash "$LORE" root --vault "$V" --project grepoproj 2>&1)"
+check "explicit --vault keeps the repo SQUAD_DIR" "$(cd "$P" && pwd -P)/.squad" "$(kv SQUAD_DIR "$out")"
+wt0="$(git -C "$V" worktree list | wc -l)"
+out="$(cd "$P" && python3 "$HK/squad-graph.py" extract 2>&1)"; rc=$?
+check "repo-context graph extract exits 0" 0 "$rc"
+check "repo-context graph.json in <root>/.squad" 1 "$([ -s "$P/.squad/graph.json" ] && echo 1 || echo 0)"
+check "repo-context: no vault projects dir" 0 "$([ -e "$V/projects/grepoproj/.squad/graph.json" ] && echo 1 || echo 0)"
+check "repo-context: extract created no session worktree" "$wt0" "$(git -C "$V" worktree list | wc -l)"
+check "repo-context: vault checkout clean" "" "$(git -C "$V" status --porcelain)"
+
+# diff with no --out writes a throwaway outside the session worktree (PR mode)
+V="$TMP/vgraph"; P="$TMP/graphproj"; export SECOND_BRAIN_PATH="$V"
+echo 'export const c = 3' > "$P/src/c.ts"; git -C "$P" add -A; git -C "$P" -c user.name=t -c user.email=t@t commit -qm two
+out="$(cd "$P" && python3 "$HK/squad-graph.py" diff --base HEAD~1 --head HEAD 2>&1)"; rc=$?
+check "graph diff with no --out exits 0" 0 "$rc"
+check "graph-diff.json not in the worktree" 0 "$(find "$V/.claude/worktrees" -name 'graph-diff.json' 2>/dev/null | wc -l | tr -d ' ')"
+check "graph worktree has no untracked file" "" "$(git -C "$V/.claude/worktrees/lore-graphproj-$D" status --porcelain | grep -v 'graph\.\(json\|html\)\|\.lore/')"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
