@@ -92,5 +92,74 @@ else
   bad "local-config cases need jq on PATH"
 fi
 
+# --- #440: PR-mode mapping lives only on the open session branch ---------------
+if command -v jq >/dev/null 2>&1; then
+  H="$TMPROOT/hooks440"; mkdir -p "$H"
+  cp "$REPO_ROOT"/claude/hooks/{lore,lore-map.sh,path-resolve.sh,squad-env.sh,squad-incidents.sh,squad-common.sh} "$H/"
+  V4="$TMPROOT/v440"; R4="$TMPROOT/r440"; git init -q "$R4"
+  mkdir -p "$V4"
+  printf '{"projects":{},"vault_main":"pr"}\n' > "$V4/lore-config.json"
+  git -C "$V4" init -q -b main
+  git -C "$V4" add -A && git -C "$V4" -c user.email=t@t -c user.name=t commit -qm init
+  CK="$(cat "$V4/lore-config.json")"
+  bash "$H/lore-map.sh" set --vault "$V4" --root "$R4" --name pr-named >/dev/null 2>&1
+  r440() { (cd "$R4" && SECOND_BRAIN_PATH="$V4" bash "$H/path-resolve.sh" 2>"$TMPROOT/err440"); }
+  O="$(r440)"
+  case "$O" in *"PROJECT_ROOT=$R4"*) ok "#440: PROJECT_ROOT kept" ;; *) bad "#440 root: $O" ;; esac
+  case "$O" in *"DISPLAY_NAME=pr-named"*) ok "#440: mapping resolved from session worktree" ;; *) bad "#440 name: $O" ;; esac
+  case "$O" in *"SQUAD_DIR=$V4/projects/pr-named/.squad"*) ok "#440: SQUAD_DIR uses mapped name" ;; *) bad "#440 dir: $O" ;; esac
+  [ "$(cat "$V4/lore-config.json")" = "$CK" ] && [ -z "$(git -C "$V4" status --porcelain -- lore-config.json)" ] \
+    && ok "#440: checkout lore-config.json unchanged" || bad "#440: checkout config changed"
+  ENVF="$TMPROOT/env440"; : > "$ENVF"
+  (cd "$R4" && HOME="$TMPROOT/home440" SECOND_BRAIN_PATH="$V4" CLAUDE_ENV_FILE="$ENVF" bash "$H/squad-env.sh" </dev/null)
+  grep -q "^export SQUAD_PROJECT_ROOT='$R4'" "$ENVF" && grep -q "^export SQUAD_DISPLAY_NAME='pr-named'" "$ENVF" \
+    && ok "#440: fresh squad-env exports the mapping" || bad "#440 env: $(cat "$ENVF")"
+  # Two session branches, different names: newest wins, stderr names the conflict.
+  W2="$V4/.claude/worktrees/lore-other-2099-01-01"
+  git -C "$V4" worktree add -q -b lore/other-2099-01-01 "$W2" main
+  jq --arg r "$R4" '.projects[$r]="newer-name"' "$W2/lore-config.json" > "$W2/c.tmp" && mv "$W2/c.tmp" "$W2/lore-config.json"
+  GIT_COMMITTER_DATE="2099-01-01T00:00:00" git -C "$W2" -c user.email=t@t -c user.name=t commit -qam map
+  O="$(r440)"
+  case "$O" in *"DISPLAY_NAME=newer-name"*) ok "#440: newest session branch wins" ;; *) bad "#440 newest: $O" ;; esac
+  grep -q "different names" "$TMPROOT/err440" && ok "#440: conflict named on stderr" || bad "#440 stderr: $(cat "$TMPROOT/err440")"
+  # Merged and cleaned up: the checkout carries it.
+  git -C "$V4" worktree remove --force "$W2"
+  for w in "$V4"/.claude/worktrees/lore-*; do git -C "$V4" worktree remove --force "$w"; done
+  jq --arg r "$R4" '.projects[$r]="pr-named"' "$V4/lore-config.json" > "$V4/c.tmp" && mv "$V4/c.tmp" "$V4/lore-config.json"
+  O="$(r440)"
+  case "$O" in *"DISPLAY_NAME=pr-named"*) ok "#440: resolution unchanged after cleanup (checkout)" ;; *) bad "#440 cleanup: $O" ;; esac
+fi
+
+# --- #440 fix round: non-git roots and canonical keys ---------------------------
+if command -v jq >/dev/null 2>&1; then
+  V5="$TMPROOT/v 440b"; N5="$TMPROOT/nongit440"; U5="$TMPROOT/unmapped440"; mkdir -p "$V5" "$N5" "$U5"
+  printf '{"projects":{},"vault_main":"pr"}\n' > "$V5/lore-config.json"
+  git -C "$V5" init -q -b main
+  git -C "$V5" add -A && git -C "$V5" -c user.email=t@t -c user.name=t commit -qm init
+  r5() { (cd "$1" && SECOND_BRAIN_PATH="$V5" bash "$H/path-resolve.sh" 2>/dev/null); }
+  P5="$(cd "$N5" && pwd -P)"
+  bash "$H/lore-map.sh" set --vault "$V5" --root "$N5" --name nongit-name >/dev/null 2>&1
+  O="$(r5 "$N5")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: non-git root resolves from session worktree (vault path with space)" ;; *) bad "#440 non-git session: $O" ;; esac
+  case "$O" in *"SQUAD_DIR=$V5/projects/nongit-name/.squad"*) ok "#440: non-git SQUAD_DIR uses mapped name" ;; *) bad "#440 non-git dir: $O" ;; esac
+  O="$(r5 "$U5")"
+  case "$O" in *"PROJECT_ROOT="$'\n'*"DISPLAY_NAME="$'\n'*) ok "#440: unmapped non-git dir keeps PROJECT_ROOT empty" ;; *) bad "#440 unmapped: $O" ;; esac
+  # Same mapping through the checkout config (merged PR, worktree cleaned up).
+  for w in "$V5"/.claude/worktrees/lore-*; do git -C "$V5" worktree remove --force "$w"; done
+  jq --arg r "$P5" '.projects[$r]="nongit-name"' "$V5/lore-config.json" > "$V5/c.tmp" && mv "$V5/c.tmp" "$V5/lore-config.json"
+  O="$(r5 "$N5")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: non-git root resolves from checkout config" ;; *) bad "#440 non-git checkout: $O" ;; esac
+  # Non-physical spelling (symlink, /var vs /private/var) matches the canonical key.
+  ln -s "$N5" "$TMPROOT/link440"
+  O="$(r5 "$TMPROOT/link440")"
+  case "$O" in *"PROJECT_ROOT=$P5"*"DISPLAY_NAME=nongit-name"*) ok "#440: symlinked root matches canonical key" ;; *) bad "#440 symlink: $O" ;; esac
+  # lore map given a symlinked root stores the physical path.
+  N6="$TMPROOT/nongit440b"; mkdir -p "$N6"; ln -s "$N6" "$TMPROOT/link440b"
+  bash "$H/lore-map.sh" set --vault "$V5" --root "$TMPROOT/link440b" --name viaLink >/dev/null 2>&1
+  W6="$(ls -d "$V5"/.claude/worktrees/lore-* | head -1)"
+  [ "$(jq -r --arg r "$(cd "$N6" && pwd -P)" '.projects[$r]' "$W6/lore-config.json")" = viaLink ] \
+    && ok "#440: lore map stores the physical root" || bad "#440 map canonical"
+fi
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
