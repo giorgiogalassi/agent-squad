@@ -482,6 +482,11 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
   `export SECOND_BRAIN_PATH=/path/to/your/vault`
+  A shell `export` does not reach sessions started from the desktop app. To set it
+  permanently, use the `env` key of `~/.claude/settings.json` (all sessions) or of a
+  project's `.claude/settings.local.json` (that project only), with an absolute path
+  (`~` is not expanded):
+  `{ "env": { "SECOND_BRAIN_PATH": "/Users/you/second-brain" } }`
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
 - `lore-config.local.json` (same schema, untracked, listed in the vault

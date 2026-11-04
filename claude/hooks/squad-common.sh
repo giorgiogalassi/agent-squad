@@ -626,6 +626,47 @@ EOL
   return 1
 }
 
+# squad_vault_ff <vault>: SessionStart (#460). PR-mode vault only: fetch origin
+# (bounded, never prompts) and fast-forward the checkout to origin/<default> with
+# `merge --ff-only`, the rule worktree-divergence.sh follows. Only when the checkout
+# is on the default branch with a clean tree; never merges, resets, stashes or
+# checks out. A dirty, off-default or diverged checkout is left as is and named once
+# on stderr. direct and local-only vaults: nothing attempted. Never fails the caller.
+squad_vault_ff() {
+  local v="$1" br cur to bound="${SQUAD_FETCH_TIMEOUT:-8}" fpid wpid
+  git -C "$v" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  squad_vault_main_local "$v" && return 0
+  squad_vault_pr_mode_any "$v" || return 0
+  git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
+  br="$(squad_vault_default_branch "$v")" || return 0
+  export GIT_TERMINAL_PROMPT=0
+  to="$(command -v timeout || command -v gtimeout || true)"
+  if [ -n "$to" ]; then
+    "$to" "$bound" git -C "$v" fetch -q origin >/dev/null 2>&1 </dev/null || return 0
+  else
+    git -C "$v" fetch -q origin >/dev/null 2>&1 </dev/null &
+    fpid=$!
+    ( sleep "$bound"; kill "$fpid" 2>/dev/null ) >/dev/null 2>&1 &
+    wpid=$!
+    wait "$fpid" 2>/dev/null || { pkill -P "$wpid" 2>/dev/null; kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; return 0; }
+    pkill -P "$wpid" 2>/dev/null; kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  fi
+  git -C "$v" rev-parse -q --verify "refs/remotes/origin/$br" >/dev/null 2>&1 || return 0
+  [ "$(git -C "$v" rev-parse HEAD 2>/dev/null)" != "$(git -C "$v" rev-parse "refs/remotes/origin/$br")" ] || return 0
+  # Already ahead of or level with origin: nothing to fast-forward.
+  git -C "$v" merge-base --is-ancestor "refs/remotes/origin/$br" HEAD 2>/dev/null && return 0
+  cur="$(git -C "$v" symbolic-ref -q --short HEAD 2>/dev/null)"
+  if [ "$cur" != "$br" ]; then
+    echo "squad: vault fast-forward skipped: checkout is on ${cur:-a detached HEAD}, not $br" >&2; return 0
+  fi
+  if [ -n "$(git -C "$v" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "squad: vault fast-forward skipped: checkout has uncommitted changes (origin/$br is ahead)" >&2; return 0
+  fi
+  git -C "$v" merge -q --ff-only "refs/remotes/origin/$br" >/dev/null 2>&1 \
+    || echo "squad: vault fast-forward skipped: $br has diverged from origin/$br" >&2
+  return 0
+}
+
 # squad_vault_push_detached <vault>: start `lore push` in its own process group,
 # detached from this process's stdio, and return at once: the caller (SessionEnd,
 # SessionStart) never waits on the network. A killed push is retried by
