@@ -484,7 +484,7 @@ and an end line when all phases complete; the lines read:
   [YYYY-MM-DD HH:MM] [seed] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [seed] end — context files written
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.
 

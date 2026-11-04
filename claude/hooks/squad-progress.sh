@@ -119,6 +119,12 @@ case "$VERB" in
   log)
     [ -n "$LINE" ] || squad_fail 2 "log requires --line"
     [ -n "$SOURCE" ] || squad_fail 2 "log requires --source <name> (the skill or agent writing the line)"
+    # A non-git root is not a detached HEAD (#466): "branch: detached" becomes "branch: none".
+    case "$LINE" in
+      *"branch: detached"*)
+        git -C "${PROJECT_ROOT:-$PWD}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+          || LINE="${LINE/branch: detached/branch: none}" ;;
+    esac
     _rc=0
     SECOND_BRAIN_PATH="$V" bash "$LORE" event --vault "$V" --project "$PROJ" --source "$SOURCE" --kind log --line "$LINE" >/dev/null || _rc=$?
     [ "$_rc" = 0 ] || squad_fail "$([ "$_rc" = 10 ] && echo 10 || echo 20)" "log event not written (lore event exit $_rc)"

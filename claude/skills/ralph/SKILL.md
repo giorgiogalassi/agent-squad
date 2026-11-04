@@ -626,7 +626,7 @@ Append to `.squad/session.log` with `squad-progress.sh log --source ralph --line
   [YYYY-MM-DD HH:MM] [ralph] start — batch: [ISSUE-IDs], branch: <branch>
   [YYYY-MM-DD HH:MM] [ralph] end — resolved: N, escalated: [...], skipped: [...]
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.
 

@@ -88,5 +88,14 @@ n="$(wc -l < "$LOG" | tr -d ' ')"
 printf '{"cwd":"%s"}' "$F_PROJECT" | bash "$SUT" >/dev/null 2>&1
 check "no transcript: nothing closed" "$n" "$(wc -l < "$LOG" | tr -d ' ')"
 
+# #466: a non-git mapped root logs "branch: none"; SessionEnd closes that start.
+mv "$F_PROJECT/.git" "$TMPROOT/dotgit-aside"
+cp "$F_VAULT/lore-config.json" "$TMPROOT/lore-config.bak"
+printf '{"projects":{"%s":"fixture"}}\n' "$(cd "$F_PROJECT" && pwd -P)" > "$F_VAULT/lore-config.json"
+printf '[%s] [seed] start — branch: none\n' "$T_NOW" >> "$LOG"
+printf '{"cwd":"%s","transcript_path":"%s","session_id":"s-1"}' "$F_PROJECT" "$TRANSCRIPT" | bash "$SUT" >/dev/null 2>&1
+mv "$TMPROOT/dotgit-aside" "$F_PROJECT/.git"; cp "$TMPROOT/lore-config.bak" "$F_VAULT/lore-config.json"
+has "non-git: 'branch: none' start closed" "[seed] end — closed at session end (start $T_NOW)" "$(tail -n 1 "$LOG")"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
