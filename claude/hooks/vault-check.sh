@@ -200,7 +200,9 @@ emit() { printf '%s=%s\n' "$1" "$2"; }
 # check_project <vault> <name> <context> <fix:0|1>
 check_project() {
   local vault="$1" name="$2" ctx="$3" fix="$4"
-  local proj="$vault/projects/$name" idx="$vault/INDEX.md"
+  # Project files are read where a PR-mode vault holds them (#453): the session worktree.
+  local rr; rr="$(squad_vault_rroot "$vault" "$name")"
+  local proj="$rr/projects/$name" idx="$(squad_vault_rroot "$vault" "$SQUAD_VAULT_LEVEL")/INDEX.md"
   local status="$proj/status.md" log="$proj/$STATE_NAME/session.log" today out="" r line
   today="$(now_ts)"; today="${today%% *}"
   local fixed="" findings=""

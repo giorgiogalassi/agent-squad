@@ -189,6 +189,24 @@ def vault_dir():
     return os.environ.get("SECOND_BRAIN_PATH") or os.path.expanduser("~/second-brain")
 
 
+def read_state_dir(name):
+    """<root>/projects/<name>/<state> where a reader finds the project's state files
+    (#453): `lore root --read`, the one owner of that choice (a PR-mode vault holds them
+    in the session worktree until its PR merges). Falls back to the vault checkout."""
+    vault = vault_dir()
+    fallback = os.path.join(vault, "projects", name, lib.state_name(vault))
+    try:
+        out = subprocess.run(["bash", os.path.join(os.path.dirname(os.path.abspath(__file__)), "lore"),
+                              "root", "--read", "--vault", vault, "--project", name],
+                             capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return fallback
+    for line in out.splitlines():
+        if line.startswith("STATE_DIR=") and line[10:]:
+            return line[10:]
+    return fallback
+
+
 def projects_dir():
     if os.environ.get("CLAUDE_PROJECTS_DIR"):
         return os.environ["CLAUDE_PROJECTS_DIR"]
@@ -731,7 +749,8 @@ def cmd_branch(args):
     wall = 0
     unclosed = 0
     fmt = "%Y-%m-%d %H:%M"
-    for log in sorted(glob.glob(os.path.join(vault_dir(), "projects", "*", lib.state_name(vault_dir()), "session.log"))):
+    names = sorted(os.path.basename(d.rstrip("/")) for d in glob.glob(os.path.join(vault_dir(), "projects", "*/")))
+    for log in [os.path.join(read_state_dir(n), "session.log") for n in names]:
         for start, end, _tag, branch, closure in log_pairs(log):
             if branch != name:
                 continue
@@ -894,7 +913,7 @@ def pr_outcomes(since, paths):
     if paths.get("TRACKER_MODE") != "connected":
         return "skipped-detached", None
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    progress = os.path.join(lib.state_dir(paths), "progress.txt")
+    progress = os.path.join(read_state_dir(name) if name else lib.state_dir(paths), "progress.txt")
     prs = {}
     try:
         with open(progress, encoding="utf-8") as f:

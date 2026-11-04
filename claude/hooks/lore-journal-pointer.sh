@@ -53,14 +53,16 @@ if [ -z "$VAULT" ] || [ -z "$NAME" ] || [ -z "$ROOT" ]; then
   fi
 fi
 [ -n "$NAME" ] || squad_fail 10 "no project resolved (use --project or run inside a mapped project)"
-[ -d "$VAULT/projects/$NAME" ] || squad_fail 10 "no vault project at $VAULT/projects/$NAME"
+# decisions.md and status.md are read and edited where a PR-mode vault holds them (#453):
+# the project's session worktree; `lore commit` below finds the edit there.
+PROJ="$(squad_vault_rroot "$VAULT" "$NAME")/projects/$NAME"
+[ -d "$PROJ" ] || squad_fail 10 "no vault project at $PROJ"
 
 if [ "$CTX" != repo ]; then
   squad_emit OUTCOME unchanged; squad_emit CHANGED no
   exit 0
 fi
 
-PROJ="$VAULT/projects/$NAME"
 JOURNAL="$ROOT/JOURNAL.md"
 if [ -f "$JOURNAL" ]; then
   STATE=present; SUFFIX="(context: repo decisions)"

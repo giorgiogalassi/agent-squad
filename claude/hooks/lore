@@ -203,11 +203,7 @@ cmd_root() {
   [ "$vlevel" = 1 ] && { proj="$SQUAD_VAULT_LEVEL"; sq=""; }
   [ -n "$proj" ] || squad_fail 10 "no project for this root; pass --project <name> or --vault-level"
   if [ "$rd" = 1 ]; then
-    root="$vault"
-    if git -C "$vault" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$vault" "$proj" && squad_vault_pr_mode_any "$vault"; then
-      wt="$(squad_vault_wt_existing "$vault" "$proj" 2>/dev/null | tail -n 1)"
-      [ -n "$wt" ] && root="$wt"
-    fi
+    root="$(squad_vault_rroot "$vault" "$proj")"
     name="projects/$proj"; [ -n "$sq" ] || sq="$root/$name/.squad"
     squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit ROOT "$root"
     squad_emit PROJECT_DIR "$root/$name"; squad_emit SQUAD_DIR "$sq"

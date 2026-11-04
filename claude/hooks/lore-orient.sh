@@ -229,11 +229,16 @@ PROJ="$VAULT/projects/$DISPLAY"
 # Fold pending inbox events first so the orientation reads current state (#423).
 # Short lock wait: a busy vault must not delay session start.
 LORE_LOCK_WAIT=3 SECOND_BRAIN_PATH="$VAULT" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true
-STATE="${STATE_DIR:-$PROJ/$(state_name "$VAULT")}"
+# Project files (status.md, progress.txt, session.log, context refs) are read where a
+# PR-mode vault holds them until its PR merges: the session worktree (#453, squad_vault_rroot).
+RROOT="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && squad_vault_rroot "$VAULT" "$DISPLAY" )"
+[ -n "$RROOT" ] || RROOT="$VAULT"
+RPROJ="$RROOT/projects/$DISPLAY"
+STATE="$RPROJ/$(state_name "$VAULT")"
 # Project knowledge location (vault or repo); progress.txt and session.log
 # stay under the vault state directory regardless.
 [ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$STATE"
-STATUS="$PROJ/status.md"
+STATUS="$RPROJ/status.md"
 
 NL=$'\n'
 
@@ -270,8 +275,9 @@ if [ -f "$STATUS" ]; then
     case "$_ref" in ''|'—'|'-'|/*|*..*) continue ;; esac
     REFS_N=$((REFS_N + 1))
     [ "$REFS_N" -gt "$REFS_MAX" ] && break
-    _file="$VAULT/$_ref"
-    [ -f "$_file" ] || _file="$VAULT/$_ref.md"
+    _file="$RROOT/$_ref"
+    [ -f "$_file" ] || _file="$RROOT/$_ref.md"
+    [ -f "$_file" ] || { _file="$VAULT/$_ref"; [ -f "$_file" ] || _file="$VAULT/$_ref.md"; }
     if [ ! -f "$_file" ]; then
       REFS_OUT="${REFS_OUT}⚠ Context ref not found: ${_ref} — skipping.${NL}"
       continue
