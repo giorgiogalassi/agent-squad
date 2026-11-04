@@ -245,6 +245,15 @@ RROOT="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_rroot "$VAULT" "$DISPLAY" )"
 [ -n "$RROOT" ] || RROOT="$VAULT"
 RPROJ="$RROOT/projects/$DISPLAY"
 STATE="$RPROJ/$(state_name "$VAULT")"
+# Vault HEAD at session start (one rev-parse, no network), first write wins: SessionEnd
+# tells a session that committed vault writes (lore commit) from a no-op one (#464).
+# A PR-mode vault with no session worktree yet records the checkout's HEAD; a worktree
+# created later then counts as moved.
+if [ -n "$HOOK_SESSION" ] && [ -n "$DISPLAY" ] && [ ! -f "$VAULT/projects/$DISPLAY/${STATE##*/}/sessions/$HOOK_SESSION.vault" ]; then
+  _vh="$(git -C "$RROOT" rev-parse HEAD 2>/dev/null)"
+  [ -n "$_vh" ] && mkdir -p "$VAULT/projects/$DISPLAY/${STATE##*/}/sessions" 2>/dev/null \
+    && printf '%s\n' "$_vh" > "$VAULT/projects/$DISPLAY/${STATE##*/}/sessions/$HOOK_SESSION.vault" 2>/dev/null
+fi
 # Project knowledge location (vault or repo); progress.txt and session.log
 # stay under the vault state directory regardless.
 [ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$STATE"

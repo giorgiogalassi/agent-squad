@@ -171,6 +171,16 @@ STATUS="$PDIR/status.md"
 # writes (decisions lint, commits) can consume them: the session's change signal
 # for a project root that is not a git repository (#464).
 PRE_DIRTY="$(git -C "$PDIR" status --porcelain -- . 2>/dev/null)"
+# Commits to the project folder since the vault HEAD SessionStart recorded (a session
+# whose writes went through `lore commit`), also read before this hook commits. No
+# record (older session) -> PRE_DIRTY alone decides.
+_vrec="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID"
+PRE_MOVED=""
+if [ -n "$SESSION_ID" ] && [ -f "$_vrec.vault" ]; then
+  _vstart="$(cat "$_vrec.vault" 2>/dev/null)"
+  [ -n "$_vstart" ] && PRE_MOVED="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- . 2>/dev/null | head -n 1)"
+  [ "$MODE" = hook ] && rm -f "$_vrec.vault"
+fi
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
 lcommit() {
@@ -399,7 +409,7 @@ if [ "$TOP" != "$ROOT" ]; then
       # Not a git repository: no branch or commit to name, so no idempotency key
       # either (#464). The session's own signal is a change in the vault project
       # dir: none -> nothing to record, no commit, no PR.
-      [ -z "$PRE_DIRTY" ] && exit 0
+      [ -z "$PRE_DIRTY" ] && [ -z "$PRE_MOVED" ] && exit 0
       LINE="[$NOW] [claude-code] Session ended."
     fi
   fi
