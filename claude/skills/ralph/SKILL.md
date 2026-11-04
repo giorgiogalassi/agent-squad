@@ -26,6 +26,11 @@ to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` — it breaks inside worktrees
 (see PATH_RESOLUTION.md). Source files and git operations use CWD.
 
+**Read root.** The session's `SQUAD_DIR` predates any session worktree made since
+(by Seed or an earlier skill): take `SQUAD_DIR` for the existence check and every read
+(`architecture.md`, `scout-cache.md`, `forge/`) from
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --read` (never creates anything).
+
 **Scope boundaries.** Never promote anything to global config unless the
 user explicitly asks. Never create `.squad/` state in the workspace except
 `SQUAD_DIR` when the project is `context: repo`. If a prior phase concluded to skip Ralph, confirm

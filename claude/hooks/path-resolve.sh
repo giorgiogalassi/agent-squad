@@ -196,6 +196,21 @@ EOF3
   fi
   printf '%s' "$d"
 }
+# sess_squad_dir <name>: <worktree>/projects/<name>/.squad of the newest session
+# worktree (lore-<name>-<date>[-N]) that has it; empty when none. A local-only
+# project's worktrees are named lore-local-*, so they never match.
+sess_squad_dir() {
+  local wt t n d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
+  [ -d "$VAULT/.claude/worktrees" ] || return 0
+  pub="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')"
+  # One open branch per project (#443): the same worktree squad_vault_wt picks, i.e.
+  # the newest by date then -N suffix (a project's earlier ones have landed). $d is a glob.
+  for wt in "$VAULT/.claude/worktrees/lore-$pub-"$d "$VAULT/.claude/worktrees/lore-$pub-"$d-[0-9]*; do
+    [ -d "$wt/projects/$1/.squad" ] || continue
+    t="${wt##*/lore-$pub-}"; n="${t:10}"; n="${n#-}"
+    printf '%s %05d %s\n' "${t:0:10}" "${n:-0}" "$wt/projects/$1/.squad"
+  done | sort | tail -n 1 | sed 's/^[^ ]* [^ ]* //'
+}
 if command -v jq >/dev/null 2>&1; then
   if [ -n "$ROOT" ]; then
     DISPLAY="$(resolve_display "$ROOT")"
@@ -225,6 +240,13 @@ if [ -n "$NAME" ]; then
     SQUAD_DIR="$ROOT/.squad"
   else
     SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+    # PR-mode vault (#443): Seed/Forge/Archy/Chisel write SQUAD_DIR content into the
+    # project's session worktree (lore root), never the checkout, so until the vault
+    # PR merges the files exist only there. A worktree holds the checkout's committed
+    # files plus those writes, so readers take the newest session worktree's copy
+    # when one has the folder. Read-only: nothing is created here.
+    SESS_SQ="$(sess_squad_dir "$NAME")"
+    [ -n "$SESS_SQ" ] && SQUAD_DIR="$SESS_SQ"
   fi
   STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
 fi

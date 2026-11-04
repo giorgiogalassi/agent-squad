@@ -307,7 +307,7 @@ SQUAD_VAULT_LEVEL="_vault"
 # worktree is created: call it at the first write, never at session start or "just
 # in case" (#444); an empty <project> returns 10 and creates nothing.
 squad_vault_wt() {
-  local v="$1" pub d br0 base b wt ex i=1 sfx cur
+  local v="$1" pub d br0 base b wt ex i=1 sfx cur nopen open_wt
   [ -n "${2:-}" ] || { echo "squad: no project for a vault session worktree; none created" >&2; return 10; }
   pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
@@ -315,6 +315,28 @@ squad_vault_wt() {
   cur="$br0"
   # Checkout off the default branch (another session's branch): base on the default.
   case "$br0" in main|master) ;; *) br0="$(squad_vault_default_branch "$v")" || return 1 ;; esac
+  # One open branch per project (#443): an existing worktree of this project, of any
+  # date, whose branch has not landed is used as is; a new dated branch starts only
+  # when none is open. Several open ones (legacy state): the newest, named on stderr.
+  nopen=0; open_wt=""
+  while IFS= read -r ex; do
+    [ -n "$ex" ] || continue
+    b="lore/${ex##*/lore-}"
+    if git -C "$v" show-ref -q --verify "refs/heads/$b"; then
+      # Pushed before: the PR may have merged meanwhile, so look at origin again.
+      if git -C "$v" show-ref -q --verify "refs/remotes/origin/$b"; then
+        git -C "$v" fetch -q --prune origin >/dev/null 2>&1
+      fi
+      if squad_vault_landed "$v" "$b"; then continue; fi
+    fi
+    open_wt="$ex"; nopen=$((nopen+1))
+  done < <(squad_vault_wt_existing "$v" "$2")
+  [ "$nopen" -gt 1 ] && echo "squad: $nopen open session branches for $2; using the newest (${open_wt##*/})" >&2
+  if [ -n "$open_wt" ]; then
+    wt="$open_wt"; b="lore/${wt##*/lore-}"
+    [ "$cur" = "$br0" ] && squad_vault_level "$v" "$br0" "$b" "$wt"
+    printf '%s' "$wt"; return 0
+  fi
   while :; do
     sfx=""; [ "$i" -gt 1 ] && sfx="-$i"
     b="lore/$pub-$d$sfx"; wt="$v/.claude/worktrees/lore-$pub-$d$sfx"
@@ -344,18 +366,36 @@ squad_vault_wt() {
   printf '%s' "$wt"
 }
 
+# squad_dir_is_repo <vault> <name> <squad_dir>: 0 when SQUAD_DIR is a `context: repo`
+# folder, i.e. outside the vault's project folder. The project's session worktree
+# (<vault>/.claude/worktrees/lore-*/projects/<name>/, #443) is still the vault case.
+squad_dir_is_repo() {
+  [ -n "${3:-}" ] && [ -n "${2:-}" ] || return 1
+  case "$3" in
+    "$1/projects/$2/"*) return 1 ;;
+    "$1/.claude/worktrees/lore-"*"/projects/$2/"*) return 1 ;;
+  esac
+  return 0
+}
+
 # squad_vault_wt_existing <vault> <project>: read-only. Print each already existing
 # session worktree for today (lore-<name>-<date>, -2, -3, ...), one per line. Never
 # fetches, creates a branch or worktree, or levels main. Exit 1 when there is none.
 squad_vault_wt_existing() {
-  local v="$1" pub d wt found=1
+  local v="$1" pub wt found=1 d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" t dt n key list=""
   [ -n "${2:-}" ] || return 1
   pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
-  d="$(date +%Y-%m-%d)"
-  for wt in "$v/.claude/worktrees/lore-$pub-$d" "$v/.claude/worktrees/lore-$pub-$d"-[0-9]*; do
-    [ -d "$wt" ] && { printf '%s\n' "$wt"; found=0; }
+  # Every date (one open branch per project, #443), oldest first: by date, then the
+  # -N suffix, so the last line is the newest. $d stays unquoted: it is a glob.
+  for wt in "$v/.claude/worktrees/lore-$pub-"$d "$v/.claude/worktrees/lore-$pub-"$d-[0-9]*; do
+    [ -d "$wt" ] || continue
+    t="${wt##*/lore-$pub-}"; dt="${t:0:10}"; n="${t:10}"; n="${n#-}"
+    key="$dt $(printf '%05d' "${n:-0}")"
+    list="$list$key $wt"$'\n'
   done
-  return $found
+  [ -n "$list" ] || return 1
+  printf '%s' "$list" | sort | while IFS= read -r key; do printf '%s\n' "${key#* * }"; done
+  return 0
 }
 
 # squad_vault_commit <vault> <project> <message> <path>...: commit vault-relative

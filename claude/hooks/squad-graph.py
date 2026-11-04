@@ -151,6 +151,7 @@ import math
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
 from urllib.parse import quote
@@ -214,7 +215,10 @@ def fail(code, reason):
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
            ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "DIR", "STATE_DIR")}
-    if env["PROJECT_ROOT"] and env["DIR"]:
+    # The session env predates a session worktree created later (#443), and in a
+    # PR-mode vault SQUAD_DIR then moves into it: re-resolve when the vault has any.
+    sessions = os.path.isdir(os.path.join(env["VAULT_PATH"], ".claude", "worktrees")) if env["VAULT_PATH"] else False
+    if env["PROJECT_ROOT"] and env["DIR"] and not sessions:
         return env
     try:
         out = subprocess.run(["bash", os.path.join(HERE, "path-resolve.sh")],
@@ -231,17 +235,33 @@ def resolve_paths():
 
 
 def default_cache(paths):
-    """The vault's run-state folder (never the repo's)."""
-    if not paths.get("VAULT_PATH"):
-        return ""
-    return os.path.join(lib.state_dir(paths), "graph-cache.json")
+    """The graph cache in the vault's run-state folder (never the repo's). Read from
+    where state is read (the session worktree when one exists); "" with no project,
+    never a bare relative file name."""
+    d = lib.read_state_dir(paths) if paths.get("VAULT_PATH") else ""
+    return os.path.join(d, "graph-cache.json") if d else ""
 
 
 def default_state_file(paths, name):
-    """A file in the vault's run-state folder (never the repo's)."""
-    if not paths.get("VAULT_PATH"):
-        return ""
-    return os.path.join(lib.state_dir(paths), name)
+    """A file in the vault's run-state folder (never the repo's); "" with no project.
+    Read-side path: a writer re-roots it with write_file()."""
+    d = lib.read_state_dir(paths) if paths.get("VAULT_PATH") else ""
+    return os.path.join(d, name) if d else ""
+
+
+def write_file(paths, name):
+    """The session-worktree (PR-mode vault) or vault path of state file `name`, for a
+    writer; "" when there is no write root. lore root creates the worktree here."""
+    d = lib.write_state_dir(paths)
+    return os.path.join(d, name) if d else ""
+
+
+def cache_writer(o, paths):
+    """Where the default cache is saved: a session-worktree path in a PR-mode vault
+    (resolved at save time). None for an explicit --cache, which is used as given."""
+    if "cache" in o:
+        return None
+    return lambda: write_file(paths, "graph-cache.json")
 
 
 def read_text(path):
@@ -794,8 +814,11 @@ def scannable(path):
 class Cache(object):
     """Unit-to-unit edges per unit, keyed by the unit folder's git tree id."""
 
-    def __init__(self, path):
+    def __init__(self, path, write_path=None):
+        # write_path: called at save time, so the session worktree is only created
+        # when the cache actually changed (#443).
         self.path, self.hits, self.misses, self.dirty = path or "", 0, 0, False
+        self.write_path = write_path
         self.data = {"v": 1, "units": {}}
         if self.path:
             try:
@@ -824,7 +847,10 @@ class Cache(object):
         if not (self.path and self.dirty):
             return
         try:
-            lib.write_if_changed(self.path, json.dumps(self.data, sort_keys=True))
+            target = (self.write_path() if self.write_path else self.path) or ""
+            if not target:
+                return
+            lib.write_if_changed(target, json.dumps(self.data, sort_keys=True))
         except OSError as e:
             sys.stderr.write("squad-graph: cache not written: %s\n" % e)
 
@@ -977,7 +1003,7 @@ def cmd_extract(argv):
     snap = GitSnapshot(root, ref) if ref else TreeSnapshot(root)
     cfg = discover(snap, scout)
     if level == "unit":
-        cache = Cache(o["cache"] if "cache" in o else default_cache(paths))
+        cache = Cache(o["cache"] if "cache" in o else default_cache(paths), cache_writer(o, paths))
         edges = sorted((u, t) for u in cfg.units for t in unit_targets(snap, cfg, u, cache))
         cache.save()
         data = new_doc("extract", "unit", cfg)
@@ -1111,7 +1137,7 @@ def hunk_lines(root, mb, head, bp, hp):
     return old_l, new_l
 
 
-def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None):
+def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None, cache_write=None):
     """-> (doc, stats) for the structural change merge-base(base, head)..head."""
     prefix = git_text(root, ["rev-parse", "--show-prefix"], code=10).strip()
 
@@ -1132,7 +1158,7 @@ def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None):
     outside = max(0, n_all - n_rel)
     sb, sh = GitSnapshot(root, mb), GitSnapshot(root, hsha)
     cfg_b, cfg_h = discover(sb, scout), discover(sh, scout)
-    cache = Cache(cache_path)
+    cache = Cache(cache_path, cache_write)
 
     files_by_unit = {}
     for st, bp, hp in entries:
@@ -1247,7 +1273,7 @@ def cmd_diff(argv):
         fail(10, "no --out and no project mapped; run /seed or /lore start")
     scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
     cache = o["cache"] if "cache" in o else default_cache(paths)
-    doc, st = build_diff(root, o["base"], o["head"], o.get("merge_base"), scout, cache)
+    doc, st = build_diff(root, o["base"], o["head"], o.get("merge_base"), scout, cache, cache_writer(o, paths))
     emit_head("GRAPH", out, write_graph(out, doc))
     emit("BASE", doc["base"])
     emit("HEAD", doc["head"])
@@ -1328,7 +1354,7 @@ def diff_from_opts(o, paths):
     squad_dir = paths.get("DIR") or ""
     scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
     cache = o["cache"] if "cache" in o else default_cache(paths)
-    return build_diff(root, o["base"], o["head"], None, scout, cache)[0]
+    return build_diff(root, o["base"], o["head"], None, scout, cache, cache_writer(o, paths))[0]
 
 
 def cmd_check(argv):
@@ -1494,12 +1520,24 @@ def cmd_event(argv):
         lines.append(json.dumps(ev, sort_keys=True))
         shown.append("%s:%s" % (kind, subject))
     if lines:
+        if not o.get("timeline"):
+            # Default timeline: append in the session worktree (PR-mode vault) and
+            # commit it; the read copy above only supplied the prior events.
+            wt = write_file(paths, "graph-timeline.jsonl")
+            if not wt:
+                fail(10, "no write root for the timeline (no project, or the vault checkout is off its default branch in direct mode)")
+            if wt != timeline and os.path.exists(timeline) and not os.path.exists(wt):
+                os.makedirs(os.path.dirname(wt), exist_ok=True)
+                shutil.copyfile(timeline, wt)
+            timeline = wt
         try:
             os.makedirs(os.path.dirname(os.path.abspath(timeline)), exist_ok=True)
             with open(timeline, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
         except OSError as e:
             fail(20, "cannot write timeline: %s" % e)
+        if not o.get("timeline") and lib.commit_paths(paths, [timeline], "[graph] timeline events") not in (0,):
+            sys.stderr.write("squad-graph: timeline not committed (lore commit failed); left in %s\n" % timeline)
     emit("OUTCOME", "applied" if lines else "unchanged")
     emit("CHANGED", "yes" if lines else "no")
     emit("TIMELINE", timeline)

@@ -398,7 +398,7 @@ main() {
     while IFS='=' read -r k v; do
       case "$k" in VAULT_PATH) vault="$v" ;; DISPLAY_NAME) [ -z "$name" ] && name="$v" ;; SQUAD_DIR) sq="$v" ;; esac
     done < <("$HERE/path-resolve.sh" 2>/dev/null)
-    [ -n "$sq" ] && [ -n "$name" ] && [ "${sq#"$vault/projects/$name/"}" = "$sq" ] && ctx=repo
+    squad_dir_is_repo "$vault" "$name" "$sq" && ctx=repo
   fi
   [ -d "$vault" ] || die "vault-check.sh: no vault at $vault" 2
   STATE_NAME="$(squad_state_name "$vault")"

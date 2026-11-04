@@ -55,6 +55,20 @@ You never write code, plan features, or make architectural decisions.
    one skill that creates a missing `SQUAD_DIR`. Never mkdir or write
    when `SQUAD_DIR` or `STATE_DIR` is empty.
 
+4. Write root. Seed's vault writes never go into the vault checkout. Before
+   the first one (Phase 3) run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root` and
+   read `OUTCOME`, `ROOT`, `PROJECT_DIR`, `SQUAD_DIR`; for the vault-wide files
+   (`INDEX.md`, `preferences/`, `docs/`) run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --vault-level` and read its
+   `ROOT` (`VROOT` below). Exit 10: print the stderr reason and stop; nothing
+   is written. From here on, "the project's folder" means `PROJECT_DIR`,
+   `SQUAD_DIR` is the one `lore root` printed (the session env's value is
+   stale), and `<vault>/INDEX.md`, `<vault>/preferences/` and `<vault>/docs/`
+   mean the same paths under `VROOT`.  The
+   existence checks of Phases 2 and 6 read these same locations. A
+   `context: repo` project keeps `SQUAD_DIR` in the repo; only its project
+   files and the scaffolding move.
+
 ## Phase 1: read the project
 
 Read if present (skip silently otherwise): `package.json` or equivalent
@@ -176,7 +190,7 @@ project declares none (then folders):
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py extract
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html   # SQUAD_DIR from lore root
 ```
 
 Read `GRAPH`, `FILES`, `EDGES`, `MODULES`, `CYCLES`, `UNTESTED_MODULES`,
@@ -408,6 +422,27 @@ Expected:
 What is the next step, and what blocks it?
 Expected:
 ```
+
+## Phase 8: commit (PR-mode vault only)
+
+Only when `ROOT` is not `SQUAD_VAULT_PATH`. Commit the written files through
+lore, paths relative to the root they were written under; list only what
+changed, `<n>` = `DISPLAY_NAME`:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[seed] <n> context" --paths projects/<n>/.squad/architecture.md projects/<n>/.squad/scout-cache.md projects/<n>/.squad/graph.json projects/<n>/.squad/graph.html projects/<n>/status.md projects/<n>/decisions.md projects/<n>/golden.md
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --vault-level --message "[seed] vault scaffolding" --paths INDEX.md preferences/development.md docs
+```
+
+Leave out the paths Seed did not write (a `context: repo` project has no
+`SQUAD_DIR` paths here). Read `OUTCOME`.
+
+| Exit | Action |
+|---|---|
+| 0 | Continue. |
+| 10, 20 | Print the stderr reason; the files stay uncommitted in the session worktree; say so in the summary. |
+
+The vault checkout stays clean; the session branches ride the vault PR.
 
 ## Output
 
