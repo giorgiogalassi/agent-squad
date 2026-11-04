@@ -186,6 +186,9 @@ if [ ! -d "$VAULT" ]; then
   emit_json "Lore: no vault at $VAULT. Run $FIRST_CONTACT to initialize." msg-only
   exit 0
 fi
+# PR-mode vault: bring the checkout level with origin (ff-only, clean default branch
+# only) so its INDEX.md, mapping and Obsidian view match what merged (#460).
+[ -f "$HOOK_DIR/squad-common.sh" ] && ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_ff "$VAULT" </dev/null ) >/dev/null || true
 # No project (no root, or an unmapped one) but a vault: skip the per-project work,
 # still flush pending vault branches and print the vault-level signals, if any.
 # $1: message for an unmapped project (printed even without signals), empty for no root.
