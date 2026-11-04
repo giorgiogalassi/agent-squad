@@ -221,5 +221,78 @@ sha="$(git -C "$TMP/five/wt" rev-parse --short HEAD)"
 printf '{"cwd":"%s"}' "$TMP/five/wt" | bash "$H/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1.5
 has "git: line names branch @ sha" "Session ended on worktree branch feat @ $sha." "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
 
+# 12. #476: a session that wrote status.md itself must not end with STATUS_CHECKPOINT_NEWER.
+vcheck() { SECOND_BRAIN_PATH="$V" bash "$H/vault-check.sh" check --project roma --vault "$V" 2>&1; }
+OLD_STATUS='---\ntitle: s\n---\n# Status\nLast updated: 2000-01-01 00:00 by x\n\n## Goal\ng\n\n## Last checkpoint\n\n## Context refs\n'
+# 12a. first-contact /seed, status.md committed through lore commit, then SessionEnd.
+mkfirst tw1
+sid_start s-seed
+( cd "$P" && bash "$H/lore-real" map --name roma ) >/dev/null 2>&1
+WT="$(cd "$P" && bash "$H/lore-real" root | sed -n 's/^ROOT=//p')"
+SECOND_BRAIN_PATH="$V" bash "$H/lore-status-seed.sh" --vault "$V" --project roma --goal g >/dev/null 2>&1
+# The real gap is minutes (seed early, SessionEnd later): age the seed stamp so the test does not depend on the clock minute.
+sed -i.bak 's/^Last updated: [0-9-]* [0-9:]* by seed/Last updated: 2000-01-01 00:00 by seed/' "$WT/projects/roma/status.md"; rm -f "$WT/projects/roma/status.md.bak"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[seed] roma" --paths projects/roma/status.md ) >/dev/null 2>&1
+sid_end s-seed
+has "seed: checkpoint line added" "Session ended." "$(cat "$WT/projects/roma/status.md")"
+has "seed: Last updated moved, keeps by seed" " by seed" "$(sed -n '/^Last updated/p' "$WT/projects/roma/status.md")"
+hasnt "seed: Last updated moved" "2000-01-01" "$(sed -n '/^Last updated/p' "$WT/projects/roma/status.md")"
+hasnt "seed: no STATUS_CHECKPOINT_NEWER" "STATUS_CHECKPOINT_NEWER" "$(vcheck)"
+# 12b. same, status.md still uncommitted at SessionEnd (dirty signal).
+mkfirst tw2
+sid_start s-seed2
+( cd "$P" && bash "$H/lore-real" map --name roma ) >/dev/null 2>&1
+WT="$(cd "$P" && bash "$H/lore-real" root | sed -n 's/^ROOT=//p')"
+SECOND_BRAIN_PATH="$V" bash "$H/lore-status-seed.sh" --vault "$V" --project roma --goal g >/dev/null 2>&1
+# The real gap is minutes (seed early, SessionEnd later): age the seed stamp so the test does not depend on the clock minute.
+sed -i.bak 's/^Last updated: [0-9-]* [0-9:]* by seed/Last updated: 2000-01-01 00:00 by seed/' "$WT/projects/roma/status.md"; rm -f "$WT/projects/roma/status.md.bak"
+sid_end s-seed2
+has "seed (uncommitted): checkpoint line added" "Session ended." "$(cat "$WT/projects/roma/status.md")"
+hasnt "seed (uncommitted): no STATUS_CHECKPOINT_NEWER" "STATUS_CHECKPOINT_NEWER" "$(vcheck)"
+# 12c. mapped session: work through lore commit, status.md NOT rewritten -> still flagged.
+mkenv tw3 1
+rm -rf "$P/.git"
+printf -- "$OLD_STATUS" > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[old] roma" --paths projects/roma ) >/dev/null 2>&1
+sid_start s-nostatus
+echo "note" >> "$WT/projects/roma/decisions.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[work] roma" --paths projects/roma ) >/dev/null 2>&1
+sid_end s-nostatus
+has "no status rewrite: Last updated unchanged" "Last updated: 2000-01-01 00:00 by x" "$(cat "$WT/projects/roma/status.md")"
+has "no status rewrite: STATUS_CHECKPOINT_NEWER fires" "STATUS_CHECKPOINT_NEWER=" "$(vcheck)"
+# 12d. mapped session rewrites status.md through lore commit -> bumped, by kept.
+mkenv tw4 1
+rm -rf "$P/.git"
+printf -- "$OLD_STATUS" > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[old] roma" --paths projects/roma ) >/dev/null 2>&1
+sid_start s-rewrite
+printf -- "$OLD_STATUS" | sed 's/^g$/new goal/' > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[status] roma" --paths projects/roma/status.md ) >/dev/null 2>&1
+sid_end s-rewrite
+hasnt "status rewrite: Last updated moved" "2000-01-01" "$(sed -n '/^Last updated/p' "$WT/projects/roma/status.md")"
+has "status rewrite: by kept" " by x" "$(sed -n '/^Last updated/p' "$WT/projects/roma/status.md")"
+hasnt "status rewrite: no STATUS_CHECKPOINT_NEWER" "STATUS_CHECKPOINT_NEWER" "$(vcheck)"
+# 12e. git-root path (branch @ sha): status.md rewritten in the session -> bumped; otherwise flagged.
+mkenv tw5 1
+printf -- "$OLD_STATUS" > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[old] roma" --paths projects/roma ) >/dev/null 2>&1
+git -C "$P" worktree add -q -b feat "$TMP/tw5/wt" >/dev/null 2>&1
+git -C "$TMP/tw5/wt" commit -q --allow-empty -m w
+gstart() { ( cd "$TMP/tw5/wt" && printf '{"cwd":"%s","source":"startup","session_id":"%s"}' "$TMP/tw5/wt" "$1" | bash "$H/lore-orient.sh" >/dev/null 2>&1 ); }
+gend() { printf '{"cwd":"%s","session_id":"%s"}' "$TMP/tw5/wt" "$1" | bash "$H/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1.5; }
+gstart g-no
+git -C "$TMP/tw5/wt" commit -q --allow-empty -m w2
+gend g-no
+has "git root, no status rewrite: flagged" "STATUS_CHECKPOINT_NEWER=" "$(vcheck)"
+printf -- "$OLD_STATUS" > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[old2] roma" --paths projects/roma ) >/dev/null 2>&1
+gstart g-yes
+git -C "$TMP/tw5/wt" commit -q --allow-empty -m w3
+printf -- "$OLD_STATUS" | sed 's/^g$/g2/' > "$WT/projects/roma/status.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[status] roma" --paths projects/roma/status.md ) >/dev/null 2>&1
+gend g-yes
+has "git root: line names branch @ sha" "worktree branch feat @" "$(cat "$WT/projects/roma/status.md")"
+hasnt "git root, status rewritten: no STATUS_CHECKPOINT_NEWER" "STATUS_CHECKPOINT_NEWER" "$(vcheck)"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" = 0 ]

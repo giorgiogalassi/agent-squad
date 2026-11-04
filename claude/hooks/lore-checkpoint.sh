@@ -198,6 +198,14 @@ if [ -n "$SESSION_ID" ] && [ -f "$_vfile" ]; then
   _vstart="$(cat "$_vfile" 2>/dev/null)"
   [ -n "$_vstart" ] && PRE_MOVED="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- . 2>/dev/null | head -n 1)"
 fi
+# Did THIS session write status.md itself (#476)? Same git evidence, narrowed to the
+# file: dirty (e.g. a fresh /seed scaffold, not committed yet) or changed in
+# <session start>..HEAD (written through `lore commit`). Git is the test, not a
+# timestamp: Last updated has minute resolution and no recorded start time to compare.
+STATUS_SELF="$(git -C "$PDIR" status --porcelain -- status.md 2>/dev/null)"
+if [ -z "$STATUS_SELF" ] && [ -n "${_vstart:-}" ]; then
+  STATUS_SELF="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- status.md 2>/dev/null | head -n 1)"
+fi
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
 lcommit() {
@@ -396,6 +404,20 @@ add_checkpoint() {
   mv "$out" "$STATUS"
 }
 
+# bump_last_updated: this session wrote status.md (STATUS_SELF), so its own checkpoint
+# line must not make the file look stale (vault-check STATUS_CHECKPOINT_NEWER): move
+# `Last updated` forward to the checkpoint time and keep the existing `by <who>` (a
+# first-contact seed stays `by seed`: the stamp still names who wrote the content).
+# Never moves it backwards; a session that did not write status.md leaves it alone,
+# so the warning still fires for work done without a status rewrite.
+bump_last_updated() {
+  [ -n "$STATUS_SELF" ] || return 0
+  local cur out="$STATUS.tmp.$$"
+  cur="$(sed -n 's/^Last updated: \([0-9-]* [0-9:]*\).*/\1/p' "$STATUS" | head -n 1)"
+  [ -n "$cur" ] && [[ "$NOW" > "$cur" ]] || return 0
+  sed "s/^Last updated: [0-9-]* [0-9:]*/Last updated: $NOW/" "$STATUS" > "$out" && mv "$out" "$STATUS" || rm -f "$out"
+}
+
 # --- Worktree session: checkpoint line only -------------------------------
 if [ "$TOP" != "$ROOT" ]; then
   # One progress.txt line per worktree session with committed work, counted
@@ -431,6 +453,7 @@ if [ "$TOP" != "$ROOT" ]; then
     fi
   fi
   add_checkpoint "$LINE" || bail "append failed"
+  bump_last_updated
   commit_vault "checkpoint"
   exit 0
 fi
