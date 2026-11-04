@@ -48,8 +48,7 @@ if [ -z "$VAULT" ] || [ -z "$NAME" ] || [ -z "$ROOT" ]; then
   [ -z "$VAULT" ] && VAULT="$VAULT_PATH"
   [ -z "$NAME" ] && NAME="$DISPLAY_NAME"
   [ -z "$ROOT" ] && ROOT="$PROJECT_ROOT"
-  if [ -z "$CTX" ] && [ -n "${SQUAD_DIR:-}" ] && [ -n "$NAME" ] \
-     && [ "${SQUAD_DIR#"$VAULT/projects/$NAME/"}" = "$SQUAD_DIR" ]; then
+  if [ -z "$CTX" ] && squad_dir_is_repo "$VAULT" "$NAME" "${SQUAD_DIR:-}"; then
     CTX=repo
   fi
 fi

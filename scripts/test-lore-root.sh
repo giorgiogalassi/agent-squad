@@ -151,5 +151,47 @@ PYEOF
 check "graph: default_cache empty without a project" "''" "$(kv CACHE "$out")"
 check "graph: default_state_file empty without a project" "''" "$(kv STATE "$out")"
 
+# --- one open branch per project, across days (#443) ---------------------------------
+V="$TMP/vday"; mkvault "$V" pr; P="$TMP/dayproj"; mkproj "$P"
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name dayproj ) >/dev/null 2>&1
+out="$(cd "$P" && bash "$LORE" root 2>&1)"; root1="$(kv ROOT "$out")"
+mkdir -p "$root1/projects/dayproj/.squad"; echo day1 > "$root1/projects/dayproj/.squad/architecture.md"
+( cd "$P" && bash "$LORE" commit --message "[seed] day1" --paths projects/dayproj/.squad/architecture.md ) >/dev/null 2>&1
+Y="$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d yesterday +%Y-%m-%d)"
+git -C "$V" worktree move "$root1" "$V/.claude/worktrees/lore-dayproj-$Y" && git -C "$V" branch -m "lore/dayproj-$D" "lore/dayproj-$Y"
+out="$(cd "$P" && bash "$LORE" root 2>&1)"; rc=$?
+check "day 2: root exits 0" 0 "$rc"
+check "day 2: same worktree as day 1" "$V/.claude/worktrees/lore-dayproj-$Y" "$(kv ROOT "$out")"
+check "day 2: --read agrees" "$V/.claude/worktrees/lore-dayproj-$Y" "$(cd "$P" && bash "$LORE" root --read | sed -n 's/^ROOT=//p')"
+check "day 2: path-resolve sees day-1 architecture.md" "day1" "$(cat "$(cd "$P" && bash "$PR" 2>/dev/null | sed -n 's/^SQUAD_DIR=//p')/architecture.md")"
+check "day 2: still one session branch" 1 "$(git -C "$V" branch --list 'lore/dayproj-*' | wc -l | tr -d ' ')"
+echo day2 > "$V/.claude/worktrees/lore-dayproj-$Y/projects/dayproj/.squad/forge.md"
+( cd "$P" && bash "$LORE" commit --message "[forge] day2" --paths projects/dayproj/.squad/forge.md ) >/dev/null 2>&1
+check "day 2: forge file on the day-1 branch" "day2" "$(git -C "$V" show "lore/dayproj-$Y:projects/dayproj/.squad/forge.md")"
+check "day 2: checkout clean" "" "$(git -C "$V" status --porcelain)"
+
+# landed: the branch merged into main -> the next write starts a fresh dated branch
+git -C "$V" merge -q --ff-only "lore/dayproj-$Y" && echo more > "$V/more.md" && git -C "$V" add more.md && git -C "$V" commit -qm more
+out="$(cd "$P" && bash "$LORE" root 2>&1)"
+check "landed: new dated worktree" "$V/.claude/worktrees/lore-dayproj-$D" "$(kv ROOT "$out")"
+check "landed: new branch exists" 1 "$(git -C "$V" branch --list "lore/dayproj-$D" | wc -l | tr -d ' ')"
+
+# --- worktree SQUAD_DIR is not context: repo ------------------------------------------
+. "$REPO_ROOT/claude/hooks/squad-common.sh"
+squad_dir_is_repo /v n /v/projects/n/.squad && bad "vault dir is not repo" || ok "vault SQUAD_DIR is not repo"
+squad_dir_is_repo /v n /v/.claude/worktrees/lore-n-2026-11-04/projects/n/.squad && bad "worktree dir is not repo" || ok "worktree SQUAD_DIR is not repo"
+squad_dir_is_repo /v n /code/n/.squad && ok "repo SQUAD_DIR is repo" || bad "repo dir is repo"
+V="$TMP/vctx"; mkvault "$V" pr; P="$TMP/ctxproj"; mkproj "$P"; echo "j" > "$P/JOURNAL.md"
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name ctxproj ) >/dev/null 2>&1
+out="$(cd "$P" && bash "$LORE" root 2>&1)"; mkdir -p "$(kv SQUAD_DIR "$out")"
+mkdir -p "$V/projects/ctxproj"; printf '# Decisions\n' > "$V/projects/ctxproj/decisions.md"; printf '# Status\n\n## Context refs\n—\n' > "$V/projects/ctxproj/status.md"
+( cd "$P" && bash "$HK/lore-journal-pointer.sh" ) >/dev/null 2>&1
+check "journal pointer: no wrong context: repo header" 0 "$(grep -c 'context: repo' "$V/projects/ctxproj/decisions.md")"
+check "vault-check --context repo not inferred" "" "$(cd "$P" && bash "$HK/vault-check.sh" check --project ctxproj 2>&1 | grep -i 'context: repo\|JOURNAL' | head -1)"
+orient="$(cd "$P" && SQUAD_VAULT_PATH="" bash "$HK/lore-orient.sh" 2>&1 </dev/null)"
+case "$orient" in *"JOURNAL"*) bad "orient: worktree SQUAD_DIR read as repo (JOURNAL tail shown)" ;; *) ok "orient: no JOURNAL tail for a vault project" ;; esac
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

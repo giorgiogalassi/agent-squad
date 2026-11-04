@@ -200,15 +200,16 @@ EOF3
 # worktree (lore-<name>-<date>[-N]) that has it; empty when none. A local-only
 # project's worktrees are named lore-local-*, so they never match.
 sess_squad_dir() {
-  local wt ts d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
+  local wt t n d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
   [ -d "$VAULT/.claude/worktrees" ] || return 0
   pub="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')"
-  # $d is left unquoted on purpose: it is a glob for the date.
+  # One open branch per project (#443): the same worktree squad_vault_wt picks, i.e.
+  # the newest by date then -N suffix (a project's earlier ones have landed). $d is a glob.
   for wt in "$VAULT/.claude/worktrees/lore-$pub-"$d "$VAULT/.claude/worktrees/lore-$pub-"$d-[0-9]*; do
     [ -d "$wt/projects/$1/.squad" ] || continue
-    ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null)"
-    printf '%s %s\n' "${ts:-0}" "$wt/projects/$1/.squad"
-  done | sort -k1,1nr -k2 | sed -n '1s/^[0-9]* //p'
+    t="${wt##*/lore-$pub-}"; n="${t:10}"; n="${n#-}"
+    printf '%s %05d %s\n' "${t:0:10}" "${n:-0}" "$wt/projects/$1/.squad"
+  done | sort | tail -n 1 | sed 's/^[^ ]* [^ ]* //'
 }
 if command -v jq >/dev/null 2>&1; then
   if [ -n "$ROOT" ]; then

@@ -64,9 +64,7 @@ You never write code, plan features, or make architectural decisions.
    is written. From here on, "the project's folder" means `PROJECT_DIR`,
    `SQUAD_DIR` is the one `lore root` printed (the session env's value is
    stale), and `<vault>/INDEX.md`, `<vault>/preferences/` and `<vault>/docs/`
-   mean the same paths under `VROOT`. A PR-mode vault returns session
-   worktrees (so `ROOT` differs from `VAULT_PATH`); a direct or local-only
-   vault returns the vault itself and nothing below is committed. The
+   mean the same paths under `VROOT`.  The
    existence checks of Phases 2 and 6 read these same locations. A
    `context: repo` project keeps `SQUAD_DIR` in the repo; only its project
    files and the scaffolding move.

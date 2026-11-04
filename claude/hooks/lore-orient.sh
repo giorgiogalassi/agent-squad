@@ -294,7 +294,7 @@ fi
 # JOURNAL tail (#330): a `context: repo` project keeps its decisions in the
 # repository's JOURNAL.md, so show the last 40 lines (at most 2400 chars, the
 # same budget as the context refs). Silent when the file is absent.
-if [ "${SQUAD_DIR#"$PROJ"/}" = "$SQUAD_DIR" ] && [ -f "$ROOT/JOURNAL.md" ]; then
+if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && [ -f "$ROOT/JOURNAL.md" ]; then
   _jt="$(tail -n 40 "$ROOT/JOURNAL.md" | tail -c 2400)"
   [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
 fi
@@ -507,7 +507,7 @@ fi
 HEALTH=""
 if [ -x "$HOOK_DIR/vault-check.sh" ]; then
   _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
-  [ "${SQUAD_DIR#"$PROJ"/}" = "$SQUAD_DIR" ] && _vc_args+=(--context repo)
+  ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && _vc_args+=(--context repo)
   _projs=("$VAULT"/projects/*/)
   [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
   HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"

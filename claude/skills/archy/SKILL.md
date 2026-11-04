@@ -36,8 +36,7 @@ and read `OUTCOME`, `ROOT`, `SQUAD_DIR`; write under that `SQUAD_DIR`. When `ROO
 not `SQUAD_VAULT_PATH` (a PR-mode vault) commit what you wrote, once the step that
 wrote it is done, with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[archy] <what>" --paths <path relative to ROOT>...`
 (`projects/<display-name>/.squad/...`; read `OUTCOME`). Exit 10: print the stderr
-reason and stop; nothing is written. A direct or local-only vault returns the vault
-as `ROOT` and nothing is committed; a `context: repo` project keeps its `SQUAD_DIR`.
+reason and stop; nothing is written. A `context: repo` project keeps its `SQUAD_DIR`.
 
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
