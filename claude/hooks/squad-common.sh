@@ -87,6 +87,7 @@ squad_state_name() {
 # knowledge files) is committed working state and must stay trackable.
 # The single list; <state> stands for the state directory name.
 SQUAD_LOCAL_ONLY_PATTERNS='projects/*/.lore-checkpoint.log
+projects/*/.cody-checkpoint.log
 projects/*/.decisions-lint
 projects/*/<state>/inbox/
 projects/*/<state>/sessions/

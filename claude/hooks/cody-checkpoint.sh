@@ -49,6 +49,8 @@ done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 PROJ="$VAULT/projects/$DISPLAY"
 STATE_NAME="$(squad_state_name "$VAULT")"
 LOG="$PROJ/.cody-checkpoint.log"
+# The log must not show in `git status` (#455); the installer never fails.
+squad_vault_excludes "$VAULT" "$STATE_NAME"
 # The summary is working state: a PR-mode vault holds it in the session worktree
 # (squad_vault_wroot), never in the vault checkout; Ralph reads it with
 # `squad-progress.sh where --file env`. Refused (rc 10): direct-mode vault off its default branch.

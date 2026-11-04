@@ -75,5 +75,27 @@ n1="$(wc -l < "$(git -C "$V" rev-parse --absolute-git-dir)/info/exclude")"; sess
 n2="$(wc -l < "$(git -C "$V" rev-parse --absolute-git-dir)/info/exclude")"
 check "installer is idempotent" "$n1" "$n2"
 
+# cody-checkpoint.sh skip path (no [#N] subject) writes .cody-checkpoint.log
+mkenv cody 1
+git -C "$P" checkout -q -b feat-x; git -C "$P" commit -q --allow-empty -m "no issue id"
+printf '{"cwd":"%s","agent_type":"cody"}' "$P" | bash "$H/cody-checkpoint.sh" >/dev/null 2>&1; sleep 1
+[ -s "$V/projects/roma/.cody-checkpoint.log" ] && ok "cody log written" || bad "cody log not written"
+check "checkout status empty after cody-checkpoint" "" "$(git -C "$V" status --porcelain)"
+
+# <state> substitution: custom state_dir and legacy .squad
+. "$H/squad-common.sh"; SQUAD_HOOKS_DIR="$H"
+for sd in custom-state .squad; do
+  X="$TMP/sub-$sd"; mkdir -p "$X"; git -C "$X" init -q -b main
+  printf '{"state_dir": "%s"}\n' "$sd" > "$X/lore-config.json"
+  squad_vault_excludes "$X"; squad_vault_excludes "$X"
+  mkdir -p "$X/projects/p/$sd/sessions" "$X/projects/p/$sd/inbox/.claimed-1"
+  echo c > "$X/projects/p/$sd/graph-cache.json"; echo c > "$X/projects/p/$sd/sessions/s"
+  echo c > "$X/projects/p/$sd/inbox/.claimed-1/a.ev"; echo c > "$X/projects/p/.cody-checkpoint.log"
+  check "state '$sd': local-only files ignored" "?? lore-config.json" "$(git -C "$X" status --porcelain -uall)"
+  echo c > "$X/projects/p/$sd/progress.txt"
+  has "state '$sd': progress.txt trackable" "progress.txt" "$(git -C "$X" status --porcelain -uall)"
+  check "state '$sd': no duplicate rules" "$(grep -c graph-cache "$X/.git/info/exclude")" "1"
+done
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" = 0 ]

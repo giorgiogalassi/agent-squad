@@ -280,3 +280,5 @@ refused by them. No `.gitignore` is needed or touched.
 - Committed working state (stays trackable): `progress.txt`, `ralph-run.md`,
   `session.log`, `status.md`, `decisions.md`, `<state>/graph-timeline.jsonl` and the
   knowledge files (`graph.json`, `architecture.md`, ...).
+- `<state>/atlas/<id>/` (squad-atlas.py output) is committed: the atlas script commits it
+  itself (`[atlas] gather`/`render`), so it is not excluded.
