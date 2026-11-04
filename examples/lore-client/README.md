@@ -8,5 +8,5 @@ part of the agent-squad marketplace.
 - `agents/lore-client-worker.md` + `hooks/checkpoint.sh`: a SubagentStop hook
   that filters on its own agent and emits a `checkpoint` event.
 - `skills/lore-client-note`: a Bash step that emits a `note` event.
-- Mapping: `/lore start` (or `lore map`) once per project.
+- Mapping: `/lore start` (never the client itself) once per project.
 - No shim installed: every call exits 0 and writes nothing.

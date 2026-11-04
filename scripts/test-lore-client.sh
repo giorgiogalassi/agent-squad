@@ -53,7 +53,16 @@ ENVF="$TMP/envfile"; : > "$ENVF"
 printf '{"cwd":"%s","source":"startup"}' "$P" | CLAUDE_ENV_FILE="$ENVF" bash "$REPO_ROOT/claude/hooks/squad-env.sh" >/dev/null 2>&1
 [ -x "$SHIM" ] && ok "shim installed by SessionStart" || bad "shim installed by SessionStart"
 
-# first contact: lore map (what /lore start runs); this is the only mapping step
+# --- unmapped project: hook and skill step leave the vault untouched (no first contact) ---
+snap() { printf '%s|%s|%s|%s' "$(git -C "$V" rev-parse HEAD)" "$(cat "$V/lore-config.json")" "$(ls "$V/projects")" "$(git -C "$V" worktree list | wc -l | tr -d ' ')"; }
+S0="$(snap)"
+payload lore-client-worker | bash "$HOOK" >/dev/null 2>&1; check "unmapped: hook exits 0" 0 "$?"
+( cd "$P" && bash "$CLIENT/scripts/lore-event.sh" note k "x" ) >/dev/null 2>&1; check "unmapped: skill step exits 0" 0 "$?"
+check "unmapped: no commit, config, project dir or worktree" "$S0" "$(snap)"
+check "unmapped: lore project exits 10" 10 "$(cd "$P" && bash "$SHIM" project >/dev/null 2>&1; echo $?)"
+check "unmapped: still nothing written" "$S0" "$(snap)"
+
+# first contact: lore map (what /lore start runs); the client itself never maps
 ( cd "$P" && bash "$SHIM" map >/dev/null 2>&1 ); check "project mapped" clientproj "$(jq -r '.projects | to_entries[0].value // empty' "$V/lore-config.json")"
 
 # --- SubagentStop: own agent lands, others write nothing ---

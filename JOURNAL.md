@@ -1556,7 +1556,7 @@ outside plugin could use it from its documented surface alone.
 SubagentStop hook that filters on its own agent and emits a `checkpoint`
 event, and a skill whose Bash step emits a `note` event. Both go through one
 script that calls only `"${LORE_BIN:-$HOME/.local/share/lore/bin/lore}"`
-(`map` to learn the project name, `event` to write). No `SQUAD_*`, no `.squad`,
+(`project` to learn the project name, `event` to write). No `SQUAD_*`, no `.squad`,
 no vault path, no version control; a missing shim is exit 0 and nothing written.
 `scripts/test-lore-client.sh` installs the shim into a temp HOME the way
 SessionStart does, feeds SubagentStop JSON to the hook, runs the skill step,
@@ -1570,11 +1570,12 @@ still there after a SessionEnd rebuild (stub `claude`; the real binary is never 
 
 **What the API lacked:**
 
-- `event` needs `--project`, and there is no read-only "which project is this
-  directory" verb. The client calls `lore map` (idempotent, so it only reports
-  `NAME` once mapped), which is a write verb used as a lookup, and it forks
-  the dispatcher twice per event. A `lore project` verb (name, no write) is the
-  natural fix; not done here.
+- `event` needs `--project`, and there was no read-only "which project is this
+  directory" verb. The first client version used `lore map` as a lookup, but
+  `map` is a write verb: in an unmapped directory it maps the folder and commits
+  (found in review). Added `lore project [--root <dir>]`: `NAME` and `ROOT`,
+  exit 10 `NEED=map` when unmapped, never writes. The client uses it, and a test
+  shows an unmapped hook or skill step leaves the vault untouched.
 - The shim is installed at `${XDG_DATA_HOME:-$HOME/.local/share}/lore/bin/lore`
   but the client default is `$HOME/.local/share/...` and the `LORE_BIN` export
   reaches only the session's Bash calls, not another plugin's hook process. On a
