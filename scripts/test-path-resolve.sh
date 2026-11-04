@@ -161,5 +161,16 @@ if command -v jq >/dev/null 2>&1; then
     && ok "#440: lore map stores the physical root" || bad "#440 map canonical"
 fi
 
+# --- #441: no project -> no `projects//` path, no missing-config noise -----------
+if command -v jq >/dev/null 2>&1; then
+  V7="$TMPROOT/v441"; U7="$TMPROOT/unmapped441"; mkdir -p "$V7" "$U7"
+  printf '{"projects":{}}\n' > "$V7/lore-config.json"
+  O="$(cd "$U7" && SECOND_BRAIN_PATH="$V7" bash "$H/path-resolve.sh" 2>"$TMPROOT/err441")"
+  case "$O" in *"projects//"*) bad "#441: output has projects//: $O" ;; *) ok "#441: no output line contains projects//" ;; esac
+  case "$O" in *"SQUAD_DIR="$'\n'*"STATE_DIR=") ok "#441: SQUAD_DIR and STATE_DIR empty with no project" ;; *) bad "#441 empty dirs: $O" ;; esac
+  case "$O" in *"TRACKER_MODE=detached"*) ok "#441: TRACKER_MODE detached" ;; *) bad "#441 mode: $O" ;; esac
+  [ ! -s "$TMPROOT/err441" ] && ok "#441: no chisel-config.json not found on stderr" || bad "#441 stderr: $(cat "$TMPROOT/err441")"
+fi
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -44,6 +44,8 @@ while IFS='=' read -r _key _value; do
 done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -d "${VAULT:-}" ] && [ -n "${ROOT:-}" ] || exit 0
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
+# No project (#441): a hook never fails the session, so note it and stop.
+[ -n "$DISPLAY" ] || { echo "cody-checkpoint: no project mapped for $ROOT; run /seed or /lore start" >&2; exit 0; }
 PROJ="$VAULT/projects/$DISPLAY"
 STATE_NAME="$(squad_state_name "$VAULT")"
 LOG="$PROJ/.cody-checkpoint.log"

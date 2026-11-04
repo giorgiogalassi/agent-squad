@@ -45,7 +45,9 @@
 # lore-config.local.json (untracked, same schema) is read first for both maps.
 # status.md, decisions.md, preferences/, session.log, chisel-config.json,
 # progress.txt and issues/ always stay in the vault regardless.
-# SQUAD_DIR is a path only; callers check that it exists.
+# SQUAD_DIR is a path only; callers check that it exists. With no project (empty
+# DISPLAY_NAME and no PROJECT_ROOT) SQUAD_DIR and STATE_DIR are emitted empty,
+# never with an empty `projects//` segment (#441).
 #
 # TRACKER_MODE is `connected` or `detached`, read from `chisel.mode` in
 # <VAULT>/projects/<name>/.squad/chisel-config.json (always the vault,
@@ -207,17 +209,23 @@ if [ -n "$ROOT" ] && { [ -f "$CONFIG" ] || [ -f "$LOCAL_CONFIG" ]; }; then
   fi
 fi
 NAME="${DISPLAY:-$(basename "$ROOT")}"
-if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
-  SQUAD_DIR="$ROOT/.squad"
-else
-  SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+# No project (empty NAME: a non-git directory no config maps, #441): SQUAD_DIR and
+# STATE_DIR stay empty. A path with an empty `projects//` segment is never built.
+SQUAD_DIR=""; STATE_DIR=""
+if [ -n "$NAME" ]; then
+  if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
+    SQUAD_DIR="$ROOT/.squad"
+  else
+    SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+  fi
+  STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
 fi
-
-STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
 
 TRACKER_MODE="detached"
 CHISEL_CONFIG="$STATE_DIR/chisel-config.json"
-if [ ! -f "$CHISEL_CONFIG" ]; then
+if [ -z "$STATE_DIR" ]; then
+  : # no project: detached, nothing to report missing
+elif [ ! -f "$CHISEL_CONFIG" ]; then
   echo "path-resolve: $CHISEL_CONFIG not found; TRACKER_MODE=detached" >&2
 elif ! command -v jq >/dev/null 2>&1; then
   echo "path-resolve: jq not found; cannot read chisel.mode, TRACKER_MODE=detached" >&2

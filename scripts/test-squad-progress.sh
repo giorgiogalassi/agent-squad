@@ -245,5 +245,27 @@ check "off main direct: append exits 10" 10 "$RC"
 check "off main direct: no applied outcome" 0 "$(printf '%s\n' "$OUT" | grep -c 'OUTCOME=applied')"
 check "off main direct: nothing written" "" "$(git -C "$V" status --porcelain)"
 
+# no project (#441): exit 10 with the reason, never a usage error
+mkdir -p "$TMPROOT/hooks-np"
+cp "$TMPROOT"/hooks/{squad-progress.sh,squad-incidents.sh,squad-common.sh,lore} "$TMPROOT/hooks-np/"
+cat > "$TMPROOT/hooks-np/path-resolve.sh" <<'EOP'
+#!/usr/bin/env bash
+[ "${1:-}" = "--state-name" ] && { echo .squad; exit 0; }
+echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT="; echo "DISPLAY_NAME="
+echo "SQUAD_DIR="; echo "TRACKER_MODE=detached"; echo "STATE_DIR="
+EOP
+mkvault np
+for args in "log --source seed --line x" "append --issue #1 --line x" "run-status --value Done" "run-write --from /dev/null"; do
+  (cd "$TMPROOT" && SECOND_BRAIN_PATH="$TMPROOT/np" bash "$TMPROOT/hooks-np/squad-progress.sh" $args >/dev/null 2>"$TMPROOT/err"); RC=$?
+  check "no project: ${args%% *} exits 10" 10 "$RC"
+  grep -q 'no project mapped' "$TMPROOT/err" && ok "no project: ${args%% *} names the reason" || bad "no project reason: $(cat "$TMPROOT/err")"
+done
+# lore event with an empty --project: precondition (10), not the usage line (2)
+(SECOND_BRAIN_PATH="$TMPROOT/np" bash "$TMPROOT/hooks/lore" event --vault "$TMPROOT/np" --project "" --source s --kind log --line x >/dev/null 2>"$TMPROOT/err"); RC=$?
+check "lore event: empty project exits 10" 10 "$RC"
+grep -q 'no project mapped' "$TMPROOT/err" && ok "lore event: empty project reason" || bad "lore event reason"
+(SECOND_BRAIN_PATH="$TMPROOT/np" bash "$TMPROOT/hooks/lore" event --vault "$TMPROOT/np" --project p >/dev/null 2>&1); RC=$?
+check "lore event: missing fields still exit 2" 2 "$RC"
+
 echo "---"; echo "passed: $PASS failed: $FAIL"
 [ "$FAIL" -eq 0 ]
