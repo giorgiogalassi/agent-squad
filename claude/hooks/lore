@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
-#   lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>...
+#   lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>...
 #   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
 #   lore fold [--project <p>] [--vault <dir>]
 #   lore push [--vault <dir>]
@@ -129,24 +129,28 @@ lock_release() {
 }
 
 cmd_commit() {
-  local vault="" proj="" msg="" p gitdir
+  local vault="" proj="" msg="" p gitdir vlevel=0
   local paths=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --vault)   vault="${2:-}"; shift 2 || break ;;
       --project) proj="${2:-}"; shift 2 || break ;;
       --message) msg="${2:-}"; shift 2 || break ;;
+      --vault-level) vlevel=1; shift ;;
       --paths)   shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do paths+=("$1"); shift; done ;;
-      *) squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>..." ;;
+      *) squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>..." ;;
     esac
   done
-  [ "${#paths[@]}" -gt 0 ] || squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>] [--message <msg>] --paths <p>..."
+  [ "${#paths[@]}" -gt 0 ] || squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>..."
   if [ -z "$vault" ]; then
     squad_resolve || exit 20
     vault="$VAULT_PATH"
     [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
   fi
-  [ -n "$proj" ] || proj=vault
+  # No default project (#444): an empty one would name a lore/vault-* branch. Files that
+  # belong to no project are committed with --vault-level, on lore/_vault-<date>.
+  [ "$vlevel" = 1 ] && proj="$SQUAD_VAULT_LEVEL"
+  [ -n "$proj" ] || squad_fail 10 "no project for this commit; pass --project <name> or --vault-level for vault-level files"
   [ -n "$msg" ] || msg="[lore] $(squad_public_name "$vault" "$proj") update $(date '+%Y-%m-%d %H:%M')"
   # The common git dir, so every linked worktree of the vault shares one lock.
   gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
@@ -408,6 +412,13 @@ EOF3
   return 0
 }
 
+# inbox_has_work <inbox>: 0 when the inbox holds an event or a claimed batch to adopt.
+inbox_has_work() {
+  local f
+  for f in "$1"/*.ev "$1"/.claimed-*; do [ -e "$f" ] && return 0; done
+  return 1
+}
+
 # fold_project <vault> <project> <state-name> <lock>: claim, lock, apply, commit.
 # 0 done, 1 failed (claimed events stay in .claimed-<pid>/ for the next fold).
 fold_project() {
@@ -419,6 +430,12 @@ fold_project() {
   # worktree, whatever branch the checkout sits on. Any other mode: nothing is applied
   # while the checkout is off its default branch (another session's); events wait.
   if ! squad_local_only "$vault" "$proj" && squad_vault_pr_mode_any "$vault"; then
+    # A session worktree only when there is something to write (#444): events waiting
+    # in the inbox, or a worktree of today that already exists (its uncommitted state
+    # is snapshotted). Otherwise nothing is created and nothing is folded.
+    if ! inbox_has_work "$inbox" && ! squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1; then
+      return 0
+    fi
     root="$(squad_vault_wt "$vault" "$proj")" || { echo "lore: vault worktree failed" >&2; return 1; }
     prmode=1
   elif squad_vault_offdefault "$vault"; then
@@ -670,7 +687,7 @@ cmd_map() {
     printf '{\n  "projects": {},\n  "state_dir": ".lore"\n}\n' > "$vault/lore-config.json" || squad_fail 20 "cannot write config"
     bash "$HOOK_DIR/lore-map.sh" ignore --vault "$vault" >/dev/null || exit $?
     # A subprocess: cmd_commit holds the lock until this process exits.
-    bash "$HOOK_DIR/lore" commit --vault "$vault" --project vault --message "[lore] create vault" --paths lore-config.json .gitignore >/dev/null || exit $?
+    bash "$HOOK_DIR/lore" commit --vault "$vault" --vault-level --message "[lore] create vault" --paths lore-config.json .gitignore >/dev/null || exit $?
   fi
   if [ "$adopt" = yes ]; then
     [ -d "$vault/projects/$cand" ] || squad_fail 2 "nothing to adopt: $vault/projects/$cand does not exist"

@@ -292,13 +292,24 @@ squad_vault_level() {
   return 0
 }
 
+# The explicit project name for vault-level writes that belong to no project
+# (lore-config.json, .gitignore, vault-wide check fixes; #444). They go to
+# lore/_vault-<date>. There is no implicit default: a caller with an empty project
+# gets exit 10 from squad_vault_wt / squad_vault_wroot / squad_vault_commit and no
+# worktree or branch is created. Callers pass this name on purpose (`lore commit
+# --vault-level`).
+SQUAD_VAULT_LEVEL="_vault"
+
 # squad_vault_wt <vault> <project>: print the session worktree (lore-<name>-<date>
 # on branch lore/<name>-<date>), creating it from origin's main when absent. When
 # that day's branch already landed (merged), later writes use lore/<name>-<date>-2,
-# -3, ... so a merged branch is never reused.
+# -3, ... so a merged branch is never reused. This is the one place a session
+# worktree is created: call it at the first write, never at session start or "just
+# in case" (#444); an empty <project> returns 10 and creates nothing.
 squad_vault_wt() {
   local v="$1" pub d br0 base b wt ex i=1 sfx cur
-  pub="$(squad_public_name "$v" "${2:-vault}" | tr -c 'A-Za-z0-9._-' '-')"
+  [ -n "${2:-}" ] || { echo "squad: no project for a vault session worktree; none created" >&2; return 10; }
+  pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
   br0="$(git -C "$v" symbolic-ref -q --short HEAD)" || return 1
   cur="$br0"
@@ -338,7 +349,8 @@ squad_vault_wt() {
 # fetches, creates a branch or worktree, or levels main. Exit 1 when there is none.
 squad_vault_wt_existing() {
   local v="$1" pub d wt found=1
-  pub="$(squad_public_name "$v" "${2:-vault}" | tr -c 'A-Za-z0-9._-' '-')"
+  [ -n "${2:-}" ] || return 1
+  pub="$(squad_public_name "$v" "$2" | tr -c 'A-Za-z0-9._-' '-')"
   d="$(date +%Y-%m-%d)"
   for wt in "$v/.claude/worktrees/lore-$pub-$d" "$v/.claude/worktrees/lore-$pub-$d"-[0-9]*; do
     [ -d "$wt" ] && { printf '%s\n' "$wt"; found=0; }
@@ -355,6 +367,7 @@ squad_vault_commit() {
   local v="$1" proj="$2" msg="$3" root="$1" wt wtw p base ours bref cur off=0 _id=""
   shift 3
   git -C "$v" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  [ -n "$proj" ] || { echo "squad: no project for a vault commit; nothing committed (vault-level files use SQUAD_VAULT_LEVEL)" >&2; return 10; }
   squad_vault_offdefault "$v" && off=1
   if ! squad_local_only "$v" "$proj" && squad_vault_pr_mode_any "$v"; then
     if [ "$off" = 1 ]; then
@@ -432,10 +445,12 @@ squad_commit_fail() {
 # another session's branch (#424). Direct-mode and local-only vaults: the vault itself;
 # rc 10 (nothing printed) when the checkout is off its default branch there: do not write.
 squad_vault_wroot() {
-  local v="$1" proj="$2"
+  local v="$1" proj="$2" _rc
+  [ -n "$proj" ] || { echo "squad: no project for a vault write; nothing created" >&2; return 10; }
   if git -C "$v" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$v" "$proj"; then
     if squad_vault_pr_mode_any "$v"; then
-      squad_vault_wt "$v" "$proj" || return 1
+      squad_vault_wt "$v" "$proj"; _rc=$?
+      [ "$_rc" = 0 ] || return "$_rc"
       return 0
     fi
     squad_vault_offdefault "$v" && return 10
