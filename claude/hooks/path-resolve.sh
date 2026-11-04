@@ -126,10 +126,26 @@ fi
 DISPLAY=""
 CONFIG="$VAULT/lore-config.json"
 LOCAL_CONFIG="$VAULT/lore-config.local.json"
-# cfg_get <map> <root>: first non-empty value from the local, then the tracked config.
+# Session worktrees (#440): in a PR-mode vault `lore map` commits the mapping on the
+# open session branch (worktree <vault>/.claude/worktrees/lore-*), not in the
+# checkout. SESSION_CONFIGS lists those worktrees' lore-config.json, newest commit
+# first, and is read after the checkout's local and tracked configs. Once the vault PR
+# merges and the worktree is cleaned up, the checkout carries the mapping and this
+# list no longer matters. Read-only: nothing is written or fetched.
+SESSION_CONFIGS=""
+sess_configs() {
+  local wt ts
+  for wt in "$VAULT"/.claude/worktrees/lore-*; do
+    [ -f "$wt/lore-config.json" ] || continue
+    ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null)"
+    printf '%s %s\n' "${ts:-0}" "$wt/lore-config.json"
+  done | sort -rn | sed 's/^[0-9]* //'
+}
+# cfg_get <map> <root>: first non-empty value from the local, the tracked, then the
+# session-worktree configs (newest first).
 cfg_get() {
   local f v
-  for f in "$LOCAL_CONFIG" "$CONFIG"; do
+  for f in "$LOCAL_CONFIG" "$CONFIG" $SESSION_CONFIGS; do
     [ -f "$f" ] || continue
     v="$(jq -r --arg k "$2" ".$1[\$k] // empty" "$f" 2>/dev/null)"
     if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
@@ -138,6 +154,18 @@ cfg_get() {
 }
 if [ -n "$ROOT" ] && command -v jq >/dev/null 2>&1; then
   DISPLAY="$(cfg_get projects "$ROOT")"
+  if [ -z "$DISPLAY" ]; then
+    # Word splitting on the list is intended; a vault path with spaces is not supported here.
+    SESSION_CONFIGS="$(sess_configs | tr '\n' ' ')"
+    DISPLAY="$(cfg_get projects "$ROOT")"
+    if [ -n "$DISPLAY" ]; then
+      for f in $SESSION_CONFIGS; do
+        o="$(jq -r --arg k "$ROOT" '.projects[$k] // empty' "$f" 2>/dev/null)"
+        [ -n "$o" ] && [ "$o" != "$DISPLAY" ] \
+          && echo "path-resolve: session branches map $ROOT to different names ('$DISPLAY' newest wins, '$o' in $f)" >&2
+      done
+    fi
+  fi
 fi
 
 CONTEXT=""
