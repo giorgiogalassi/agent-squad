@@ -98,6 +98,24 @@ out="$(cd "$P" && printf '{"cwd":"%s","source":"startup"}' "$P" | bash "$H/lore-
 hasnt "non-git: orientation has no Branch: line" "Branch:" "$out"
 hasnt "non-git: orientation has no Recent commits" "Recent commits:" "$out"
 
+# 6. #464: writes committed through `lore commit` during the session, clean at SessionEnd -> one line
+mkenv six 1
+rm -rf "$P/.git"
+sid_end() { printf '{"cwd":"%s","session_id":"%s"}' "$P" "$1" | bash "$H/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1.5; }
+sid_start() { ( cd "$P" && printf '{"cwd":"%s","source":"startup","session_id":"%s"}' "$P" "$1" | bash "$H/lore-orient.sh" >/dev/null 2>&1 ); }
+sid_start s-noop
+before="$(cat "$WT/projects/roma/status.md")"; head0="$(git -C "$WT" rev-parse HEAD)"
+sid_end s-noop
+check "non-git session-record no-op: status.md untouched" "$before" "$(cat "$WT/projects/roma/status.md")"
+check "non-git session-record no-op: no commit" "$head0" "$(git -C "$WT" rev-parse HEAD)"
+sid_start s-work
+echo "note" >> "$WT/projects/roma/decisions.md"
+( cd "$P" && bash "$H/lore-real" commit --project roma --message "[work] roma" --paths projects/roma ) >/dev/null 2>&1
+check "committed-writes fixture: clean tree" "" "$(git -C "$WT" status --porcelain -- projects/roma)"
+sid_end s-work
+check "non-git committed writes: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
+check "non-git committed writes: checkpoint committed" "" "$(git -C "$WT" status --porcelain -- projects/roma/status.md)"
+
 # 5. #461: git root keeps the branch/sha form (worktree session on branch feat)
 mkenv five 1
 git -C "$P" worktree add -q -b feat "$TMP/five/wt" >/dev/null 2>&1
