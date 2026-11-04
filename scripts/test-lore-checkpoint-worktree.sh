@@ -80,7 +80,16 @@ has "orientation has the worktree status" "Worktree goal" "$out"
 # 4. #461: non-git mapped root -> bare checkpoint line, no empty Branch/Recent commits
 mkenv four 1
 rm -rf "$P/.git"
+# #464: no change in the vault -> status.md byte-identical, no commit
+before="$(cat "$WT/projects/roma/status.md")"; head0="$(git -C "$WT" rev-parse HEAD)"
 session_end
+check "non-git no-op: status.md untouched" "$before" "$(cat "$WT/projects/roma/status.md")"
+check "non-git no-op: no commit" "$head0" "$(git -C "$WT" rev-parse HEAD)"
+# a changed vault file -> exactly one checkpoint line, committed
+echo more >> "$WT/projects/roma/decisions.md"
+session_end
+check "non-git write: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
+check "non-git write: committed" "" "$(git -C "$WT" status --porcelain -- projects/roma/status.md)"
 has "non-git: bare checkpoint line" "] [claude-code] Session ended.
 " "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"
 hasnt "non-git: no branch fragment" "worktree branch" "$(cat "$WT/projects/roma/status.md" "$V/projects/roma/status.md" 2>/dev/null)"

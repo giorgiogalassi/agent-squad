@@ -167,6 +167,10 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 RROOT="$(squad_vault_rroot "$VAULT" "$DISPLAY")"
 PDIR="$RROOT/projects/$DISPLAY"
 STATUS="$PDIR/status.md"
+# Uncommitted vault changes in the project folder, read before this hook's own
+# writes (decisions lint, commits) can consume them: the session's change signal
+# for a project root that is not a git repository (#464).
+PRE_DIRTY="$(git -C "$PDIR" status --porcelain -- . 2>/dev/null)"
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
 lcommit() {
@@ -390,7 +394,10 @@ if [ "$TOP" != "$ROOT" ]; then
       # Idempotent: same branch at same commit already recorded -> nothing new.
       if grep -qF "worktree branch $BRANCH @ $SHA." "$STATUS" 2>/dev/null; then exit 0; fi
     else
-      # Not a git repository: no branch or commit to name.
+      # Not a git repository: no branch or commit to name, so no idempotency key
+      # either (#464). The session's own signal is a change in the vault project
+      # dir: none -> nothing to record, no commit, no PR.
+      [ -z "$PRE_DIRTY" ] && exit 0
       LINE="[$NOW] [claude-code] Session ended."
     fi
   fi
