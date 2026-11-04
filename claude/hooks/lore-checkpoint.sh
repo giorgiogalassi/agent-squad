@@ -145,11 +145,21 @@ done < <("$HOOK_DIR/path-resolve.sh")
 
 [ -d "${VAULT:-}" ] || bail "no vault, skipped"
 STATE_NAME="$(squad_state_name "$VAULT")"
-[ -n "${ROOT:-}" ] || bail "not a git project, skipped"
+# The push is vault-wide (#445): with no project, or no mapping for it, the
+# per-project work below is skipped but a pending lore/* branch is still pushed
+# (detached, only when one is pending). No session worktree is created here.
+push_only_bail() {
+  if [ "$MODE" = hook ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
+     && ( squad_vault_push_pending "$VAULT" ) >/dev/null 2>&1; then
+    squad_vault_push_detached "$VAULT"
+  fi
+  bail "$1"
+}
+[ -n "${ROOT:-}" ] || push_only_bail "not a git project, skipped"
 # Same fallback as lore-orient.sh: an unmapped checkout uses projects/<basename>
 # only when that folder exists; otherwise there is nowhere to write.
 if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then DISPLAY="$(basename "$ROOT")"; fi
-[ -n "${DISPLAY:-}" ] || bail "no vault mapping for this project, skipped"
+[ -n "${DISPLAY:-}" ] || push_only_bail "no vault mapping for this project, skipped"
 STATUS="$VAULT/projects/$DISPLAY/status.md"
 
 # lcommit <message> <path>...: every vault commit goes through the committer.

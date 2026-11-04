@@ -131,4 +131,36 @@ mkvault g '"vault_main":"pr"'; V="$TMPROOT/g"
 git -C "$V" branch lore/orphan-2026-01-01; git -C "$V" checkout -q lore/orphan-2026-01-01; echo z > "$V/z"; git -C "$V" add z; git -C "$V" commit -qm z; git -C "$V" checkout -q main
 ( . "$HOOKS/squad-common.sh"; squad_vault_push_pending "$V" ); check "pending: worktree-less lore branch is not pending" 1 "$?"
 
+# 8. No project resolves (#445): the push is vault-wide, so a pending lore/* branch is
+# still pushed (stub lore records the call) and a failed last push is still shown.
+SHOOKS="$TMPROOT/stub-hooks"; mkdir -p "$SHOOKS"; cp "$HOOKS"/* "$SHOOKS/"
+printf '#!/bin/sh\necho "$@" >> "$STUB_LOG"\n' > "$SHOOKS/lore"; chmod +x "$SHOOKS/lore"
+export STUB_LOG="$TMPROOT/stub.log"
+UNM="$TMPROOT/unmapped"; mkdir -p "$UNM"; git init -q -b main "$UNM"; echo x > "$UNM/f"; git -C "$UNM" add -A; git -C "$UNM" commit -qm init
+NOGIT="$TMPROOT/nogit"; mkdir -p "$NOGIT"
+# pending fixture: a lore branch with a session worktree, one commit ahead of origin
+mkvault h '"vault_main":"pr"'; V="$TMPROOT/h"
+git -C "$V" worktree add -q -b "$BR" "$V/.claude/worktrees/lore-proj" main 2>/dev/null
+echo y > "$V/.claude/worktrees/lore-proj/y"; git -C "$V/.claude/worktrees/lore-proj" add y; git -C "$V/.claude/worktrees/lore-proj" commit -qm y
+: > "$STUB_LOG"
+for _r in "$UNM" "$NOGIT"; do
+  printf '{"cwd":"%s"}' "$_r" | SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1
+  has "no project ($(basename "$_r")): SessionEnd pushes the vault" "push --vault $V" "$(cat "$STUB_LOG")"
+  : > "$STUB_LOG"
+  ( cd "$_r" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+  has "no project ($(basename "$_r")): SessionStart retries the push" "push --vault $V" "$(cat "$STUB_LOG")"
+  : > "$STUB_LOG"
+done
+printf 'OUTCOME=failed\nREASON=rejected\n' > "$V/.git/lore-push-status"
+o="$(cd "$UNM" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null 2>/dev/null)"; sleep 1
+has "no project: orient prints the failed push" "Last vault push failed: rejected" "$o"
+has "no project: failed-push retry recorded" "push --vault $V" "$(cat "$STUB_LOG")"
+check "no project: no session worktree created" 1 "$(ls -d "$V"/.claude/worktrees/* | wc -l | tr -d ' ')"
+# no pending branch: no push call, nothing injected
+mkvault i '"vault_main":"pr"'; V="$TMPROOT/i"; : > "$STUB_LOG"
+printf '{"cwd":"%s"}' "$UNM" | SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-checkpoint.sh" >/dev/null 2>&1
+o="$(cd "$NOGIT" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null 2>/dev/null)"; sleep 1
+check "no pending: stub never called" 0 "$(wc -l < "$STUB_LOG" | tr -d ' ')"
+check "no pending: orient prints nothing" "{}" "$o"
+
 echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]
