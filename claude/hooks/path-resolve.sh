@@ -196,6 +196,19 @@ EOF3
   fi
   printf '%s' "$d"
 }
+# sess_squad_dir <name>: <worktree>/projects/<name>/.squad of the newest session
+# worktree (lore-<name>-<date>[-N]) that has it; empty when none. A local-only
+# project's worktrees are named lore-local-*, so they never match.
+sess_squad_dir() {
+  local wt ts d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
+  pub="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')"
+  # $d is left unquoted on purpose: it is a glob for the date.
+  for wt in "$VAULT/.claude/worktrees/lore-$pub-"$d "$VAULT/.claude/worktrees/lore-$pub-"$d-[0-9]*; do
+    [ -d "$wt/projects/$1/.squad" ] || continue
+    ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null)"
+    printf '%s %s\n' "${ts:-0}" "$wt/projects/$1/.squad"
+  done | sort -k1,1nr -k2 | sed -n '1s/^[0-9]* //p'
+}
 if command -v jq >/dev/null 2>&1; then
   if [ -n "$ROOT" ]; then
     DISPLAY="$(resolve_display "$ROOT")"
@@ -225,6 +238,13 @@ if [ -n "$NAME" ]; then
     SQUAD_DIR="$ROOT/.squad"
   else
     SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+    # PR-mode vault (#443): Seed/Forge/Archy/Chisel write SQUAD_DIR content into the
+    # project's session worktree (lore root), never the checkout, so until the vault
+    # PR merges the files exist only there. A worktree holds the checkout's committed
+    # files plus those writes, so readers take the newest session worktree's copy
+    # when one has the folder. Read-only: nothing is created here.
+    SESS_SQ="$(sess_squad_dir "$NAME")"
+    [ -n "$SESS_SQ" ] && SQUAD_DIR="$SESS_SQ"
   fi
   STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
 fi

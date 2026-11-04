@@ -2,11 +2,24 @@
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
 #   lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>...
+#   lore root [--vault <dir>] [--project <name>|--vault-level]
 #   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
 #   lore fold [--project <p>] [--vault <dir>]
 #   lore push [--vault <dir>]
 #   lore map [--root <dir>] [--name <n>] [--local] [--create-vault] [--adopt]
 #   lore version
+#
+# `root` (#443) is the one owner of "where a vault writer puts its files". PR-mode
+# vault: it creates the project's session worktree on first use (squad_vault_wt) and
+# prints it as ROOT=; the writer edits <ROOT>/projects/<name>/... and commits with
+# `lore commit --paths <vault-relative path>...`, so the vault checkout stays clean
+# and the files ride the vault PR. Direct and local-only vaults: ROOT is the vault.
+# `--vault-level` is the root for files that belong to no project (INDEX.md,
+# preferences/, docs/). Stdout: OUTCOME (applied when the worktree was just created),
+# CHANGED, ROOT, PROJECT_DIR, SQUAD_DIR, STATE_DIR (the last three under ROOT; a
+# `context: repo` project keeps its repo SQUAD_DIR). Exit: 0 ok, 2 usage, 10 no
+# project / direct-mode vault off its default branch, 20 failure. Readers need no
+# call: path-resolve.sh already reports the session worktree's SQUAD_DIR.
 #
 # `event` drops one event file into <state>/inbox/; `fold` claims the inbox
 # events, applies them under the same lock and commits once through the same
@@ -165,6 +178,46 @@ cmd_commit() {
   squad_emit OUTCOME "$COMMIT_OUTCOME"; squad_emit CHANGED "$([ "$COMMIT_OUTCOME" = applied ] && echo yes || echo no)"
 }
 
+# cmd_root: see the header. Takes the vault lock around worktree creation.
+cmd_root() {
+  local vault="" proj="" vlevel=0 root rc existed=0 sq="" gitdir name
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --vault-level) vlevel=1; shift ;;
+      *) squad_fail 2 "usage: lore root [--vault <dir>] [--project <name>|--vault-level]" ;;
+    esac
+  done
+  if [ -z "$vault" ]; then
+    squad_resolve || exit 20
+    vault="$VAULT_PATH"
+    [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
+    # `context: repo`: SQUAD_DIR stays in the repo, whatever the root.
+    case "${SQUAD_DIR:-}" in "$vault"/*|"") ;; *) sq="$SQUAD_DIR" ;; esac
+  fi
+  [ "$vlevel" = 1 ] && { proj="$SQUAD_VAULT_LEVEL"; sq=""; }
+  [ -n "$proj" ] || squad_fail 10 "no project for this root; pass --project <name> or --vault-level"
+  gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
+  if [ -n "$gitdir" ]; then
+    squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1 && existed=1
+    LOCK="$gitdir/lore.lock"
+    lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
+    trap lock_release EXIT
+  fi
+  root="$(squad_vault_wroot "$vault" "$proj")"; rc=$?
+  [ "$rc" = 10 ] && squad_fail 10 "no write root: vault checkout is not on its default branch and the vault is in direct mode, or no project"
+  [ "$rc" = 0 ] && [ -n "$root" ] || squad_fail 20 "vault worktree failed"
+  name="projects/$proj"
+  [ -n "$sq" ] || sq="$root/$name/.squad"
+  squad_emit OUTCOME "$([ "$existed" = 0 ] && [ "$root" != "$vault" ] && echo applied || echo unchanged)"
+  squad_emit CHANGED "$([ "$existed" = 0 ] && [ "$root" != "$vault" ] && echo yes || echo no)"
+  squad_emit ROOT "$root"
+  squad_emit PROJECT_DIR "$root/$name"
+  squad_emit SQUAD_DIR "$sq"
+  squad_emit STATE_DIR "$root/$name/$(squad_state_name "$vault")"
+}
+
 # commit_locked <vault> <project> <msg> <path>...: the committer internal; the
 # caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed, 10 refused (direct-mode vault off its default branch).
 COMMIT_OUTCOME=unchanged
@@ -173,8 +226,9 @@ commit_locked() {
   shift 3
   COMMIT_OUTCOME=unchanged
   pending="$(git -C "$vault" status --porcelain -- "$@" 2>/dev/null)"
-  if [ -z "$pending" ] && squad_vault_offdefault "$vault"; then
-    # Off the default branch a writer edits its session worktree (squad_vault_wroot).
+  if [ -z "$pending" ]; then
+    # A writer edits its session worktree (squad_vault_wroot, `lore root`), on or off
+    # the default branch: look there when the checkout has nothing pending.
     while IFS= read -r wt; do
       [ -n "$wt" ] && pending="$pending$(git -C "$wt" status --porcelain -- "$@" 2>/dev/null)"
     done < <(squad_vault_wt_existing "$vault" "$proj" 2>/dev/null)
@@ -758,10 +812,11 @@ cmd_version() {
 VERB="${1:-}"; [ $# -gt 0 ] && shift
 case "$VERB" in
   commit)  cmd_commit "$@" ;;
+  root)    cmd_root "$@" ;;
   event)   cmd_event "$@" ;;
   fold)    cmd_fold "$@" ;;
   push)    cmd_push "$@" ;;
   map)     cmd_map "$@" ;;
   version) cmd_version ;;
-  *) squad_fail 2 "usage: lore <commit|event|fold|push|map|version> ..." ;;
+  *) squad_fail 2 "usage: lore <commit|root|event|fold|push|map|version> ..." ;;
 esac
