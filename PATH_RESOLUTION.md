@@ -264,3 +264,19 @@ When there is no project (no git root and no config mapping the directory),
 a path with an empty `projects//` segment. Writers (`squad-progress.sh`,
 `lore event`) exit 10 with `no project mapped for <root>; run /seed or /lore
 start`; `cody-checkpoint.sh` (a hook) notes it on stderr and exits 0.
+
+## Local-only vault state (#455)
+
+Some files Lore writes are never committed. `squad_vault_excludes` (squad-common.sh,
+the only list, `SQUAD_LOCAL_ONLY_PATTERNS`) idempotently adds them to `.git/info/exclude`;
+`lore event`/`fold`, SessionStart (before the start-HEAD record) and SessionEnd call it.
+That file lives in the common git dir, so one rule covers the vault checkout and every
+session worktree, and a landed worktree's non-forced `git worktree remove` is not
+refused by them. No `.gitignore` is needed or touched.
+
+- Local-only (excluded), relative to `projects/<name>/`: `.lore-checkpoint.log`,
+  `.decisions-lint`, `<state>/inbox/` (incl. `.claimed-*`), `<state>/sessions/`,
+  `<state>/graph-cache.json`.
+- Committed working state (stays trackable): `progress.txt`, `ralph-run.md`,
+  `session.log`, `status.md`, `decisions.md`, `<state>/graph-timeline.jsonl` and the
+  knowledge files (`graph.json`, `architecture.md`, ...).

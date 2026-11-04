@@ -46,6 +46,7 @@ record_start_head() {
   [ -n "$HOOK_SESSION" ] || return 0
   local _sd; _sd="$1/$(state_name "${1%/projects/*}")"
   [ -f "$_sd/sessions/$HOOK_SESSION" ] && return 0
+  [ -f "$HOOK_DIR/squad-common.sh" ] && ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_excludes "$1" "${_sd##*/}" ) 2>/dev/null
   mkdir -p "$_sd/sessions" 2>/dev/null \
     && git rev-parse HEAD > "$_sd/sessions/$HOOK_SESSION" 2>/dev/null
 }

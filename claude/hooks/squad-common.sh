@@ -80,6 +80,40 @@ squad_state_name() {
   SECOND_BRAIN_PATH="$1" bash "$SQUAD_HOOKS_DIR/path-resolve.sh" --state-name 2>/dev/null
 }
 
+# Local-only state (#455): written into the vault checkout or a session worktree,
+# never committed. `projects/*/` patterns are relative to the repo root and
+# `*` stops at `/`. Everything else under projects/<n>/ (progress.txt,
+# ralph-run.md, session.log, status.md, decisions.md, <state>/graph-timeline.jsonl,
+# knowledge files) is committed working state and must stay trackable.
+# The single list; <state> stands for the state directory name.
+SQUAD_LOCAL_ONLY_PATTERNS='projects/*/.lore-checkpoint.log
+projects/*/.decisions-lint
+projects/*/<state>/inbox/
+projects/*/<state>/sessions/
+projects/*/<state>/graph-cache.json'
+
+# squad_vault_excludes <dir> [<state-name>]: idempotently adds the list above to
+# the git info/exclude of <dir>'s repository. That file lives in the common git
+# dir, so one rule covers the vault checkout and every session worktree. Never fails.
+squad_vault_excludes() {
+  local ex sn="${2:-}" pat
+  [ -n "$sn" ] || sn="$(squad_state_name "$1")"; [ -n "$sn" ] || sn=.lore
+  ex="$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 0
+  [ -n "$ex" ] || return 0
+  case "$ex" in /*) ;; *) ex="$(cd "$1" 2>/dev/null && pwd -P)/$ex" ;; esac
+  while IFS= read -r pat; do
+    pat="${pat//<state>/$sn}"
+    grep -qxF "$pat" "$ex" 2>/dev/null && continue
+    mkdir -p "$(dirname "$ex")" 2>/dev/null
+    # A last line without a newline would swallow the entry.
+    if [ -s "$ex" ] && [ -n "$(tail -c 1 "$ex" 2>/dev/null)" ]; then printf '\n' >> "$ex" 2>/dev/null; fi
+    printf '%s\n' "$pat" >> "$ex" 2>/dev/null
+  done <<EOF_PATTERNS
+$SQUAD_LOCAL_ONLY_PATTERNS
+EOF_PATTERNS
+  return 0
+}
+
 # squad_gh_write <argv...>: the ONLY place a mutating gh verb may run.
 # Detached (or unresolved) mode: refuses, executes nothing, returns 20.
 # Connected: runs `gh <argv>`; returns 0 on success, 20 on any gh failure

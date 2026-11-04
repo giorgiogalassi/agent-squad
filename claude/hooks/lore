@@ -297,17 +297,8 @@ fine_stamp() {
   printf '%s%s' "$s" "${f:0:9}"
 }
 
-# ensure_exclude <vault> <state-name>: inboxes stay local (info/exclude, never tracked).
-ensure_exclude() {
-  local ex pat="projects/*/$2/inbox/"
-  ex="$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 0
-  [ -n "$ex" ] || return 0
-  case "$ex" in /*) ;; *) ex="$1/$ex" ;; esac
-  grep -qxF "$pat" "$ex" 2>/dev/null && return 0
-  mkdir -p "$(dirname "$ex")" 2>/dev/null
-  printf '%s\n' "$pat" >> "$ex" 2>/dev/null
-  return 0
-}
+# ensure_exclude <vault> <state-name>: local-only state stays out of git (squad_vault_excludes).
+ensure_exclude() { squad_vault_excludes "$1" "$2"; }
 
 cmd_event() {
   local vault="" proj="" source="" kind="" line="" key="" sn inbox tmp stamp id
