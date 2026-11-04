@@ -114,9 +114,11 @@ def resolve_paths():
 
 
 def squad_dir(paths):
-    d = lib.state_dir(paths)
+    # The write root (#443): in a PR-mode vault the project's session worktree, so
+    # nothing lands in the vault checkout and progress.txt is read where it is kept.
+    d = lib.write_state_dir(paths)
     if not d:
-        fail(10, "no project mapped for %s; run /seed or /lore start" % (paths.get("PROJECT_ROOT") or os.getcwd()))
+        fail(10, "no write root for %s: no project mapped (run /seed or /lore start), or the vault checkout is off its default branch in direct mode" % (paths.get("PROJECT_ROOT") or os.getcwd()))
     return d
 
 
@@ -561,8 +563,10 @@ def main():
     verb, rest = sys.argv[1], sys.argv[2:]
     if verb == "collect":
         cmd_collect(rest)
+        lib.commit_state("retro", "[retro] collect")
     elif verb == "report":
         cmd_report(rest)
+        lib.commit_state("retro", "[retro] report")
     else:
         fail(2, "unknown verb '%s'" % verb)
 

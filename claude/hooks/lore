@@ -2,7 +2,7 @@
 # lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
 #
 #   lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>...
-#   lore root [--vault <dir>] [--project <name>|--vault-level]
+#   lore root [--vault <dir>] [--project <name>|--vault-level] [--read]
 #   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
 #   lore fold [--project <p>] [--vault <dir>]
 #   lore push [--vault <dir>]
@@ -19,7 +19,9 @@
 # CHANGED, ROOT, PROJECT_DIR, SQUAD_DIR, STATE_DIR (the last three under ROOT; a
 # `context: repo` project keeps its repo SQUAD_DIR). Exit: 0 ok, 2 usage, 10 no
 # project / direct-mode vault off its default branch, 20 failure. Readers need no
-# call: path-resolve.sh already reports the session worktree's SQUAD_DIR.
+# call: path-resolve.sh already reports the session worktree's SQUAD_DIR. `--read`
+# never creates anything: ROOT is the project's newest existing session worktree for
+# today, else the vault (for scripts that read state before they may write it).
 #
 # `event` drops one event file into <state>/inbox/; `fold` claims the inbox
 # events, applies them under the same lock and commits once through the same
@@ -180,13 +182,14 @@ cmd_commit() {
 
 # cmd_root: see the header. Takes the vault lock around worktree creation.
 cmd_root() {
-  local vault="" proj="" vlevel=0 root rc existed=0 sq="" gitdir name
+  local vault="" proj="" vlevel=0 root rc existed=0 sq="" gitdir name rd=0 wt
   while [ $# -gt 0 ]; do
     case "$1" in
       --vault)   vault="${2:-}"; shift 2 || break ;;
       --project) proj="${2:-}"; shift 2 || break ;;
       --vault-level) vlevel=1; shift ;;
-      *) squad_fail 2 "usage: lore root [--vault <dir>] [--project <name>|--vault-level]" ;;
+      --read) rd=1; shift ;;
+      *) squad_fail 2 "usage: lore root [--vault <dir>] [--project <name>|--vault-level] [--read]" ;;
     esac
   done
   if [ -z "$vault" ]; then
@@ -198,6 +201,18 @@ cmd_root() {
   fi
   [ "$vlevel" = 1 ] && { proj="$SQUAD_VAULT_LEVEL"; sq=""; }
   [ -n "$proj" ] || squad_fail 10 "no project for this root; pass --project <name> or --vault-level"
+  if [ "$rd" = 1 ]; then
+    root="$vault"
+    if git -C "$vault" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$vault" "$proj" && squad_vault_pr_mode_any "$vault"; then
+      wt="$(squad_vault_wt_existing "$vault" "$proj" 2>/dev/null | tail -n 1)"
+      [ -n "$wt" ] && root="$wt"
+    fi
+    name="projects/$proj"; [ -n "$sq" ] || sq="$root/$name/.squad"
+    squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit ROOT "$root"
+    squad_emit PROJECT_DIR "$root/$name"; squad_emit SQUAD_DIR "$sq"
+    squad_emit STATE_DIR "$root/$name/$(squad_state_name "$vault")"
+    return 0
+  fi
   gitdir="$(cd "$vault" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || gitdir=""
   if [ -n "$gitdir" ]; then
     squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1 && existed=1

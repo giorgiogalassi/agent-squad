@@ -112,5 +112,44 @@ export SECOND_BRAIN_PATH="$V"
 ( cd "$N" && bash "$LORE" root ) >/dev/null 2>&1; check "no project: root exits 10" 10 "$?"
 check "no project: no worktree" "no" "$([ -d "$V/.claude/worktrees" ] && echo yes || echo no)"
 
+# --- python writers (atlas, retro, graph timeline) use the same root ----------------
+V="$TMP/vpy"; mkvault "$V" pr; P="$TMP/pyproj"; mkproj "$P"
+export SECOND_BRAIN_PATH="$V"
+( cd "$P" && bash "$LORE" map --name pyproj ) >/dev/null 2>&1
+HK="$REPO_ROOT/claude/hooks"
+out="$(cd "$P" && python3 -I - "$HK" "$V" "$P" <<'PYEOF'
+import sys, os
+sys.path.insert(0, sys.argv[1])
+import squad_pylib as lib
+paths = {"VAULT_PATH": sys.argv[2], "PROJECT_ROOT": sys.argv[3], "DISPLAY_NAME": "pyproj"}
+rd = lib.read_state_dir(paths)
+print("READ=%s" % rd)
+sd = lib.write_state_dir(paths)
+os.makedirs(os.path.join(sd, "atlas", "x"))
+open(os.path.join(sd, "atlas", "x", "atlas.json"), "w").write("{}")
+print("COMMIT_RC=%s" % lib.commit_state("atlas", "[atlas] gather"))
+print("SD=%s" % sd)
+print("EMPTY=%r" % lib.write_state_dir({"VAULT_PATH": sys.argv[2]}))
+PYEOF
+)"
+has "python: read_state_dir finds the session worktree" ".claude/worktrees/lore-pyproj-$D/projects/pyproj/" "$(kv READ "$out")"
+check "python: commit_state ok" 0 "$(kv COMMIT_RC "$out")"
+check "python: no project, no write root" "''" "$(kv EMPTY "$out")"
+check "python: vault checkout clean" "" "$(git -C "$V" status --porcelain)"
+has "python: atlas output on the session branch" "atlas/x/atlas.json" "$(git -C "$V" ls-tree -r --name-only "lore/pyproj-$D")"
+
+# graph: an empty state dir never yields a bare relative cache / timeline path (#441 gap)
+out="$(python3 -I - "$HK" <<'PYEOF'
+import sys, importlib.util
+spec = importlib.util.spec_from_file_location("sg", sys.argv[1] + "/squad-graph.py")
+sys.path.insert(0, sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print("CACHE=%r" % m.default_cache({"VAULT_PATH": "/nonexistent-vault"}))
+print("STATE=%r" % m.default_state_file({"VAULT_PATH": "/nonexistent-vault"}, "graph-timeline.jsonl"))
+PYEOF
+)"
+check "graph: default_cache empty without a project" "''" "$(kv CACHE "$out")"
+check "graph: default_state_file empty without a project" "''" "$(kv STATE "$out")"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
