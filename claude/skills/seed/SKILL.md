@@ -224,35 +224,14 @@ Idempotent; lets Forge and Chisel write on first run.
 `<vault>/preferences/`, `<vault>/docs` exist. If
 `<vault>/projects/<project-name>/` is new, create:
 
-`status.md`:
-```markdown
----
-title: <project-name> — Status
-tags: [status, active]
-project: <project-name>
----
-
-# Status — <project-name>
-Last updated: — by —
-
-## Goal
-—
-
-## Done
-—
-
-## Next
-—
-
-## Blocked
-—
-
-## Last checkpoint
-—
-
-## Context refs
-—
+`status.md`: run
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-status-seed.sh --vault <vault> --project <project-name> --goal "<one line>"
 ```
+`<one line>` is the project's purpose in one sentence, from the README and
+`architecture.md` gathered above (omit `--goal` if there is none). The script stamps
+`Last updated: <date time> by seed`, leaves Done/Next `—`, and never overwrites an
+existing status.md (`OUTCOME=unchanged`). Exit 20: report it and stop.
 
 `decisions.md`:
 ```markdown
