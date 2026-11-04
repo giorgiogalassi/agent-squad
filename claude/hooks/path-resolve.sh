@@ -201,6 +201,7 @@ EOF3
 # project's worktrees are named lore-local-*, so they never match.
 sess_squad_dir() {
   local wt ts d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
+  [ -d "$VAULT/.claude/worktrees" ] || return 0
   pub="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')"
   # $d is left unquoted on purpose: it is a glob for the date.
   for wt in "$VAULT/.claude/worktrees/lore-$pub-"$d "$VAULT/.claude/worktrees/lore-$pub-"$d-[0-9]*; do

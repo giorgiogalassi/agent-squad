@@ -27,6 +27,18 @@ to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files use CWD.
 
+**Write root.** The session's `SQUAD_DIR` predates any session worktree made since
+(by Seed or an earlier skill), so take `SQUAD_DIR` for the existence check and every
+read from `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --read` (never creates anything).
+Files this skill writes under `SQUAD_DIR` go through the write root, never into the
+vault checkout: before the first one run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root`
+and read `OUTCOME`, `ROOT`, `SQUAD_DIR`; write under that `SQUAD_DIR`. When `ROOT` is
+not `SQUAD_VAULT_PATH` (a PR-mode vault) commit what you wrote, once the step that
+wrote it is done, with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[archy] <what>" --paths <path relative to ROOT>...`
+(`projects/<display-name>/.squad/...`; read `OUTCOME`). Exit 10: print the stderr
+reason and stop; nothing is written. A direct or local-only vault returns the vault
+as `ROOT` and nothing is committed; a `context: repo` project keeps its `SQUAD_DIR`.
+
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
 complexity was not high, confirm with the user before proceeding.

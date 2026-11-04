@@ -143,7 +143,10 @@ def fail(code, reason):
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
            ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "TRACKER_MODE", "DIR", "STATE_DIR")}
-    if env["VAULT_PATH"] and env["PROJECT_ROOT"]:
+    # SQUAD_DIR moves into the project's session worktree in a PR-mode vault (#443),
+    # which the session env may predate: re-resolve when the vault has any.
+    sessions = bool(env["VAULT_PATH"]) and os.path.isdir(os.path.join(env["VAULT_PATH"], ".claude", "worktrees"))
+    if env["VAULT_PATH"] and env["PROJECT_ROOT"] and not sessions:
         return env
     try:
         out = subprocess.run(["bash", os.path.join(HERE, "path-resolve.sh")],
