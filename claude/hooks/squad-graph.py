@@ -967,7 +967,7 @@ def cmd_extract(argv):
     squad_dir = paths.get("DIR") or ""
     out = o.get("out") or (os.path.join(squad_dir, "graph.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
     scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
     ref = o.get("ref")
     if ref:
@@ -1244,7 +1244,7 @@ def cmd_diff(argv):
     squad_dir = paths.get("DIR") or ""
     out = o.get("out") or (os.path.join(squad_dir, "graph-diff.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
     scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
     cache = o["cache"] if "cache" in o else default_cache(paths)
     doc, st = build_diff(root, o["base"], o["head"], o.get("merge_base"), scout, cache)
@@ -1353,7 +1353,7 @@ def cmd_check(argv):
     doc = diff_from_opts(o, paths)
     out = o.get("out") or (os.path.join(squad_dir, "graph-drift.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
     items, unrealized = compute_drift(doc, plan)
     drift = {"version": 1, "kind": "drift", "generated": dt.date.today().isoformat(),
              "head_sha": doc.get("head_sha", ""), "merge_base": doc.get("merge_base", ""),

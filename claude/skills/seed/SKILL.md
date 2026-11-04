@@ -27,7 +27,10 @@ You never write code, plan features, or make architectural decisions.
    prompts and writes nothing when it asks a question. Read `OUTCOME`,
    `NAME`, `TARGET`, `TRACKED_FILES`, and on exit 10 `NEED`/`SUGGESTED`:
    - Exit 0: `OUTCOME=applied|unchanged`; an existing mapping is never
-     overwritten. Set `DISPLAY_NAME` to `NAME` for step 3 onward.
+     overwritten. Re-run `path-resolve.sh` and take `DISPLAY_NAME`,
+     `SQUAD_DIR` and `STATE_DIR` from its output (the session env still holds
+     the pre-mapping values). If `SQUAD_DIR` or `STATE_DIR` is still empty,
+     stop: no project mapped, nothing written.
    - `NEED=vault`: ask `Second-brain vault not found at <path>. Create it?
      [Y/n]` and wait. Y: rerun with `--create-vault`. n: stop.
    - `NEED=name`: ask once: "A vault project named `<candidate>` already
@@ -49,7 +52,8 @@ You never write code, plan features, or make architectural decisions.
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`
    (the vault path by default; `<PROJECT_ROOT>/.squad` when
    `lore-config.json` sets `context: repo` for this project). Seed is the
-   one skill that creates a missing `SQUAD_DIR`.
+   one skill that creates a missing `SQUAD_DIR`. Never mkdir or write
+   when `SQUAD_DIR` or `STATE_DIR` is empty.
 
 ## Phase 1: read the project
 

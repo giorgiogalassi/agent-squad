@@ -95,9 +95,12 @@ def state_name(vault):
 
 def state_dir(paths):
     """<vault>/projects/<name>/<state_dir> from resolved paths (STATE_DIR when
-    present, else built from the vault's state directory name)."""
+    present, else built from the vault's state directory name). "" when there is
+    no project name (#441): callers refuse instead of writing under projects/."""
     if paths.get("STATE_DIR"):
         return paths["STATE_DIR"]
     vault = paths.get("VAULT_PATH") or ""
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
+    if not name:
+        return ""
     return os.path.join(vault, "projects", name, state_name(vault))

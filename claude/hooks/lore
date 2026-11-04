@@ -236,7 +236,7 @@ cmd_event() {
     esac
   done
   source="$(one_line "$source")"; line="$(one_line "$line")"; key="$(one_line "$key")"
-  [ -n "$proj" ] || { [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] && squad_fail 10 "no project mapped for $PWD; run /seed or /lore start"; }
+  [ -n "$proj" ] || { [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] && squad_fail 10 "no project mapped for ${PROJECT_ROOT:-$PWD}; run /seed or /lore start"; }
   [ -n "$proj" ] && [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] || squad_fail 2 "$EVENT_USAGE"
   case "$proj" in */*|.*) squad_fail 2 "invalid project name: $proj" ;; esac
   case " $EVENT_KINDS " in *" $kind "*) ;; *) squad_fail 2 "unknown kind '$kind' (log|checkpoint|progress|note)" ;; esac

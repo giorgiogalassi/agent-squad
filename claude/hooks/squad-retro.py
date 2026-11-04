@@ -114,7 +114,10 @@ def resolve_paths():
 
 
 def squad_dir(paths):
-    return lib.state_dir(paths)
+    d = lib.state_dir(paths)
+    if not d:
+        fail(10, "no project mapped for %s; run /seed or /lore start" % (paths.get("PROJECT_ROOT") or os.getcwd()))
+    return d
 
 
 def read_lines(path):
