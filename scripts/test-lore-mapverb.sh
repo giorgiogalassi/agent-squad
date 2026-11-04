@@ -164,4 +164,25 @@ case "$out" in *OUTCOME=applied*) bad "off-default must not claim applied" ;; *)
 # usage
 bash "$LORE" map --bogus >/dev/null 2>&1; check "unknown option exits 2" 2 "$?"
 
+# project: read-only lookup (#430)
+V="$TMP/v3"; mkvault "$V"; R="$TMP/work3/pdemo"; mkrepo "$R"
+snapp() { printf '%s|%s|%s' "$(git -C "$V" rev-parse HEAD)" "$(cat "$V/lore-config.json")" "$(ls "$V/projects")"; }
+s0="$(snapp)"
+out="$(cd "$R" && SECOND_BRAIN_PATH="$V" bash "$LORE" project 2>"$TMP/err")"; rc=$?
+check "project unmapped exits 10" 10 "$rc"
+has "project unmapped NEED=map" "NEED=map" "$out"
+has "project unmapped reason" "run /lore start" "$(cat "$TMP/err")"
+check "project unmapped writes nothing" "$s0" "$(snapp)"
+map "$V" --root "$R" >/dev/null
+s1="$(snapp)"
+out="$(cd "$R" && SECOND_BRAIN_PATH="$V" bash "$LORE" project)"; rc=$?
+check "project mapped exits 0" 0 "$rc"
+has "project NAME" "NAME=pdemo" "$out"
+has "project ROOT" "ROOT=" "$out"
+out="$(SECOND_BRAIN_PATH="$V" bash "$LORE" project --root "$R")"
+has "project --root" "NAME=pdemo" "$out"
+check "project mapped writes nothing" "$s1" "$(snapp)"
+SECOND_BRAIN_PATH="$V" bash "$LORE" project --root "$TMP/nope" >/dev/null 2>&1; check "project missing dir exits 2" 2 "$?"
+SECOND_BRAIN_PATH="$V" bash "$LORE" project --bogus >/dev/null 2>&1; check "project bad flag exits 2" 2 "$?"
+
 echo "$PASS passed, $FAIL failed"; [ "$FAIL" = 0 ]

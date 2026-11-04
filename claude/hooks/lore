@@ -6,6 +6,7 @@
 #   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
 #   lore fold [--project <p>] [--vault <dir>]
 #   lore push [--vault <dir>]
+#   lore project [--root <dir>]
 #   lore map [--root <dir>] [--name <n>] [--local] [--create-vault] [--adopt]
 #   lore version
 #
@@ -816,6 +817,28 @@ STALE_EOF
   squad_emit TRACKED_FILES "$(printf '%s\n' "$out" | sed -n 's/^TRACKED_FILES=//p')"
 }
 
+# project [--root <dir>]: read-only lookup of the mapped project (for clients that must never
+# do first contact). Same resolution as `map` (path-resolve.sh), no write, no worktree.
+cmd_project() {
+  local root="" resolved pr_root disp
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --root) [ $# -ge 2 ] || squad_fail 2 "--root needs a value"; root="$2"; shift 2 ;;
+      *) squad_fail 2 "usage: lore project [--root <dir>]" ;;
+    esac
+  done
+  [ -n "$root" ] || root="$PWD"
+  [ -d "$root" ] || squad_fail 2 "root is not a directory: $root"
+  resolved="$(cd "$root" && bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)" || squad_fail 20 "path resolution failed"
+  pr_root="$(printf '%s\n' "$resolved" | sed -n 's/^PROJECT_ROOT=//p')"
+  disp="$(printf '%s\n' "$resolved" | sed -n 's/^DISPLAY_NAME=//p')"
+  [ -n "$pr_root" ] || pr_root="$(cd "$root" && pwd -P)"
+  if [ -z "$disp" ]; then
+    squad_emit NEED map; squad_fail 10 "no project mapped for $pr_root; run /lore start"
+  fi
+  squad_emit NAME "$disp"; squad_emit ROOT "$pr_root"
+}
+
 cmd_version() {
   local pj="$HOOK_DIR/../.claude-plugin/plugin.json" v=""
   [ -f "$pj" ] || pj="$HOOK_DIR/../plugin.json"
@@ -832,6 +855,7 @@ case "$VERB" in
   fold)    cmd_fold "$@" ;;
   push)    cmd_push "$@" ;;
   map)     cmd_map "$@" ;;
+  project) cmd_project "$@" ;;
   version) cmd_version ;;
   *) squad_fail 2 "usage: lore <commit|root|event|fold|push|map|version> ..." ;;
 esac

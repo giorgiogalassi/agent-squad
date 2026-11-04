@@ -28,7 +28,9 @@ read-only); run
 `/lore start` (or `/seed`, which calls `lore map` first) on first contact
 with a project. Lore owns first contact; Seed scans. The hooks handle each
 session; `/lore start` also migrates a legacy `.squad/` and re-maps a moved
-checkout. Command surface: `lore start [--local]`,
+checkout. Other plugins write only through the `lore` shim (`lore event`,
+SCRIPT_CONTRACT.md); `examples/lore-client/` proves that and is not shipped.
+Command surface: `lore start [--local]`,
 `lore prefer`, `lore recover` (no session-end command — status
 is rebuilt by the SessionEnd hook or `lore recover`).
 

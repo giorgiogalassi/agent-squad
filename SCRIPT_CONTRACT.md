@@ -107,6 +107,9 @@ verbs (`summary`, `resolve`) follow the contract above.
   `projects/<name>/` (moved checkout). A mapping whose root no longer exists on disk is stale and
   is replaced (`REPLACED=<old root>`); when the old root still exists, exit 10 `NEED=owner` +
   `OWNER=<root>`, nothing written. Exit 2 when the folder does not exist.
+- `project [--root <dir>]`: read-only lookup for clients that must not do first contact. Same
+  resolution as `map`; writes nothing and creates no worktree. Emits `NAME`, `ROOT`. Exit 0 mapped,
+  2 usage or the folder does not exist, 10 not mapped (`NEED=map`; run `/lore start`), 20 resolution failure.
 - `version`: emits `VERSION=<plugin version>` (`unknown` when not found), exit 0.
 
 ### The shim and the client calling convention
