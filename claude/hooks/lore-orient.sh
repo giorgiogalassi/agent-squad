@@ -430,8 +430,11 @@ fi
 # reflect wherever this session actually is — the main checkout, or a
 # linked worktree on a different branch entirely.
 OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may be stale)${NL}"
-OUTPUT="${OUTPUT}Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
-OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
+# Not a git repository: no Branch / Recent commits lines (they would print empty).
+if _ev_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ -n "$_ev_branch" ]; then
+  OUTPUT="${OUTPUT}Branch: ${_ev_branch}${NL}"
+  OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
+fi
 
 # Open PRs (#328): connected mode only; detached prints nothing. The call is
 # network-bound at SessionStart, so it runs in the background with a hard
