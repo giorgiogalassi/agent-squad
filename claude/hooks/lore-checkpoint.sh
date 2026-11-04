@@ -145,6 +145,13 @@ done < <("$HOOK_DIR/path-resolve.sh")
 
 [ -d "${VAULT:-}" ] || bail "no vault, skipped"
 STATE_NAME="$(squad_state_name "$VAULT")"
+# The vault-level start record (#473, in the git common dir): written at a SessionStart
+# whose project was not mapped yet. Removed on every real SessionEnd, mapped or not.
+VLREC=""
+if [ "$MODE" = hook ] && [ -n "$SESSION_ID" ]; then
+  VLREC="$(squad_vault_level_rec "$VAULT" "$SESSION_ID")"
+  [ -n "$VLREC" ] && trap 'rm -f "$VLREC"' EXIT
+fi
 # The push is vault-wide (#445): with no project, or no mapping for it, the
 # per-project work below is skipped but a pending lore/* branch is still pushed
 # (detached, only when one is pending). No session worktree is created here.
@@ -165,7 +172,7 @@ if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then D
 # so a mid-session note from Ralph leaves the record for the real SessionEnd.
 if [ "$MODE" = hook ] && [ -n "$SESSION_ID" ] && [ -n "${DISPLAY:-}" ]; then
   VREC="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID.vault"
-  trap 'rm -f "$VREC"' EXIT   # replaced by the fuller EXIT trap below, which removes it too
+  trap 'rm -f "$VREC" "$VLREC"' EXIT   # replaced by the fuller EXIT trap below, which removes it too
 fi
 [ -n "${DISPLAY:-}" ] || push_only_bail "no vault mapping for this project, skipped"
 # Project files are read and edited where a PR-mode vault holds them until its PR
@@ -184,8 +191,11 @@ PRE_DIRTY="$(git -C "$PDIR" status --porcelain -- . 2>/dev/null)"
 # record (older session) -> PRE_DIRTY alone decides.
 _vrec="$VAULT/projects/$DISPLAY/$STATE_NAME/sessions/$SESSION_ID"
 PRE_MOVED=""
-if [ -n "$SESSION_ID" ] && [ -f "$_vrec.vault" ]; then
-  _vstart="$(cat "$_vrec.vault" 2>/dev/null)"
+# The project had no record when this session started unmapped (first contact, #473):
+# the vault-level record is then the start point.
+_vfile="$_vrec.vault"; [ -f "$_vfile" ] || _vfile="${VLREC:-/nonexistent}"
+if [ -n "$SESSION_ID" ] && [ -f "$_vfile" ]; then
+  _vstart="$(cat "$_vfile" 2>/dev/null)"
   [ -n "$_vstart" ] && PRE_MOVED="$(git -C "$PDIR" log --oneline "$_vstart..HEAD" -- . 2>/dev/null | head -n 1)"
 fi
 
@@ -352,7 +362,7 @@ sync_index() {
 }
 # Session end (#350, #427): start `lore push` detached after the local commit; it pushes
 # the vault's lore/* branches and opens or updates their PR without this hook waiting.
-trap 'rm -f "$TMPC" "$TMPB" "${VREC:-}"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
+trap 'rm -f "$TMPC" "$TMPB" "${VREC:-}" "${VLREC:-}"; [ "$MODE" = incidents ] || sync_index; [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"' EXIT
 
 # add_checkpoint <line>: insert inside ## Last checkpoint, keep the last 3.
 # Also moves stray dated "[...]" lines found under ## Context refs (appended

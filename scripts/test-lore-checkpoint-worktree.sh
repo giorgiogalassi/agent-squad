@@ -150,6 +150,69 @@ SD9="$(ls -d "$V"/projects/roma/.*/sessions 2>/dev/null | head -n 1)"
 sid_end s-bail
 [ ! -f "$SD9/s-bail.vault" ] && ok "early bail removes the record" || bad "early bail removes the record"
 
+# 10. #473: first contact. The project is unmapped at SessionStart (no per-project record
+# possible), mapped and written to through `lore commit` during the session -> one line.
+mkfirst() {  # mkfirst <name>: PR-mode vault + origin, non-git unmapped project dir
+  local n="$1"
+  V="$TMP/$n/vault"; P="$TMP/$n/roma"; mkdir -p "$V" "$P"
+  git init -q --bare -b main "$TMP/$n/origin.git"
+  git -C "$V" init -q -b main; git -C "$V" remote add origin "$TMP/$n/origin.git"
+  printf '{"vault_main": "pr"}\n' > "$V/lore-config.json"
+  echo seed > "$V/seed.md"; git -C "$V" add -A; git -C "$V" commit -qm init; git -C "$V" push -q origin main
+  export SECOND_BRAIN_PATH="$V"; rm -f "$CALLS"
+}
+seed_work() {  # map the project and write through lore commit; sets WT
+  ( cd "$P" && bash "$H/lore-real" map --name roma ) >/dev/null 2>&1
+  WT="$(cd "$P" && bash "$H/lore-real" root | sed -n 's/^ROOT=//p')"
+  mkdir -p "$WT/projects/roma"
+  printf -- '---\ntitle: s\n---\n# Status\nLast updated: 2099-01-01 00:00 by x\n\n## Goal\ng\n\n## Last checkpoint\n\n## Context refs\n' > "$WT/projects/roma/status.md"
+  echo "ctx" > "$WT/projects/roma/decisions.md"
+  ( cd "$P" && bash "$H/lore-real" commit --project roma --message "[seed] roma" --paths projects/roma ) >/dev/null 2>&1
+}
+mkfirst ten
+sid_start s-first
+seed_work
+check "first contact fixture: clean tree" "" "$(git -C "$WT" status --porcelain -- projects/roma)"
+sid_end s-first
+check "first contact + lore commit: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
+check "first contact: no vault-level record left" "" "$(find "$V/.git/lore-sessions" -name '*.vault' 2>/dev/null)"
+[ ! -e "$V/projects/_vault" ] && ok "first contact: nothing under projects/_vault" || bad "first contact: projects/_vault exists"
+
+# 10b. an unmapped session that never maps and writes nothing -> no record left, no worktree.
+mkfirst tenb
+sid_start s-never
+sid_end s-never
+check "unmapped no-op: no vault-level record left" "" "$(find "$V/.git/lore-sessions" -name '*.vault' 2>/dev/null)"
+[ ! -e "$V/projects/_vault" ] && ok "unmapped no-op: projects/_vault does not exist" || bad "unmapped no-op: projects/_vault exists"
+vc="$(SECOND_BRAIN_PATH="$V" bash "$H/vault-check.sh" check --all --vault "$V" 2>&1)"
+hasnt "unmapped no-op: vault-check sees no _vault scope" "_vault" "$vc"
+check "unmapped no-op: no worktree created" "" "$(ls -d "$V"/.claude/worktrees/lore-* 2>/dev/null)"
+
+# 10c. first contact, then compact (same session id) after mapping and lore commit: the
+# project record must not be written at the moved HEAD -> still one line.
+mkfirst tenc
+sid_start s-cmp
+seed_work
+sid_start_src() { ( cd "$P" && printf '{"cwd":"%s","source":"%s","session_id":"%s"}' "$P" "$2" "$1" | bash "$H/lore-orient.sh" >/dev/null 2>&1 ); }
+sid_start_src s-cmp compact
+sid_end s-cmp
+check "first contact + compact: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
+
+# 11. #473: the write branch changes mid-session (suffix hop to lore/roma-<date>-2):
+# exactly one line, on the branch that holds the commits.
+mkenv eleven 1
+rm -rf "$P/.git"
+sid_start s-hop
+WT1="$WT"; b1="$(git -C "$WT1" symbolic-ref --short HEAD)"
+git -C "$V" worktree add -q -b "${b1}-2" "$V/.claude/worktrees/lore-${b1#lore/}-2" main >/dev/null 2>&1
+WT2="$V/.claude/worktrees/lore-${b1#lore/}-2"
+mkdir -p "$WT2/projects/roma"; cp "$WT1/projects/roma/status.md" "$WT2/projects/roma/status.md"; echo hop >> "$WT2/projects/roma/decisions.md"
+git -C "$WT2" add projects/roma; git -C "$WT2" commit -qm "[hop] roma"
+touch "$WT2"
+sid_end s-hop
+check "hop: one line on the new branch" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT2/projects/roma/status.md" 2>/dev/null)"
+check "hop: none on the old branch" "0" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT1/projects/roma/status.md" 2>/dev/null)"
+
 # 5. #461: git root keeps the branch/sha form (worktree session on branch feat)
 mkenv five 1
 git -C "$P" worktree add -q -b feat "$TMP/five/wt" >/dev/null 2>&1

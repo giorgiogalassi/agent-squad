@@ -65,10 +65,23 @@ record_start_head() {
 # `git status` (a fresh vault has no entries yet).
 record_vault_head() {
   [ -n "$HOOK_SESSION" ] && [ -n "$2" ] || return 0
+  # A session that started unmapped (#473) keeps its oldest HEAD in the vault-level record;
+  # a project record written later (compact/clear after mapping) would be newer, so skip it.
+  [ -n "$SQUAD_COMMON_OK" ] && [ -f "$(squad_vault_level_rec "$1" "$HOOK_SESSION")" ] && return 0
   local _f="$1/projects/$2/$4/sessions/$HOOK_SESSION.vault" _h
   [ -f "$_f" ] && return 0
   _h="$(git -C "$3" rev-parse HEAD 2>/dev/null)"; [ -n "$_h" ] || return 0
   [ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_excludes "$1" "$4" ) 2>/dev/null
+  mkdir -p "${_f%/*}" 2>/dev/null && printf '%s\n' "$_h" > "$_f" 2>/dev/null
+}
+# record_vault_level_head <vault>: the vault HEAD at the start of a session with no mapped
+# project (#473), first write wins, in the git common dir (never under projects/, so no
+# vault scan sees it). A vault that is not a git repository has nothing to compare.
+record_vault_level_head() {
+  [ -n "$HOOK_SESSION" ] || return 0
+  local _f _h; _f="$(squad_vault_level_rec "$1" "$HOOK_SESSION")"; [ -n "$_f" ] || return 0
+  [ -f "$_f" ] && return 0
+  _h="$(git -C "$1" rev-parse HEAD 2>/dev/null)"; [ -n "$_h" ] || return 0
   mkdir -p "${_f%/*}" 2>/dev/null && printf '%s\n' "$_h" > "$_f" 2>/dev/null
 }
 if [ "$HOOK_SOURCE" = "resume" ]; then
@@ -85,6 +98,9 @@ if [ "$HOOK_SOURCE" = "resume" ]; then
   _rt="$(git rev-parse --show-toplevel 2>/dev/null)"
   if [ -n "$_rd" ] && [ -n "$_rr" ] && [ -n "$_rt" ] && [ "$_rt" != "$_rr" ] && [ -f "$_rt/.git" ]; then
     record_start_head "$_rv/projects/$_rd"
+  fi
+  if [ -z "$_rd" ] && [ -n "$SQUAD_COMMON_OK" ]; then
+    record_vault_level_head "$_rv"
   fi
   if [ -n "$_rd" ]; then
     _rw="$_rv"
@@ -219,6 +235,10 @@ fi
 # $1: message for an unmapped project (printed even without signals), empty for no root.
 vault_only() {
   vault_signals
+  # First contact (#473): /seed maps the project during the session, so this start has no
+  # project to key the vault HEAD record on (a non-git directory has no root either); key
+  # it on the vault level instead. SessionEnd removes it, mapped or not.
+  [ -n "$SQUAD_COMMON_OK" ] && record_vault_level_head "$VAULT"
   local body="$1"
   [ -n "$SIGNALS" ] && body="${body}${body:+$NL}### Signals${NL}${SIGNALS}"
   if [ -z "$body" ]; then echo "{}"
