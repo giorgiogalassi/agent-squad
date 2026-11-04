@@ -84,6 +84,15 @@ squad_git_common_dir() {
   return 0
 }
 
+# squad_vault_level_rec <vault> <session-id>: path of the session's vault-level start-HEAD
+# record (#473), <git-common-dir>/lore-sessions/<sid>.vault; empty when the vault is no git
+# repo or the id is empty. Pure path, nothing is created.
+squad_vault_level_rec() {
+  local cd; [ -n "$2" ] || return 0
+  cd="$(squad_git_common_dir "$1")"; [ -n "$cd" ] || return 0
+  printf '%s/lore-sessions/%s.vault' "$cd" "$2"
+}
+
 # squad_state_name <vault>: the per-project state directory name of that vault
 # (path-resolve.sh --state-name; the only place the name is decided).
 squad_state_name() {

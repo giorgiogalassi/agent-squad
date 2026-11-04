@@ -145,12 +145,12 @@ done < <("$HOOK_DIR/path-resolve.sh")
 
 [ -d "${VAULT:-}" ] || bail "no vault, skipped"
 STATE_NAME="$(squad_state_name "$VAULT")"
-# The vault-level start record (#473, keyed on SQUAD_VAULT_LEVEL): written at a SessionStart
+# The vault-level start record (#473, in the git common dir): written at a SessionStart
 # whose project was not mapped yet. Removed on every real SessionEnd, mapped or not.
 VLREC=""
 if [ "$MODE" = hook ] && [ -n "$SESSION_ID" ]; then
-  VLREC="$VAULT/projects/$SQUAD_VAULT_LEVEL/$STATE_NAME/sessions/$SESSION_ID.vault"
-  trap 'rm -f "$VLREC"' EXIT
+  VLREC="$(squad_vault_level_rec "$VAULT" "$SESSION_ID")"
+  [ -n "$VLREC" ] && trap 'rm -f "$VLREC"' EXIT
 fi
 # The push is vault-wide (#445): with no project, or no mapping for it, the
 # per-project work below is skipped but a pending lore/* branch is still pushed

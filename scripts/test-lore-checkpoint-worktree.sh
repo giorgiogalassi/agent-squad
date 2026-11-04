@@ -175,15 +175,28 @@ seed_work
 check "first contact fixture: clean tree" "" "$(git -C "$WT" status --porcelain -- projects/roma)"
 sid_end s-first
 check "first contact + lore commit: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
-check "first contact: no vault-level record left" "" "$(find "$V/projects/_vault" -name '*.vault' 2>/dev/null)"
+check "first contact: no vault-level record left" "" "$(find "$V/.git/lore-sessions" -name '*.vault' 2>/dev/null)"
+[ ! -e "$V/projects/_vault" ] && ok "first contact: nothing under projects/_vault" || bad "first contact: projects/_vault exists"
 
-# 10b. first contact, then a session that maps but writes nothing further -> the mapping
-# commit is the session's work (one line); an unmapped session that never maps -> nothing.
+# 10b. an unmapped session that never maps and writes nothing -> no record left, no worktree.
 mkfirst tenb
 sid_start s-never
 sid_end s-never
-check "unmapped no-op: no vault-level record left" "" "$(find "$V/projects/_vault" -name '*.vault' 2>/dev/null)"
+check "unmapped no-op: no vault-level record left" "" "$(find "$V/.git/lore-sessions" -name '*.vault' 2>/dev/null)"
+[ ! -e "$V/projects/_vault" ] && ok "unmapped no-op: projects/_vault does not exist" || bad "unmapped no-op: projects/_vault exists"
+vc="$(SECOND_BRAIN_PATH="$V" bash "$H/vault-check.sh" check --all --vault "$V" 2>&1)"
+hasnt "unmapped no-op: vault-check sees no _vault scope" "_vault" "$vc"
 check "unmapped no-op: no worktree created" "" "$(ls -d "$V"/.claude/worktrees/lore-* 2>/dev/null)"
+
+# 10c. first contact, then compact (same session id) after mapping and lore commit: the
+# project record must not be written at the moved HEAD -> still one line.
+mkfirst tenc
+sid_start s-cmp
+seed_work
+sid_start_src() { ( cd "$P" && printf '{"cwd":"%s","source":"%s","session_id":"%s"}' "$P" "$2" "$1" | bash "$H/lore-orient.sh" >/dev/null 2>&1 ); }
+sid_start_src s-cmp compact
+sid_end s-cmp
+check "first contact + compact: one checkpoint line" "1" "$(grep -c '\] \[claude-code\] Session ended\.$' "$WT/projects/roma/status.md")"
 
 # 11. #473: the write branch changes mid-session (suffix hop to lore/roma-<date>-2):
 # exactly one line, on the branch that holds the commits.
