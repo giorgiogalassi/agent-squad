@@ -160,7 +160,13 @@ push_only_bail() {
 # only when that folder exists; otherwise there is nowhere to write.
 if [ -z "${DISPLAY:-}" ] && [ -d "$VAULT/projects/$(basename "$ROOT")" ]; then DISPLAY="$(basename "$ROOT")"; fi
 [ -n "${DISPLAY:-}" ] || push_only_bail "no vault mapping for this project, skipped"
-STATUS="$VAULT/projects/$DISPLAY/status.md"
+# Project files are read and edited where a PR-mode vault holds them until its PR
+# merges: the project's session worktree (#453, squad_vault_rroot, the owner `lore root
+# --read` prints). Direct and local-only vaults: the vault itself. $PDIR is that
+# project folder; commits stay vault-relative and `lore commit` finds the edit there.
+RROOT="$(squad_vault_rroot "$VAULT" "$DISPLAY")"
+PDIR="$RROOT/projects/$DISPLAY"
+STATUS="$PDIR/status.md"
 
 # lcommit <message> <path>...: every vault commit goes through the committer.
 lcommit() {
@@ -186,7 +192,7 @@ fi
 # The vault checkout sits on another session's branch (#422): its files are not ours
 # to write, so nothing is folded, written or committed here. Only the session
 # branches already written are pushed.
-if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_offdefault "$VAULT"; then
+if [ "$RROOT" = "$VAULT" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_offdefault "$VAULT"; then
   [ "$MODE" = hook ] && squad_vault_push_detached "$VAULT"
   bail "vault checkout is not on its default branch, skipped"
 fi
@@ -208,16 +214,16 @@ fi
 # remaining findings in <project>/.decisions-lint for the next SessionStart
 # (lore-orient.sh prints them). decisions.md is committed when it differs from
 # HEAD, so "new entry" means new since the last lint.
-if [ "$MODE" = hook ] && [ -f "$VAULT/projects/$DISPLAY/decisions.md" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
-  _df="$VAULT/projects/$DISPLAY/decisions.md"
+if [ "$MODE" = hook ] && [ -f "$PDIR/decisions.md" ] && [ -x "$HOOK_DIR/decisions-lint.sh" ]; then
+  _df="$PDIR/decisions.md"
   _dl="$VAULT/projects/$DISPLAY/.decisions-lint"
   # Report first (new-only is relative to HEAD), then fix and commit.
   bash "$HOOK_DIR/decisions-lint.sh" check "$_df" --new-only 2>/dev/null \
     | grep -v '^DECISIONS_MISSING_INVERSE=' > "$_dl.tmp"
   bash "$HOOK_DIR/decisions-lint.sh" fix "$_df" >/dev/null 2>&1
   if [ -s "$_dl.tmp" ]; then mv "$_dl.tmp" "$_dl"; else rm -f "$_dl.tmp" "$_dl"; fi
-  if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
-     && [ -n "$(git -C "$VAULT" status --porcelain -- "projects/$DISPLAY/decisions.md" 2>/dev/null)" ]; then
+  if git -C "$RROOT" rev-parse --git-dir >/dev/null 2>&1 \
+     && [ -n "$(git -C "$RROOT" status --porcelain -- "projects/$DISPLAY/decisions.md" 2>/dev/null)" ]; then
     lcommit "lore: decisions lint $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/decisions.md"
   fi
 fi
@@ -232,7 +238,7 @@ fi
 # are already paired, so no duplicate end is written. Only session.log is
 # committed, by pathspec, and only when it changed.
 close_session_log() {
-  local log="$VAULT/projects/$DISPLAY/$STATE_NAME/session.log" first epoch since br n
+  local log="$PDIR/$STATE_NAME/session.log" first epoch since br n
   [ -f "$log" ] && [ -f "$HOOK_DIR/vault-check.sh" ] && [ -f "$TRANSCRIPT" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   first="$(jq -r '.timestamp // empty' "$TRANSCRIPT" 2>/dev/null | head -n 1)"
@@ -248,7 +254,8 @@ close_session_log() {
 }
 [ "$MODE" = hook ] && close_session_log
 
-[ -f "$STATUS" ] || bail "no status.md for $DISPLAY, skipped"
+# A missing status.md skips the per-project work only: a pending vault push still starts (#453).
+[ -f "$STATUS" ] || push_only_bail "no status.md for $DISPLAY, skipped"
 # Past the preconditions: drop a stale log; any later bail rewrites it.
 [ -n "$LOG" ] && rm -f "$LOG"
 
@@ -298,16 +305,25 @@ TMPC="$(mktemp)"; TMPB="$(mktemp)"
 # (vault-check.sh, sourced in a subshell: it sets -u). Only INDEX.md is
 # committed, by pathspec, so unrelated vault changes are never swept in.
 sync_index() {
-  local idx="$VAULT/INDEX.md" upd st r1 r2
+  local idx upd st r1 r2 probe wr
+  idx="$(squad_vault_rroot "$VAULT" "$SQUAD_VAULT_LEVEL")/INDEX.md"
   [ -f "$idx" ] && [ -f "$STATUS" ] && [ -f "$HOOK_DIR/vault-check.sh" ] || return 0
   squad_local_only "$VAULT" "$DISPLAY" && return 0
   upd="$(sed -n 's/^Last updated: \([0-9-]*\).*/\1/p' "$STATUS" | head -n 1)"
   [ -n "$upd" ] || return 0
   st=active; grep -q '^tags:.*paused' "$STATUS" && st=paused
-  r1="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_row "$idx" "$DISPLAY" "$st" "$upd" 1 2>/dev/null )"
-  r2="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_active "$idx" "$DISPLAY" "$upd" 2>/dev/null )"
+  # Dry run on a copy: the vault-level worktree is only created when the row changes.
+  probe="$(mktemp)"; cp "$idx" "$probe"
+  r1="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_row "$probe" "$DISPLAY" "$st" "$upd" 1 2>/dev/null )"
+  r2="$( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_active "$probe" "$DISPLAY" "$upd" 2>/dev/null )"
+  rm -f "$probe"
   [ -n "$r1$r2" ] || return 0
-  lcommit "lore: index $DISPLAY" INDEX.md
+  # INDEX.md belongs to no project: its write root is the vault-level one (lore root --vault-level).
+  wr="$(squad_vault_wroot "$VAULT" "$SQUAD_VAULT_LEVEL" 2>/dev/null)" && [ -n "$wr" ] || return 0
+  idx="$wr/INDEX.md"; [ -f "$idx" ] || return 0
+  ( . "$HOOK_DIR/vault-check.sh" >/dev/null 2>&1; index_set_row "$idx" "$DISPLAY" "$st" "$upd" 1 >/dev/null 2>&1; index_set_active "$idx" "$DISPLAY" "$upd" >/dev/null 2>&1 )
+  git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  SECOND_BRAIN_PATH="$VAULT" LORE_LOCK_WAIT=5 bash "$HOOK_DIR/lore" commit --vault "$VAULT" --vault-level --message "lore: index $DISPLAY" --paths INDEX.md >/dev/null 2>&1
 }
 # Session end (#350, #427): start `lore push` detached after the local commit; it pushes
 # the vault's lore/* branches and opens or updates their PR without this hook waiting.

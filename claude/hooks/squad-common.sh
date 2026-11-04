@@ -498,6 +498,19 @@ squad_vault_wroot() {
   printf '%s' "$v"
 }
 
+# squad_vault_rroot <vault> <project>: the directory a reader takes a project's vault
+# files from (#453); the read twin of squad_vault_wroot, and what `lore root --read`
+# prints. PR-mode vault: the project's newest existing session worktree (it holds the
+# checkout's committed files plus the writes not merged yet); otherwise the vault.
+# Read-only: nothing is created. Never fails.
+squad_vault_rroot() {
+  local v="$1" proj="$2" wt=""
+  if [ -n "$proj" ] && git -C "$v" rev-parse --git-dir >/dev/null 2>&1 && ! squad_local_only "$v" "$proj" && squad_vault_pr_mode_any "$v"; then
+    wt="$(squad_vault_wt_existing "$v" "$proj" 2>/dev/null | tail -n 1)"
+  fi
+  printf '%s' "${wt:-$v}"
+}
+
 # squad_vault_finish <vault>: push each lore/* session branch that is ahead of main
 # and open its PR (an open one is updated by the push). Branches whose work already
 # landed are dropped (worktree and local branch) instead of pushed. Gated on the
