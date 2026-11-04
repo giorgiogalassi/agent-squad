@@ -145,6 +145,38 @@ emit_json() {
   fi
 }
 
+# Vault-level signals (#422 checkout off its default branch, #427 push status and
+# retry): they depend on the vault only, so they also run with no project (#445).
+# Appends to SIGNALS.
+SIGNALS=""
+NL=$'\n'
+vault_signals() {
+# Vault checkout on another session's branch (#422): say so; nothing is changed here.
+if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vdef="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
+  if [ -n "$_vdef" ]; then
+    _vcur="$(git -C "$VAULT" symbolic-ref -q --short HEAD 2>/dev/null)"
+    SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
+  fi
+fi
+# Vault push (#427): show a failed last push, and retry in the background when the
+# last push failed or a lore/* session branch is ahead of its remote tip (a push killed
+# at SessionEnd). Detached: orientation never waits on the network.
+if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
+  if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
+    _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
+    _vfail="Last vault push failed${_vreason:+: $_vreason}"
+  else _vfail=""
+  fi
+  if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
+  else
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
+  fi
+fi
+}
+
 # First-contact command: /seed when the squad skills ship beside these hooks,
 # else /lore start (a Lore-only install has no Seed).
 FIRST_CONTACT="/lore start"
@@ -153,10 +185,20 @@ if [ ! -d "$VAULT" ]; then
   emit_json "Lore: no vault at $VAULT. Run $FIRST_CONTACT to initialize." msg-only
   exit 0
 fi
-if [ -z "$ROOT" ]; then
-  echo "{}"
+# No project (no root, or an unmapped one) but a vault: skip the per-project work,
+# still flush pending vault branches and print the vault-level signals, if any.
+# $1: message for an unmapped project (printed even without signals), empty for no root.
+vault_only() {
+  vault_signals
+  local body="$1"
+  [ -n "$SIGNALS" ] && body="${body}${body:+$NL}### Signals${NL}${SIGNALS}"
+  if [ -z "$body" ]; then echo "{}"
+  elif [ -n "$1" ]; then emit_json "$body" msg-only
+  else emit_json "Lore: vault signals (no project for this directory).${NL}${body}"
+  fi
   exit 0
-fi
+}
+if [ -z "$ROOT" ]; then vault_only ""; fi
 UNMAPPED_HINT=""
 NAME_OWNED=""
 if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
@@ -177,11 +219,10 @@ if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
 fi
 if [ -z "$DISPLAY" ]; then
   if [ -n "$NAME_OWNED" ]; then
-    emit_json "Lore: No vault mapping for this project — run $FIRST_CONTACT. projects/${ROOT##*/} belongs to another checkout." msg-only
+    vault_only "Lore: No vault mapping for this project — run $FIRST_CONTACT. projects/${ROOT##*/} belongs to another checkout."
   else
-    emit_json "Lore: No vault mapping for this project — run $FIRST_CONTACT." msg-only
+    vault_only "Lore: No vault mapping for this project — run $FIRST_CONTACT."
   fi
-  exit 0
 fi
 
 PROJ="$VAULT/projects/$DISPLAY"
@@ -445,30 +486,7 @@ fi
 # Staleness and budget signals. Each line is omitted when not applicable.
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 SIGNALS=""
-# Vault checkout on another session's branch (#422): say so; nothing is changed here.
-if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-  _vdef="$( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
-  if [ -n "$_vdef" ]; then
-    _vcur="$(git -C "$VAULT" symbolic-ref -q --short HEAD 2>/dev/null)"
-    SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
-  fi
-fi
-# Vault push (#427): show a failed last push, and retry in the background when the
-# last push failed or a lore/* session branch is ahead of its remote tip (a push killed
-# at SessionEnd). Detached: orientation never waits on the network.
-if [ -f "$HOOK_DIR/squad-common.sh" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
-  _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
-  if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
-    _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
-    _vfail="Last vault push failed${_vreason:+: $_vreason}"
-  else _vfail=""
-  fi
-  if ( . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1; squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
-    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
-  else
-    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
-  fi
-fi
+vault_signals
 if [ -f "$SQUAD_DIR/architecture.md" ]; then
   ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"
   NEWEST_F=""; NEWEST_M=0
