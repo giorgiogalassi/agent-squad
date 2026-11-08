@@ -64,6 +64,14 @@ if [ "$TRACKER_MODE" = connected ] && [ "$VERB" != ensure ]; then
   case "$VERB" in claim) _pv=claim ;; *) _pv=set-state ;; esac
   squad_policy_check tracker "$_pv" || exit 20
   _SQUAD_POLICY_TRANSITION=1
+  # A tracker without labels (jira) provides its own transitions: delegate, same as
+  # squad-tracker.sh set-state. An adapter that does not load is a failure.
+  squad_adapter_load tracker \
+    || squad_fail_incident squad-labels 20 "tracker adapter '${TRACKER_PROVIDER:-github}' failed to load"
+  if declare -F tracker_set_state >/dev/null 2>&1; then
+    if [ "$VERB" = escalate ]; then tracker_set_state "$ISSUE" "$VERB" --reason "$REASON"; else tracker_set_state "$ISSUE" "$VERB"; fi
+    exit $?
+  fi
 fi
 
 # --- detached: record only, no tracker calls of any kind -------------------------
