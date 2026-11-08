@@ -462,4 +462,8 @@ the user, post-merge.
 
 > **Note:** the review is output in-session; you act on the verdict
 > manually in the MVP. Review comments post via the authenticated provider
-> account — the repo owner's own account in solo workflows.
+> account — the repo owner's own account in solo workflows. Post only through
+> `squad-vcs.sh comment` / `squad-tracker.sh comment`; when the project's write
+> policy refuses it (`REASON=policy: comment not allowed on <project>`, exit 20)
+> keep the review in the session output, say so in one line, and let Ralph
+> record the refusal. Never fall back to a vendor CLI.

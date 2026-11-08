@@ -67,5 +67,15 @@ printf '\n# gh pr list\n' >> "$TMP/h/claude/hooks/vcs/github.sh"
 out="$(run "$TMP/h")"
 printf '%s\n' "$out" | sed -n '/== 6/,/== summary/p' | grep -q '\[FAIL\]' && bad "the github adapter is exempt" || ok "the github adapter is exempt"
 
+# 7. a skill that writes a PR comment or edit with the vendor CLI fails (#400)
+fixture "$TMP/i"
+printf '\nPost it: gh pr comment 3 --body "findings"\n' >> "$TMP/i/claude/skills/reven/SKILL.md"
+out="$(run "$TMP/i")"
+printf '%s\n' "$out" | grep -q 'reven/SKILL.md:.*gh pr comment' && ok "a skill with gh pr comment is rejected" || bad "a skill with gh pr comment is rejected"
+fixture "$TMP/j"
+printf '\nCall squad_provider_write gh pr comment directly.\n' >> "$TMP/j/claude/skills/reven/SKILL.md"
+out="$(run "$TMP/j")"
+printf '%s\n' "$out" | sed -n '/== 16/,/== summary/p' | grep -q 'reven/SKILL.md.*facade-internal' && ok "a skill naming squad_provider_write is rejected (check 16)" || bad "a skill naming squad_provider_write is rejected (check 16)"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

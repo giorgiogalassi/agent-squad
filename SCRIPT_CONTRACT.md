@@ -169,6 +169,15 @@ object), `description-get` (the PR body verbatim), `diff` (a unified diff) and
 `pr-list` (display lines). Adapters live in `hooks/tracker/<provider>.sh` and
 `hooks/vcs/<provider>.sh`; see the README, "Tracker and VCS facades".
 
+Write policy (#400): a write verb that the project's `chisel.writes.<facade>`
+list does not name (or, without the key, that the provider default excludes) is
+refused by the facade before any adapter runs: stdout `REASON=policy: <verb> not
+allowed on <project>`, exit 20. `squad-pr-desc.sh apply` in that case writes the
+handoff file (`--issue`, `--handoff`), emits `OUTCOME=refused` and exits 20.
+`squad-labels.sh` on `escalate` without `comment` still moves the labels and
+emits `COMMENT=skipped` and the `REASON`. Callers treat the refusal as a normal
+failure to record, never retry it, and continue.
+
 ## Library
 
 Function return codes (the header of `squad-common.sh` is authoritative):
@@ -178,6 +187,7 @@ Function return codes (the header of `squad-common.sh` is authoritative):
 | `squad_resolve` | 0 / 20 |
 | `squad_tracker`, `squad_vcs` | the verb'"'"'s own code: 0 / 2 / 10 (also: verb unsupported by the provider) / 20 |
 | `squad_provider_write`, `squad_write_guard` | 0 / 20 (the CLI'"'"'s stdout is redirected to stderr; detached mode refuses with 20) |
+| `squad_policy_check`, `squad_policy_allows` | 0 / 20 (`check` prints `REASON=policy: ...`); `allows` is silent, 0 or 1 |
 | `squad_gh_write` | 0 / 20, the github adapter'"'"'s raw-argv write path |
 | `squad_record_local` | 0 changed / 1 unchanged / 20 I/O error |
 | `squad_emit` | 0 / 2 |

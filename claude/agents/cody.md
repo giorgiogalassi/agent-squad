@@ -288,7 +288,8 @@ Then act on `open pr` (default `yes` when invoked directly):
   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh pr-create --head <branch> --base <base> --title "[CHAIN] title" --body "..."
   ```
   Read `URL`. Act on the exit code: 0 continue; 10 or 20 push is done, print
-  the manual PR instructions with the stderr reason and skip the labels below.
+  the manual PR instructions with the stderr reason (`REASON=policy: ...` when
+  the project's write policy does not allow `pr-create`) and skip the labels below.
   Body: every issue on the branch with per-issue acceptance-criteria
   checklists, plus notes for Reven. Always pass `--base` so a stacked
   branch never targets main by accident. Immediately after the PR is created,

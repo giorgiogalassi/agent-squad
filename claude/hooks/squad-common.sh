@@ -248,10 +248,10 @@ _squad_facade() {
   local kind="$1" pre="$2" verb="${3:-}" fn
   [ -n "$verb" ] || { echo "squad: $kind: verb required" >&2; return 2; }
   shift 3
-  squad_adapter_load "$kind" || return $?
-  fn="$pre$(printf '%s' "$verb" | tr - _)"
   case "$verb" in *[!a-z-]*) echo "squad: invalid $kind verb '$verb'" >&2; return 2 ;; esac
   squad_policy_check "$kind" "$verb" || return 20
+  squad_adapter_load "$kind" || return $?
+  fn="$pre$(printf '%s' "$verb" | tr - _)"
   if ! declare -F "$fn" >/dev/null 2>&1; then
     echo "squad: $kind verb '$verb' is not supported by this provider" >&2
     return 10
