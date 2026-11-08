@@ -67,7 +67,7 @@ else bad "helper: cleanup deleted something it should not ($out)"; fi
 n=0
 for t in "$REPO_ROOT"/scripts/test-*.sh; do
   case "$t" in */test-safe-tmproot.sh) continue ;; esac
-  case "$(basename "$t")" in test-chisel-config-validate.sh|test-plugin-version-bump.sh) continue ;; esac  # no scratch root
+  case "$(basename "$t")" in test-chisel-config-validate.sh|test-plugin-version-bump.sh|test-reven-finding-ids.sh) continue ;; esac  # no scratch root
   n=$((n+1))
   run_broken fake-fail "$t"
   if [ "$RC" -ne 0 ] && intact; then ok "$(basename "$t"): mktemp broken -> rc=$RC, nothing written or deleted"
