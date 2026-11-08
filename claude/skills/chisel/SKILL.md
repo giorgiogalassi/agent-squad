@@ -75,7 +75,7 @@ Ask one at a time:
 your own; defaults to SQ)" and write:
 
 ```json
-{ "chisel": { "mode": "detached", "issue_prefix": "SQ", "ralph": { "review_rounds": 2 } } }
+{ "chisel": { "mode": "detached", "issue_prefix": "SQ", "ralph": { "review_rounds": 2 }, "architecture_drift": { "days": 60, "commits": 30 } } }
 ```
 
 **Connected** → ask, one at a time:
@@ -124,7 +124,11 @@ and write:
     "jira_fields": {},
     "bitbucket_workspace": "acme",
     "bitbucket_repo": "app",
-    "bitbucket_user": "me"
+    "bitbucket_user": "me",
+    "architecture_drift": {
+      "days": 60,
+      "commits": 30
+    }
   }
 }
 ```
@@ -182,6 +186,11 @@ unsupported (exit 10, Ralph logs it and goes on).
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
 review-and-fix rounds per issue; hand-editable, never prompted for, and
 2 when the key is absent. `0` means the same as `--no-review`.
+
+`architecture_drift` (both modes, `days` and `commits` integers >= 0) sets
+when the vault check reports `ARCHITECTURE_DRIFT` (#404): `architecture.md`
+older than `days` with more than `commits` structural commits since;
+hand-editable, never prompted for, 60 and 30 when absent.
 
 On every connected run:
 

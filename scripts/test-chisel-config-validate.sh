@@ -78,6 +78,11 @@ check "bitbucket_workspace must be a string" \
   "{\"chisel\":{$C,\"bitbucket_workspace\":3}}" "chisel.bitbucket_workspace: expected a non-empty string"
 check "bitbucket_repo must not be empty" \
   "{\"chisel\":{$C,\"bitbucket_repo\":\" \"}}" "chisel.bitbucket_repo: expected a non-empty string"
+check "mode list rejected" '{"chisel":{"mode":[]}}' "mode: invalid value"
+check "mode object rejected" '{"chisel":{"mode":{}}}' "mode: invalid value"
+check "mode number rejected" '{"chisel":{"mode":3}}' "mode: invalid value"
+check "top-level array rejected" '[]' "config is not an object"
+check "top-level string rejected" '"x"' "config is not an object"
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

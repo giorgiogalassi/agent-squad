@@ -24,7 +24,7 @@
 #   needs-review  re-applies review_label to an issue whose PR is open (in_review
 #             present), keeping in_review. review_label not configured = 10.
 # Detached: zero tracker calls; appends a checklist line to --handoff (required).
-# Exit: 0 ok, 2 usage, 10 illegal transition, 20 tracker/io failure.
+# Exit: 0 ok, 2 usage, 10 illegal transition or no project mapped, 20 tracker/io failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 
@@ -55,6 +55,8 @@ if [ "$VERB" = escalate ]; then
 fi
 
 squad_resolve || squad_fail_incident squad-labels 20 "cannot resolve project paths"
+# Unmapped cwd (#395): fail before any projects/<name> path is built; no incident (nothing to dedupe).
+[ -n "${DISPLAY_NAME:-}" ] || squad_fail 10 "no project mapped for ${PROJECT_ROOT:-$PWD}; run /seed or /lore start"
 
 # Write policy (#400): claim needs `claim`, review / needs-review / escalate need
 # `set-state` in chisel.writes.tracker. Checked here because every flow calls this

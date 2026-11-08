@@ -569,6 +569,7 @@ HEALTH=""
 if [ -x "$HOOK_DIR/vault-check.sh" ]; then
   _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
   ( [ -n "$SQUAD_COMMON_OK" ] && squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && _vc_args+=(--context repo)
+  [ -n "$ROOT" ] && _vc_args+=(--repo "$ROOT")
   _projs=("$VAULT"/projects/*/)
   [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
   HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"
