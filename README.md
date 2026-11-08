@@ -255,6 +255,7 @@ agent-squad/
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
       challenge.md  Stateless agent that stress-tests a proposal or draft
+      reader.md     Stateless read-only agent that judges an issue as Cody receives it
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
