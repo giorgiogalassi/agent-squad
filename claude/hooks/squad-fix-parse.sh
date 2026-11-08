@@ -5,19 +5,22 @@
 # Usage:
 #   squad-fix-parse.sh --input <file|-> --open <B1,B2,...> [--upheld <B2,...>]
 #
-#   --input   Cody's fix-round output (a file, or - for stdin). Blank lines are
-#             ignored; every other line must be one of
+#   --input   Cody's fix-round summary (a file, or - for stdin). Only the
+#             "## Fix responses" section is parsed (heading to the next "## "
+#             heading or EOF); prose outside it is ignored. Inside it blank lines
+#             are ignored and every other line must be one of
 #               B<n>: FIX
 #               B<n>: CONTEST <evidence>
 #               B<n>: ESCALATE <reason>
 #   --open    comma list of the finding IDs still open (ID format: claude/agents/reven.md)
 #   --upheld  comma list of IDs already ruled FINDING_UPHELD; these allow FIX or ESCALATE only
 #
-# Stdout: FIXES=, CONTESTS=, ESCALATIONS=, MISSING= (comma lists, empty allowed), in
+# Stdout: OUTCOME=unchanged, CHANGED=no (read-only), FIXES=, CONTESTS=, ESCALATIONS=, MISSING= (comma lists, empty allowed), in
 # order of the open list. Printed on exit 0 and on exit 10 (best effort, so the caller
 # can see what is missing). Nothing is printed on exit 2.
 # Exit: 0 every open ID answered once and validly, 2 usage,
-#       10 missing, duplicate or unknown ID, malformed line, or CONTEST on an upheld ID.
+#       10 missing section, missing, duplicate or unknown ID, malformed or stray
+#       line inside the section, or CONTEST on an upheld ID.
 # Stderr: one reason line per problem.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
@@ -56,6 +59,16 @@ if [ "$INPUT" = "-" ]; then TEXT="$(cat)"; else TEXT="$(cat "$INPUT")"; fi
 
 ERR=0
 problem() { ERR=1; printf '%s\n' "$1" >&2; }
+# Keep only the "## Fix responses" section: heading to next "## " heading or EOF.
+if printf '%s\n' "$TEXT" | grep -qE '^## Fix responses[[:space:]]*$'; then
+  TEXT="$(printf '%s\n' "$TEXT" | awk '
+    /^## Fix responses[ \t]*$/ { on=1; next }
+    on && /^## / { on=0 }
+    on { print }')"
+else
+  problem "no '## Fix responses' section in input"
+  TEXT=""
+fi
 SEEN=" "; FIXES=""; CONTESTS=""; ESCS=""
 LINE_RE='^(B[0-9]+): (FIX|CONTEST [^[:space:]].*|ESCALATE [^[:space:]].*)$'
 while IFS= read -r line || [ -n "$line" ]; do
@@ -67,12 +80,14 @@ while IFS= read -r line || [ -n "$line" ]; do
   id="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"
   if in_list "$id" "$SEEN"; then problem "duplicate ID $id"; continue; fi
   SEEN="$SEEN$id "
+  case "$rest" in
+    CONTEST*)
+      if in_list "$id" "$UPHELD_N"; then problem "$id already FINDING_UPHELD: only FIX or ESCALATE"; continue; fi ;;
+  esac
   if ! in_list "$id" "$OPEN_N"; then problem "unknown ID $id (not open)"; continue; fi
   case "$rest" in
     FIX) FIXES="$FIXES $id" ;;
-    CONTEST*)
-      if in_list "$id" "$UPHELD_N"; then problem "$id already FINDING_UPHELD: only FIX or ESCALATE"; continue; fi
-      CONTESTS="$CONTESTS $id" ;;
+    CONTEST*) CONTESTS="$CONTESTS $id" ;;
     ESCALATE*) ESCS="$ESCS $id" ;;
   esac
 done <<EOT
@@ -85,7 +100,7 @@ for id in $OPEN_N; do
 done
 
 csv() { printf '%s' "$1" | sed -e 's/^ *//' -e 's/ /,/g'; }
-printf 'FIXES=%s\nCONTESTS=%s\nESCALATIONS=%s\nMISSING=%s\n' \
+printf 'OUTCOME=unchanged\nCHANGED=no\nFIXES=%s\nCONTESTS=%s\nESCALATIONS=%s\nMISSING=%s\n' \
   "$(csv "$FIXES")" "$(csv "$CONTESTS")" "$(csv "$ESCS")" "$(csv "$MISSING")"
 [ "$ERR" -eq 0 ] || exit 10
 exit 0

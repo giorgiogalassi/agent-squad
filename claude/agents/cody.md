@@ -313,12 +313,16 @@ finish or are stopped at `maxTurns`. Cody makes no vault write.
 
 When your prompt lists Reven's open blocking findings (`B<n>`; the ID
 format and the `FINDING_UPHELD` / `FINDING_WITHDRAWN` rulings are defined
-in `reven.md`), your fix-round output is exactly one line per open
-finding, and nothing else in that block. Ralph parses the lines
-mechanically; a missing, duplicate or unknown ID, or any other line shape,
-sends the round back.
+in `reven.md`), your final summary (see `## Output`) also carries a
+`## Fix responses` section, placed after the normal summary and last in
+the output. The section is the heading plus exactly one line per open
+finding, and nothing else. Ralph parses only that section, from the
+heading to the next `## ` heading or the end; the summary outside it is
+free prose. A missing section, or inside it a missing, duplicate or
+unknown ID or any other line shape, sends the round back.
 
 ```
+## Fix responses
 B<n>: FIX
 B<n>: CONTEST <evidence>
 B<n>: ESCALATE <reason>
@@ -339,7 +343,9 @@ B<n>: ESCALATE <reason>
 
 ## Output
 
-After finishing, print a single summary and nothing else:
+After finishing, print a single summary and nothing else (in a fix round,
+the `## Fix responses` section described above is the one permitted addition,
+printed after it):
 
   Done.
   PR: #N -- [title]   (detached mode: "not opened -- paste-ready description above")

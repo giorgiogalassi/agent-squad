@@ -12,7 +12,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 # run <name> <expected exit> <expected stdout> <input text> <parser args...>
 run() {
   local name="$1" want="$2" wout="$3" text="$4" out rc; shift 4
-  printf '%s' "$text" > "$TMPROOT/in.txt"
+  printf '## Fix responses\n%s' "$text" > "$TMPROOT/in.txt"
   out="$(bash "$P" --input "$TMPROOT/in.txt" "$@" 2>/dev/null)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$wout" ] || printf '%s\n' "$out" | grep -qxF -- "$wout"; }; then ok "$name"
   else bad "$name (exit $rc, want $want; out: $(printf '%s' "$out" | tr '\n' ' '))"; fi
@@ -33,7 +33,21 @@ run "no colon: exit 10" 10 "" $'B1 fix\n' --open B1
 run "contest without evidence: exit 10" 10 "" $'B1: CONTEST\n' --open B1
 run "lowercase verb: exit 10" 10 "" $'B1: fix\n' --open B1
 run "prose line: exit 10" 10 "" $'Done.\nB1: FIX\n' --open B1
-printf 'B1: FIX\n' | bash "$P" --input - --open B1 >/dev/null 2>&1 && ok "stdin input" || bad "stdin input"
+run "OUTCOME/CHANGED on exit 0" 0 "OUTCOME=unchanged" $'B1: FIX\n' --open B1
+run "CHANGED=no on exit 0" 0 "CHANGED=no" $'B1: FIX\n' --open B1
+run "OUTCOME on exit 10" 10 "OUTCOME=unchanged" $'B3: FIX\n' --open B1
+run "stray B-line: exit 10" 10 "" $'B1: FIX\nB2 maybe later\n' --open B1
+printf '## Fix responses\nB2: CONTEST x:1\n' > "$TMPROOT/up.txt"
+bash "$P" --input "$TMPROOT/up.txt" --open B1,B2 --upheld B2 2>&1 >/dev/null | grep -q FINDING_UPHELD && ok "contest on upheld reports upheld" || bad "contest on upheld reports upheld"
+# Realistic full summary around the block; prose outside the section is ignored.
+FULL=$'Plan done.\nB9: this prose line looks like an ID but is outside\n\nDone.\nPR: #493 -- [485] typed fix responses\nBranch: 485-x\nCommit: abc\nTests: passed\nNotes: see below\n\n## Fix responses\nB1: FIX\nB2: CONTEST claude/a.md:3\n\n## Appendix\nB7: ignored after next heading\n'
+printf '%s' "$FULL" > "$TMPROOT/full.txt"
+out="$(bash "$P" --input "$TMPROOT/full.txt" --open B1,B2 2>/dev/null)"; rc=$?
+[ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qx 'CONTESTS=B2' && ok "full summary around block" || bad "full summary around block (rc $rc)"
+printf 'Done.\nB1: FIX\n' > "$TMPROOT/nosec.txt"
+err="$(bash "$P" --input "$TMPROOT/nosec.txt" --open B1 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 10 ] && printf '%s' "$err" | grep -q 'Fix responses' && ok "missing section: exit 10 with reason" || bad "missing section (rc $rc)"
+printf '## Fix responses\nB1: FIX\n' | bash "$P" --input - --open B1 >/dev/null 2>&1 && ok "stdin input" || bad "stdin input"
 bash "$P" --open B1 >/dev/null 2>&1; [ $? -eq 2 ] && ok "no --input: exit 2" || bad "no --input: exit 2"
 bash "$P" --input "$TMPROOT/in.txt" >/dev/null 2>&1; [ $? -eq 2 ] && ok "no --open: exit 2" || bad "no --open: exit 2"
 bash "$P" --input "$TMPROOT/none" --open B1 >/dev/null 2>&1; [ $? -eq 2 ] && ok "missing file: exit 2" || bad "missing file: exit 2"
