@@ -388,7 +388,7 @@ Retry with the error output appended to Cody's context.
 
 **Immediate escalation** (skip retries): two consecutive attempts with
 identical error and no new diff; Cody reports ambiguity needing a human
-(including a summary starting `ESCALATION: ownership`);
+(including a summary starting `ESCALATION: ownership` or `ESCALATION: premise`);
 auth/environment failure; Cody reports no test runner or open Test specs;
 loop symptoms (repeated identical tool sequences without file changes).
 

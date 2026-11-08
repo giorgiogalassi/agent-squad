@@ -216,6 +216,45 @@ There is no `AskUserQuestion` call here and no reopening of any earlier
 answer — a round-1 decision stands even if the delta check would have
 argued for something else at the time.
 
+## Premise check
+
+A requirement is a claim about the current code: that a capability is absent,
+or that a condition can hold when an event fires. Before the close gate, prove
+it. Skipped for `change_type: docs` and for sessions with no requirement about
+code behaviour.
+
+Give each requirement a premise ID (`P1`, `P2`, ... in the order they appear)
+and a status:
+
+- `gap confirmed`: the code shows the gap.
+- `already covered`: the code already does what the requirement asks.
+- `not verifiable`: you could not settle it from the code you could read.
+
+Read the target repo's own context first (its `CLAUDE.md`, rules and skills):
+lifecycle conventions such as "leaving a section resets it" live there, not in
+the code you would grep first.
+
+Two tiers:
+
+- **New capability** (something that does not exist yet): a light check. Show
+  it is absent: the symbol, route or field is not found. Name what you searched.
+- **Conditional or reactive** (a condition, event or state transition: "if/when
+  X while in state Y, do Z"): a full trace. Record where the trigger fires and
+  the state at that moment, each as `file:line`. The status follows from the
+  trace: the requirement is `already covered` when that state already gets the
+  outcome, or when the condition never holds at the trigger.
+
+A planned graph, or any code graph, may only help you pick which code to read.
+Its presence is never evidence that a premise holds.
+
+**Never apply `already covered` or `not verifiable` silently.** Put each to the
+user with its evidence (`AskUserQuestion`; with the trace it is one question per
+premise, which counts as a root question for the round cap) and let them decide:
+keep the requirement as a safeguard, narrow it, or drop it. Forge never drops or
+reshapes a requirement on its own, since the story owner may still want it. At
+the round cap an unanswered premise stays in `premises` with its status and goes
+to `open_questions` too. `gap confirmed` premises are recorded without asking.
+
 ## Closing the session
 
 Close when all hold:
@@ -224,7 +263,9 @@ Close when all hold:
 2. **A fresh dependency pass comes back empty** — actually re-run steps
    1–2; do not assume. If it surfaces a question, ask the next round
    (cap permitting) and the close waits.
-3. **The opening challenge and delta check have been attempted** (or
+3. **Every premise has a status**, and each `already covered` or `not verifiable`
+   one has been put to the user (or carried to `open_questions` at the cap).
+4. **The opening challenge and delta check have been attempted** (or
    skipped as trivial input / no post-input decisions — see "Trivial-
    input skip" and "Delta check" above), so an agent failure on either
    step never blocks closing.
@@ -293,6 +334,15 @@ affected_modules:
   - ""
 owners:
   - ""
+premises:
+  - id: P1
+    requirement: ""
+    status: gap confirmed | already covered | not verifiable
+    kind: capability | conditional
+    trigger: ""      # conditional only: file:line where the trigger fires
+    state_at_trigger: ""   # conditional only: file:line and the state found there
+    evidence: ""     # capability: what was searched and not found; else the trace
+    decision: ""     # already covered / not verifiable: what the user chose
 open_questions:
   - ""
 notes: ""
@@ -306,6 +356,10 @@ YAML rules: English regardless of conversation language;
 concept (type, map, derivation, wire key) the analysis introduces, so
 Chisel can carry it into the issue's `Owner:` line; no codebase scan,
 omit when none;
+`premises` = one entry per requirement, from the premise check; `trigger` and
+`state_at_trigger` are required for `kind: conditional` and omitted for
+`capability`; omit the whole field for `change_type: docs`. Existing readers
+ignore keys they do not know, so the field is additive;
 `notes` = decisions or assumptions not captured elsewhere; omit empty
 optional fields.
 `planned_graph` = `forge/planned-graph.json` when the planned graph below was

@@ -112,6 +112,11 @@ Numbered list. Each criterion independently verifiable.
 ## Data
 Schema changes, new data structures, API contracts. Omit if n/a.
 
+## Premises
+The YAML's `premises`, copied as they are: ID, requirement, status, trigger,
+state at trigger, evidence, decision. Never re-derive or change a status. Omit
+if the YAML has none.
+
 ## Open questions
 Anything unresolved Chisel or Cody should know. Omit if none.
 
