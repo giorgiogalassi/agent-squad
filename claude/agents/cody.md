@@ -285,12 +285,13 @@ Then act on `open pr` (default `yes` when invoked directly):
 - **`open pr: yes`, connected:**
   ```bash
   git push origin HEAD
-  gh pr create --title "[CHAIN] title" --body "..." --base <base>
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh pr-create --head <branch> --base <base> --title "[CHAIN] title" --body "..."
   ```
+  Read `URL`. Act on the exit code: 0 continue; 10 or 20 push is done, print
+  the manual PR instructions with the stderr reason and skip the labels below.
   Body: every issue on the branch with per-issue acceptance-criteria
   checklists, plus notes for Reven. Always pass `--base` so a stacked
-  branch never targets main by accident. If `gh` is unavailable, push
-  and print manual instructions. Immediately after the PR is created,
+  branch never targets main by accident. Immediately after the PR is created,
   for every covered issue `<n>`, first re-run the idempotent claim:
   ```bash
   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh claim --issue <n>
@@ -395,6 +396,6 @@ printed after it):
 
 ---
 
-> **Note:** `gh pr create` needs an authenticated GitHub CLI. Other
-> forges: substitute their CLI. No CLI at all: push and print manual PR
-> instructions.
+> **Note:** `squad-vcs.sh pr-create` needs the provider CLI authenticated
+> (the `vcs` adapter named in `chisel-config.json`). No usable provider:
+> push and print manual PR instructions.

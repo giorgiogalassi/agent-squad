@@ -114,6 +114,15 @@ vcs_pr_data() {
   gh pr view "$pr" --json "$f" || return 20
 }
 
+# stack-init <branch>...: adopt the branches as a stacked chain (the gh-stack
+# extension; write, not gated on tracker mode, like pr-create). 10 when the
+# extension is missing.
+vcs_stack_init() {
+  [ $# -gt 0 ] || { echo "squad: stack-init requires branches" >&2; return 2; }
+  gh stack --help >/dev/null 2>&1 || { echo "squad: the gh-stack extension is not installed" >&2; return 10; }
+  gh stack init "$@" >&2 || return 20
+}
+
 # merged <pr>: MERGED=yes|no.
 vcs_merged() {
   local s

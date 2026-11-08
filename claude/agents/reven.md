@@ -96,7 +96,7 @@ Resolve in this order; the first hit wins:
 2. PR host named in `architecture.md` and not GitHub: read the PR's base
    through the access path that section names.
    PR host named in `architecture.md` and GitHub, or no such section and
-   connected: `gh pr view <branch-name> --json baseRefName -q .baseRefName`
+   connected: `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh pr-view <branch-name> --field base`, read `BASE`
    (use the PR number if that is what you were given), whatever
    `TRACKER_MODE` says when the section names GitHub.
 3. No PR host section and detached (`chisel.mode` in
@@ -114,13 +114,14 @@ git fetch origin            # PR host section present, or no section and connect
 git diff origin/<base>...origin/<branch-name>
 ```
 
-No PR host section and detached: `git diff <base>...<branch-name>` (local refs, no `gh`).
+No PR host section and detached: `git diff <base>...<branch-name>` (local refs, no VCS call).
 
-**gh preflight (GitHub PR host only).** When the PR host section names
-GitHub, or there is no section and `TRACKER_MODE` is connected, verify `gh`
-is on PATH and `gh auth status` succeeds before resolving the base; if not,
-say so and stop, whatever `TRACKER_MODE` says. Non-GitHub PR hosts, and
-detached mode with no section, never call `gh` and skip this check.
+**VCS preflight (provider PR host only).** When the PR host section names
+the configured VCS provider, or there is no section and `TRACKER_MODE` is
+connected, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh available` and
+`... auth-status` (exit 0 each) before resolving the base; if either is not 0,
+say so and stop, whatever `TRACKER_MODE` says. Other PR hosts, and detached
+mode with no section, make no VCS call and skip this check.
 
 **Triage before reading.** On anything larger than a handful of files, the
 diff will not fit in your budget, and an agent that spends it all reading and
@@ -460,5 +461,5 @@ the user, post-merge.
 ---
 
 > **Note:** the review is output in-session; you act on the verdict
-> manually in the MVP. Review comments post via the authenticated `gh`
+> manually in the MVP. Review comments post via the authenticated provider
 > account — the repo owner's own account in solo workflows.

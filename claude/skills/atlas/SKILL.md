@@ -180,7 +180,7 @@ else: the author opens the page.
 
 - Writes only under `.squad/atlas/<id>/`, through the script and
   `brief.md`. Nothing in the repository, nothing on the tracker.
-- No `gh` or vendor CLI calls of your own; the script owns every read.
+- No vendor CLI calls of your own; the script owns every read.
 - Never edits code, never re-reviews, never proposes refactors; a
   problem found while reading goes in section 6 or 7 as a fact.
 - A brief is written for the author, not for the tester: it must let

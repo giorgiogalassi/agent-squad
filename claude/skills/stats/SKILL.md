@@ -7,7 +7,7 @@ description: >
   Reven verdicts and, in connected mode, PR outcomes. Triggers: /stats,
   /stats --days <n>, /stats --branch <name>, "squad stats", "how much did the squad cost",
   "usage report". Do NOT trigger for questions about a single PR or
-  issue; use gh or the tracker for those.
+  issue; use the VCS or tracker facade for those.
 allowed-tools: Read, Write, Bash
 ---
 
@@ -131,7 +131,7 @@ Never invent, rephrase or add questions on the user's behalf.
 
 - Write only to `<VAULT_PATH>/squad-stats/questions.md`. The script owns
   every other file in the store.
-- No `gh` calls of your own; the script owns GitHub reads.
+- No vendor CLI calls of your own; the script owns GitHub reads.
 - Never commit the vault.
 - Write `questions.md` lines in the user's words; everything else you
   print is in English.

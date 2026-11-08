@@ -15,6 +15,7 @@
 #   description-set <pr> --body-file F      (write; write policy: #400)
 #   comment <pr> --body T                   (write; write policy: #400)
 #   merged <pr>
+#   stack-init <branch>...                  adopt a stacked chain (10 when unsupported)
 #   pr-data <pr> --fields a,b,c             one JSON object (the only JSON verb)
 # Output: KEY=VALUE lines (PR= URL= BASE= HEAD= STATE= ...). Provider:
 # VCS_PROVIDER (chisel.vcs, default github). Detached mode refuses

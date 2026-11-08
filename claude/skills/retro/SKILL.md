@@ -38,9 +38,7 @@ how many PRs a pattern needs before it becomes a candidate; default 3.
 Anything else: ask once.
 
 **Reads only.** Retro never writes to the tracker or the VCS, in either
-mode. Until the VCS facade (#397) lands, the script reads post-merge
-state with `gh` directly (`pr view` only, no write verb) and moves onto
-the facade unchanged; in detached mode it reads git only and says so in
+mode. The script reads post-merge state through the VCS facade (`squad-vcs.sh pr-data`, no write verb); in detached mode it reads git only and says so in
 the report.
 
 ## Step 1: collect the trail
@@ -153,8 +151,8 @@ asks Lore to. Retro never calls Lore, never edits `decisions.md` or
 - The script writes only under `.squad/retro/` (`<date>.md` and the
   cached `.trail.json`); the one other write is the session-log line
   below, through the progress script. Nothing else, in no mode.
-- No `gh` or vendor CLI calls of your own; the script owns every read
-  (`gh` directly until #397, then the facades).
+- No vendor CLI calls of your own; the script owns every read
+  (through the VCS facade).
 - Never reviews code, never reopens a verdict, never re-runs Reven.
 - Proposals are the script's; you may explain one when asked, never
   invent one.
