@@ -8,7 +8,7 @@
 # `commit` commits the paths Lore wrote (on the lore/<project>-<date> branch in PR
 # mode, see lore-config.json "vault_main"). `finish` pushes that branch and opens
 # or updates its PR when the vault is in PR mode and has an origin remote, in either
-# tracker mode; local-only projects never push. Without gh the branch is pushed and
+# tracker mode; local-only projects never push. Without the provider CLI the branch is pushed and
 # a stderr notice names the manual PR step.
 # Stdout: OUTCOME=applied|unchanged  CHANGED=yes|no (commit unchanged: paths left
 # uncommitted; finish unchanged: nothing pushed and no PR created)

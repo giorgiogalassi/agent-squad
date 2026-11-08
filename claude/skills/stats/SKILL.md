@@ -106,7 +106,7 @@ Claude Code stats, last <DAYS> days (API-equivalent cost)
 Then one line per condition that holds:
 
 - `UNPRICED_MODELS` non-empty: `Unpriced models: <list>. Add them to <VAULT_PATH>/squad-stats/prices.json.`
-- `QUALITY=gh-error`: `GitHub section skipped: gh failed (see above).`
+- `QUALITY=gh-error`: `GitHub section skipped: the VCS provider failed (see above).`
 - `ROWS_ADDED` is 0 and `SESSIONS` is 0: `No usage in the window yet.`
 - `OLDEST_TRANSCRIPT` is more than 25 days before today:
   `Claude Code prunes transcripts after cleanupPeriodDays (default 30). Run /stats at least weekly, or raise cleanupPeriodDays in ~/.claude/settings.json.`

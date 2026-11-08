@@ -200,7 +200,7 @@ _squad_facade() {
   "$fn" "$@"
 }
 
-# squad_gh_write <gh argv...>: raw-argv entry to the github tracker adapter's
+# squad_gh_write <argv...>: raw-argv entry to the github tracker adapter's
 # write path (tracker_write). Kept for callers and tests that hold a literal
 # argv; detached refusal is squad_write_guard, shared by every adapter.
 squad_gh_write() {
