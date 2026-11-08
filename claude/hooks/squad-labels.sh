@@ -56,6 +56,16 @@ fi
 
 squad_resolve || squad_fail_incident squad-labels 20 "cannot resolve project paths"
 
+# Write policy (#400): claim needs `claim`, review / needs-review / escalate need
+# `set-state` in chisel.writes.tracker. Checked here because every flow calls this
+# script directly. Once authorised, the transition's own label edits pass
+# squad_policy_check through an in-process flag (never read from the environment).
+if [ "$TRACKER_MODE" = connected ] && [ "$VERB" != ensure ]; then
+  case "$VERB" in claim) _pv=claim ;; *) _pv=set-state ;; esac
+  squad_policy_check tracker "$_pv" || exit 20
+  _SQUAD_POLICY_TRANSITION=1
+fi
+
 # --- detached: record only, no tracker calls of any kind -------------------------
 if [ "$TRACKER_MODE" != connected ]; then
   if [ "$VERB" = ensure ]; then

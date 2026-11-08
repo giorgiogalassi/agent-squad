@@ -43,11 +43,12 @@ _state_transition() {
   case "$lv" in claim) pv=claim ;; *) pv=set-state ;; esac
   squad_resolve || squad_fail_incident squad-tracker 20 "cannot resolve project paths"
   squad_policy_check tracker "$pv" || exit 20
-  export SQUAD_POLICY_VIA=label   # this transition's own label edits (squad_policy_check)
+  _SQUAD_POLICY_TRANSITION=1   # in-process only (not exported): this transition's own label edits
   if squad_resolve && squad_adapter_load tracker && declare -F tracker_set_state >/dev/null 2>&1; then
     tracker_set_state "$id" "$lv" "$@"
     exit $?
   fi
+  unset _SQUAD_POLICY_TRANSITION   # squad-labels.sh authorises the transition itself
   exec bash "$SQUAD_COMMON_DIR/squad-labels.sh" "$lv" --issue "$id" "$@"
 }
 

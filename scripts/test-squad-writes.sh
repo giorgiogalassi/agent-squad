@@ -154,5 +154,56 @@ check "escalate without comment: exit 0" 0 "$rc"
 check "escalate without comment: COMMENT=skipped" skipped "$(key "$out" COMMENT)"
 grep -q 'issue comment' "$GHLOG" && bad "escalate posted a comment" || ok "escalate without comment: no gh issue comment"
 
+# --- squad-labels.sh enforces claim / set-state itself (every real flow calls it directly)
+LBL="$REPO_ROOT/claude/hooks/squad-labels.sh"
+lbl_case() { # <verb> <writes-json> <expected rc> <extra args...>
+  local verb="$1" w="$2" want="$3" out rc; shift 3
+  fixture - - "$w"; : > "$GHLOG"
+  out="$(run bash "$LBL" "$verb" --issue 5 "$@")"; rc=$?
+  check "labels $verb ($w): exit $want" "$want" "$rc"
+  if [ "$want" = 20 ]; then
+    case "$verb" in claim) pv=claim ;; *) pv=set-state ;; esac
+    check "labels $verb: REASON" "policy: $pv not allowed on fixture" "$(key "$out" REASON)"
+    grep -q '^gh issue edit' "$GHLOG" && bad "labels $verb: refused but gh issue edit ran" || ok "labels $verb: nothing written"
+  fi
+}
+lbl_case claim '{"tracker":["set-state","label","comment"]}' 20
+lbl_case review '{"tracker":["claim","label","comment"]}' 20
+lbl_case needs-review '{"tracker":["claim","label","comment"]}' 20
+lbl_case escalate '{"tracker":["claim","label","comment"]}' 20 --reason r
+for v in claim review needs-review; do
+  fixture - - '{"tracker":["claim","set-state"]}'
+  out="$(run bash "$LBL" "$v" --issue 5)"; rc=$?
+  [ "$rc" != 20 ] || [ -z "$(key "$out" REASON | grep policy)" ] && ok "labels $v allowed by claim/set-state, label not needed" || bad "labels $v refused: $out"
+done
+fixture - - -
+out="$(run bash "$LBL" claim --issue 5)"; rc=$?
+[ -z "$(key "$out" REASON | grep policy)" ] && ok "labels claim: github default not refused by policy" || bad "default refused: $out"
+
+# --- an inherited bypass flag does not skip the label check
+fixture - - '{"tracker":["claim"]}'
+for var in SQUAD_POLICY_VIA _SQUAD_POLICY_TRANSITION; do
+  val=label; [ "$var" = _SQUAD_POLICY_TRANSITION ] && val=1
+  out="$(cd "$P" && env "$var=$val" SECOND_BRAIN_PATH="$V" bash -c ". '$REPO_ROOT/claude/hooks/squad-common.sh'; squad_resolve; squad_policy_check tracker label" 2>/dev/null)"; rc=$?
+  check "inherited $var does not skip the label check" 20 "$rc"
+done
+
+# --- unreadable policy fails closed (jq hidden), absent config keeps the default
+NOJQ="$TMPROOT/nojq"; mkdir -p "$NOJQ"
+for t in bash sed grep head tr cat dirname basename python3 date mkdir rm git env sh; do
+  w="$(command -v $t 2>/dev/null)" && ln -sf "$w" "$NOJQ/$t"
+done
+gh_bin="$BIN/gh"; ln -sf "$gh_bin" "$NOJQ/gh"
+fixture - - '{"tracker":[]}'
+out="$(cd "$P" && SECOND_BRAIN_PATH="$V" PATH="$NOJQ" bash "$TRK" comment 5 --body hi 2>/dev/null)"; rc=$?
+check "no jq, empty tracker list: comment refused" 20 "$rc"
+fixture - - '{"tracker":["comment"]}'
+out="$(cd "$P" && SECOND_BRAIN_PATH="$V" PATH="$NOJQ" bash "$TRK" comment 5 --body hi 2>/dev/null)"; rc=$?
+check "no jq, comment listed: policy passes" "" "$(key "$out" REASON)"
+fixture - - '{"tracker":"nope"}'
+out="$(run bash "$TRK" comment 5 --body hi)"; rc=$?
+check "malformed list: refused" 20 "$rc"
+check "malformed list: REASON says unreadable" yes "$(key "$out" REASON | grep -q unreadable && echo yes)"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

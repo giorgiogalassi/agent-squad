@@ -57,7 +57,7 @@
 #
 #  16. write policy bypass (#400): skills and agents write only through the
 #      facades; they must not name squad_provider_write, squad_gh_write,
-#      tracker_write or SQUAD_POLICY_VIA (the policy lives in the facades, and
+#      tracker_write or _SQUAD_POLICY_TRANSITION (the policy lives in the facades, and
 #      the vendor CLI ban is check 6)
 #
 # Exit code is non-zero if any check reports a violation. No external
@@ -642,7 +642,7 @@ check_write_policy_bypass() {
   local before="$VIOLATIONS" f hits
   section "16. skills and agents do not bypass the write policy"
   for f in $( { find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null; } | sort); do
-    hits="$(grep -nE 'squad_provider_write|squad_gh_write|tracker_write|SQUAD_POLICY_VIA' "$f" 2>/dev/null | head -n 1)"
+    hits="$(grep -nE 'squad_provider_write|squad_gh_write|tracker_write|_SQUAD_POLICY_TRANSITION|SQUAD_POLICY_VIA' "$f" 2>/dev/null | head -n 1)"
     [ -n "$hits" ] && fail "$f:${hits%%:*}: names a facade-internal write path; call squad-tracker.sh / squad-vcs.sh"
   done
   [ "$VIOLATIONS" -eq "$before" ] && ok "no skill or agent bypasses the facades' write policy"
