@@ -14,7 +14,7 @@
 #   claim <id> [--handoff P]        = set-state <id> in-progress
 #   labels <id> | label-list | label-create <name>
 #   label <id> [--assign-me] [--add L]... [--remove L]...
-#   comment <id> --body T           (write policy: #400)
+#   comment <id> --body T
 #   preflight [--project-owner O --project-number N]
 # Output: KEY=VALUE lines. Items: ID= TITLE= STATE= URL= PARENT= BLOCKED_BY=
 # (plus BLOCKING= LABELS= CONTAINER=), blocks separated by a blank line.
@@ -26,6 +26,8 @@
 # [--reason T] [--handoff P] in its adapter; when defined it is used instead
 # and squad-labels.sh is not called. The github adapter does not define it.
 # Detached mode: every write verb is refused (20), reads are not.
+# Write policy (#400): a write verb the project's chisel.writes.tracker does not
+# list is refused (20, REASON=policy: ...); see squad_policy_check.
 # Exit: 0 ok, 2 usage, 10 precondition / unsupported verb, 20 failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
@@ -37,11 +39,16 @@ shift
 # _state_transition <squad-labels verb> <id> [args]: the adapter's
 # tracker_set_state when it defines one, else the label state machine.
 _state_transition() {
-  local lv="$1" id="$2"; shift 2
+  local lv="$1" id="$2" pv; shift 2
+  case "$lv" in claim) pv=claim ;; *) pv=set-state ;; esac
+  squad_resolve || squad_fail_incident squad-tracker 20 "cannot resolve project paths"
+  squad_policy_check tracker "$pv" || exit 20
+  _SQUAD_POLICY_TRANSITION=1   # in-process only (not exported): this transition's own label edits
   if squad_resolve && squad_adapter_load tracker && declare -F tracker_set_state >/dev/null 2>&1; then
     tracker_set_state "$id" "$lv" "$@"
     exit $?
   fi
+  unset _SQUAD_POLICY_TRANSITION   # squad-labels.sh authorises the transition itself
   exec bash "$SQUAD_COMMON_DIR/squad-labels.sh" "$lv" --issue "$id" "$@"
 }
 

@@ -136,6 +136,111 @@ EOF_PATTERNS
   return 0
 }
 
+# --- write policy (#400): the one owner of "which verbs may this project write" ---
+# chisel-config.json `chisel.writes` = {"tracker": [...], "vcs": [...]} lists the
+# write verbs the squad may use on the project. Enforced here, in the facade
+# dispatch (_squad_facade, and squad-tracker.sh for the state transitions), never
+# in skills. A listed-only rule: a write verb not on the list is refused with 20
+# and `REASON=policy: <verb> not allowed on <project>`. A missing key means the
+# provider default: everything for the owner's own repositories (github), and for
+# tracker jira / vcs bitbucket everything except `comment`. Read verbs are never
+# governed. Detached mode is refused separately by squad_write_guard.
+unset _SQUAD_POLICY_TRANSITION SQUAD_POLICY_VIA   # never trust an inherited bypass
+SQUAD_WRITE_VERBS_TRACKER="create create-child set-state claim label comment"
+SQUAD_WRITE_VERBS_VCS="branch pr-create description-set comment stack-init"
+
+# _squad_policy_class <tracker|vcs> <facade verb>: the policy verb a facade verb
+# falls under; empty for verbs the policy does not govern (reads, local git).
+# link-blocking and project-add are part of `create`; label-create of `label`.
+_squad_policy_class() {
+  case "$1:$2" in
+    tracker:create|tracker:link-blocking|tracker:project-add) echo create ;;
+    tracker:create-child|tracker:set-state|tracker:claim|tracker:label|tracker:comment) echo "$2" ;;
+    tracker:label-create) echo label ;;
+    vcs:pr-create|vcs:description-set|vcs:comment|vcs:stack-init) echo "$2" ;;
+  esac
+}
+
+# _squad_policy_list <tracker|vcs>: print chisel.writes.<kind>, one verb per line.
+# 0 listed, 3 no list configured (provider default applies: config absent or key
+# missing), 2 the config exists but the list cannot be read (parse error, wrong
+# type, or neither jq nor python3 to read it). The writes never need jq, so the
+# policy must not depend on it: jq, else python3, else a refusal when the config
+# mentions `writes` at all.
+_squad_policy_list() {
+  local kind="$1" cfg="${STATE_DIR:-}/chisel-config.json" t
+  [ -n "${STATE_DIR:-}" ] && [ -f "$cfg" ] || return 3
+  if command -v jq >/dev/null 2>&1; then
+    t="$(jq -r ".chisel.writes.$kind | type" "$cfg" 2>/dev/null)" || return 2
+    case "$t" in
+      null) return 3 ;;
+      array) jq -r ".chisel.writes.$kind[] | strings" "$cfg" 2>/dev/null || return 2; return 0 ;;
+      *) return 2 ;;
+    esac
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -I - "$cfg" "$kind" 2>/dev/null <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    w = d.get("chisel", {}).get("writes") if isinstance(d, dict) else None
+    if w is None:
+        sys.exit(3)
+    l = w.get(sys.argv[2]) if isinstance(w, dict) else 0
+    if l is None:
+        sys.exit(3)
+    if not isinstance(l, list):
+        sys.exit(2)
+    for v in l:
+        if isinstance(v, str):
+            print(v)
+except Exception:
+    sys.exit(2)
+PY
+    case $? in 0) return 0 ;; 3) return 3 ;; *) return 2 ;; esac
+  fi
+  grep -q '"writes"' "$cfg" 2>/dev/null && return 2
+  return 3
+}
+
+# squad_policy_allows <tracker|vcs> <facade verb>: 0 when the project may use the
+# verb (or the verb is not governed), 1 when the policy refuses it, also when the
+# configured list cannot be read (SQUAD_POLICY_REASON says so). Silent.
+squad_policy_allows() {
+  local kind="$1" cls list="" prov rc
+  SQUAD_POLICY_REASON=""
+  cls="$(_squad_policy_class "$kind" "$2")"
+  [ -n "$cls" ] || return 0
+  list="$(_squad_policy_list "$kind")"; rc=$?
+  case "$rc" in
+    0) ;;
+    2) SQUAD_POLICY_REASON="policy: chisel.writes.$kind unreadable (needs jq or python3 and valid JSON); $2 refused"
+       return 1 ;;
+    *)
+      if [ "$kind" = tracker ]; then list="$SQUAD_WRITE_VERBS_TRACKER"; prov="${TRACKER_PROVIDER:-github}"
+      else list="$SQUAD_WRITE_VERBS_VCS"; prov="${VCS_PROVIDER:-github}"; fi
+      case "$prov" in jira|bitbucket) list="$(printf '%s\n' $list | grep -vx comment)" ;; esac ;;
+  esac
+  printf '%s\n' $list | grep -qxF -- "$cls"
+}
+
+# squad_policy_check <tracker|vcs> <facade verb>: squad_policy_allows, but a
+# refusal prints `REASON=policy: <verb> not allowed on <project>` on stdout (and
+# a stderr line) and returns 20. _SQUAD_POLICY_TRANSITION (a plain, never
+# exported shell variable, unset every time this file is sourced so an inherited
+# value is ignored) is set in-process by squad-labels.sh / squad-tracker.sh after
+# they authorised a claim / set-state; it lets that transition's own label edits
+# through. Nothing else is ever bypassed.
+squad_policy_check() {
+  local name
+  if [ "${_SQUAD_POLICY_TRANSITION:-}" = 1 ] && [ "$1:$2" = tracker:label ]; then return 0; fi
+  squad_policy_allows "$1" "$2" && return 0
+  name="${DISPLAY_NAME:-}"; [ -n "$name" ] || name="$(basename "${PROJECT_ROOT:-project}")"
+  echo "REASON=${SQUAD_POLICY_REASON:-policy: $2 not allowed on $name}"
+  echo "squad: refused by write policy: ${SQUAD_POLICY_REASON:-$2 not allowed on $name}" >&2
+  return 20
+}
+
 # squad_write_guard: the one detached-mode refusal. 0 in connected mode; in
 # detached (or unresolved) mode it prints one stderr line and returns 20 so
 # the caller executes nothing.
@@ -191,9 +296,10 @@ _squad_facade() {
   local kind="$1" pre="$2" verb="${3:-}" fn
   [ -n "$verb" ] || { echo "squad: $kind: verb required" >&2; return 2; }
   shift 3
+  case "$verb" in *[!a-z-]*) echo "squad: invalid $kind verb '$verb'" >&2; return 2 ;; esac
+  squad_policy_check "$kind" "$verb" || return 20
   squad_adapter_load "$kind" || return $?
   fn="$pre$(printf '%s' "$verb" | tr - _)"
-  case "$verb" in *[!a-z-]*) echo "squad: invalid $kind verb '$verb'" >&2; return 2 ;; esac
   if ! declare -F "$fn" >/dev/null 2>&1; then
     echo "squad: $kind verb '$verb' is not supported by this provider" >&2
     return 10

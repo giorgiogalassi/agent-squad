@@ -363,6 +363,24 @@ authentication (OS keychain); `scripts/gh-shim/` stays the test seam.
 `scripts/squad-lint.sh`'s check 6 fails any `gh <command>` outside the two github
 adapters.
 
+### Write policy
+
+`chisel.writes` in `chisel-config.json` lists the write verbs the squad may
+use on a project: `{"tracker": ["create", "create-child", "set-state", "claim",
+"label", "comment"], "vcs": ["branch", "pr-create", "description-set",
+"comment", "stack-init"]}`. The facades (`squad_policy_check` in
+`squad-common.sh`) refuse any other write verb with exit 20 and
+`REASON=policy: <verb> not allowed on <project>`; nothing reaches the vendor.
+The callers record the refusal and continue (Ralph: `squad-progress.sh append`
+and the end-of-batch report; `squad-pr-desc.sh apply`: the handoff file).
+Without the key, the default is all verbs for github, and all but `comment`
+when `tracker` is `jira` or `vcs` is `bitbucket`; widen it explicitly.
+`link-blocking` and `project-add` fall under `create`, `label-create` under
+`label`. `pr-create` and `stack-init` are under the policy too (default:
+allowed, today's behaviour). `branch` is local git and is never refused.
+Contest evidence goes through `squad-progress.sh` to the vault and is not
+affected. `scripts/test-squad-writes.sh` covers every verb.
+
 ### Adding a provider
 
 1. Write `hooks/tracker/<name>.sh` and/or `hooks/vcs/<name>.sh`: sourced

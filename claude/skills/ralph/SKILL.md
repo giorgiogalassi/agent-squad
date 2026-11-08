@@ -460,7 +460,8 @@ in bottom-to-top topological order:
 bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh stack-init <branch-1> ... <branch-N>
 ```
 
-Needs a provider with stacked-branch support (GitHub: the `gh-stack`
+A `REASON=policy: stack-init not allowed on <project>` refusal (exit 20) is
+logged like any other failure here. Needs a provider with stacked-branch support (GitHub: the `gh-stack`
 extension, not installed automatically and not checked by the Preflight
 section above — exit 10 is the first sign it is missing). If the verb exits
 non-zero for any reason, log one line
@@ -513,7 +514,7 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    verbatim to `${TMPDIR:-/tmp}/ralph-desc-<ID>.md` (do not re-read the
    diff or rewrite the items), then connected:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-pr-desc.sh apply --block <file> --pr <n>
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-pr-desc.sh apply --block <file> --pr <n> --issue <ID> --handoff <handoff path>
    ```
    Detached (the PR does not exist yet; the items become handoff checklist lines):
    ```bash
@@ -525,7 +526,7 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    |------|--------|
    | 0 | Continue. `MISSED` above 0: list the unmatched lines in the end-of-batch report. Connected and `CHANGED=yes`: re-read the PR body with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh description-get <n>` and check each `to:` and `add:` text is present; list any that is not in the report. |
    | 10 | The section is missing or malformed: re-run Reven once for the section only, then continue with the verdict as is and note the reason in the report. |
-   | 20 | Note the stderr reason in the end-of-batch report and continue. |
+   | 20 | Note the stderr reason in the end-of-batch report and continue. With `REASON=policy: description-set not allowed on <project>` the PR was not touched and the items are already in the handoff file: `squad-progress.sh append --issue <ID> --line "policy: description-set refused, drift items in handoff"` and name it in the report. |
 
    The next round's Reven (or the end of the loop) then sees the updated
    description.
@@ -668,6 +669,18 @@ its last 30 lines into Cody; the file itself is never truncated):
 
   [#12] 2026-04-08 committed on 12-reservations (base: main). Added table.
   [#13] 2026-04-08 resolved. PR: #41 (base: 12-reservations). Migration in db/migrations/.
+
+## Write policy refusals
+
+Any facade call that exits 20 with `REASON=policy: <verb> not allowed on
+<project>` (also `COMMENT=skipped` from `squad-labels.sh` on escalate) is the
+project's `chisel.writes` policy, not a failure to retry. Record it with
+`squad-progress.sh append --issue <ID> --line "policy: <verb> refused on <project>: <what was not written>"`,
+continue, and list every such line in the end-of-batch report under
+`Not written (write policy)`. Reven's review is then kept in the session and in
+`progress.txt` only: it is never posted to the issue or the PR when `comment`
+is not allowed. Contest evidence (`B<n> contest:`) already goes through
+`squad-progress.sh` and is unaffected.
 
 ## Rules
 

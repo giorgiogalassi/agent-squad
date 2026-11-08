@@ -44,5 +44,21 @@ check "unknown ralph key rejected" \
 check "ralph not an object rejected" \
   '{"chisel":{"mode":"detached","ralph":3}}' "chisel.ralph: expected an object"
 
+C='"mode":"connected","review_label":"needs-review","state_labels":{"in_progress":"a","in_review":"b","blocked":"c"}'
+check "writes with known verbs is clean" \
+  "{\"chisel\":{$C,\"writes\":{\"tracker\":[\"create\",\"comment\"],\"vcs\":[\"pr-create\",\"stack-init\"]}}}" CLEAN
+check "writes empty list is clean" \
+  "{\"chisel\":{$C,\"writes\":{\"tracker\":[]}}}" CLEAN
+check "writes unknown tracker verb rejected" \
+  "{\"chisel\":{$C,\"writes\":{\"tracker\":[\"delete\"]}}}" "chisel.writes.tracker: unknown verb 'delete'"
+check "writes vcs verb under tracker rejected" \
+  "{\"chisel\":{$C,\"writes\":{\"tracker\":[\"description-set\"]}}}" "unknown verb 'description-set'"
+check "writes unknown facade key rejected" \
+  "{\"chisel\":{$C,\"writes\":{\"forge\":[]}}}" "chisel.writes.forge: unknown key"
+check "writes list of non-strings rejected" \
+  "{\"chisel\":{$C,\"writes\":{\"vcs\":\"comment\"}}}" "expected a list of verb names"
+check "writes not an object rejected" \
+  "{\"chisel\":{$C,\"writes\":[]}}" "chisel.writes: expected an object"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

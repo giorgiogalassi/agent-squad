@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Fifteen checks, each independent and each able to fail
+# done") into a gate. Sixteen checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -54,6 +54,11 @@
 #      claude/agents/reader.md; claude/skills/chisel/SKILL.md refers to it and
 #      must not name two or more of their distinctive labels (`public API shape`,
 #      `new dependency`, `behaviour between units`).
+#
+#  16. write policy bypass (#400): skills and agents write only through the
+#      facades; they must not name squad_provider_write, squad_gh_write,
+#      tracker_write or _SQUAD_POLICY_TRANSITION (the policy lives in the facades, and
+#      the vendor CLI ban is check 6)
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -633,6 +638,16 @@ check_chisel_categories() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "chisel refers to reader.md for the categories"
 }
 
+check_write_policy_bypass() {
+  local before="$VIOLATIONS" f hits
+  section "16. skills and agents do not bypass the write policy"
+  for f in $( { find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null; } | sort); do
+    hits="$(grep -nE 'squad_provider_write|squad_gh_write|tracker_write|_SQUAD_POLICY_TRANSITION|SQUAD_POLICY_VIA' "$f" 2>/dev/null | head -n 1)"
+    [ -n "$hits" ] && fail "$f:${hits%%:*}: names a facade-internal write path; call squad-tracker.sh / squad-vcs.sh"
+  done
+  [ "$VIOLATIONS" -eq "$before" ] && ok "no skill or agent bypasses the facades' write policy"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -648,6 +663,7 @@ check_state_dir_literal
 check_single_committer
 check_seed_uses_lore_map
 check_chisel_categories
+check_write_policy_bypass
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then
