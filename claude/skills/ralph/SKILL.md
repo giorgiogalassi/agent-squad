@@ -463,7 +463,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh stack-init <branch-1> ... <branch-
 A `REASON=policy: stack-init not allowed on <project>` refusal (exit 20) is
 logged like any other failure here. Needs a provider with stacked-branch support (GitHub: the `gh-stack`
 extension, not installed automatically and not checked by the Preflight
-section above — exit 10 is the first sign it is missing). If the verb exits
+section above — exit 10 is the first sign it is missing; Bitbucket has no
+stacks and always answers 10 with a `REASON=`). If the verb exits
 non-zero for any reason, log one line
 (`stack-init failed for chain <lead-id>: <error>`) and continue — no
 retry, no effect on recorded results. If any issue in the chain

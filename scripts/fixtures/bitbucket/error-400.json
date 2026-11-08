@@ -1,0 +1,6 @@
+{
+ "type": "error",
+ "error": {
+  "message": "title is required"
+ }
+}

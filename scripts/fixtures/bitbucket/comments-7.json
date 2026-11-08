@@ -1,0 +1,24 @@
+{
+ "values": [
+  {
+   "content": {
+    "raw": "looks good"
+   },
+   "user": {
+    "nickname": "maria"
+   },
+   "created_on": "2026-11-02T10:00:00.1+00:00",
+   "deleted": false
+  },
+  {
+   "content": {
+    "raw": "gone"
+   },
+   "user": {
+    "nickname": "x"
+   },
+   "created_on": "2026-11-02T10:00:00+00:00",
+   "deleted": true
+  }
+ ]
+}

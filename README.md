@@ -398,6 +398,29 @@ and Ralph need no change). A missing mapping or transition is reported, never
 guessed. `comment` is off by default for Jira (write policy). Tests:
 `scripts/test-tracker-jira.sh` over recorded responses and `scripts/curl-shim/`.
 
+### Bitbucket Cloud
+
+`"vcs": "bitbucket"` selects `hooks/vcs/bitbucket.sh` (REST 2.0, `curl` and
+`jq`, no `gh`). Workspace and repository slug are derived from the `origin`
+remote and can be overridden in `chisel-config.json` (`bitbucket_workspace`,
+`bitbucket_repo`; `bitbucket_user` switches to an app password). The token is
+read from the macOS keychain (`security add-generic-password -s squad-bitbucket
+-a <workspace or bitbucket_user> -w`) or `SQUAD_BITBUCKET_TOKEN`, and is passed
+to `curl` through a descriptor, not argv. The keychain/`curl` plumbing is
+`hooks/squad-http.sh`, shared with the Jira adapter.
+
+| Verb | Bitbucket |
+|------|-----------|
+| `pr-create`, `pr-for-branch`, `pr-view`, `pr-list`, `merged`, `default-branch`, `branch-exists`, `available`, `auth-status`, `cli-name` | supported |
+| `diff --base --head` | the open PR's own diff from the API (a stacked PR shows only its changes); when the API is unavailable or no such PR exists, the local `git diff base...head`, labelled by a first `# squad: local git diff ...` line and a stderr line |
+| `description-get`, `description-set`, `comment` | supported; the writes are policy-gated, and `comment` is off by default for Bitbucket |
+| `pr-data` | mapped to the GitHub PR vocabulary the stats, retro and atlas readers use (`mergedAt` is the PR's last update when it is merged) |
+| `stack-init` | unsupported: exit 10 with `REASON=`; Ralph logs it and continues |
+
+With the policy denying `description-set`, `squad-pr-desc.sh` keeps Reven's
+description drift in the handoff file (as in detached mode). Tests:
+`scripts/test-vcs-bitbucket.sh` over recorded responses and `scripts/curl-shim/`.
+
 ### Adding a provider
 
 1. Write `hooks/tracker/<name>.sh` and/or `hooks/vcs/<name>.sh`: sourced

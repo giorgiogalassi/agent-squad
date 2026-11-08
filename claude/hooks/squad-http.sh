@@ -13,7 +13,8 @@
 #   config file descriptor (-K <(...)), so it is on no argv and in no `ps`, and it
 #   is never printed. Returns 0 when curl ran (the caller reads the status), 20
 #   when it did not or a write was refused by squad_write_guard (non-GET calls
-#   pass it first). Options by variable: SQUAD_HTTP_ACCEPT (default
+#   pass it first, unless SQUAD_HTTP_UNGUARDED=1: only for a verb the facade
+#   documents as not gated on tracker mode, i.e. pr-create). Options by variable: SQUAD_HTTP_ACCEPT (default
 #   application/json), SQUAD_HTTP_FOLLOW=1 (follow redirects; curl drops the
 #   Authorization header when a redirect leaves the host).
 
@@ -29,7 +30,7 @@ squad_http_token() {
 squad_http_call() {
   local m="$1" url="$2" auth="$3" body="${4:-}" tmp opts
   SQUAD_HTTP_CODE=""; SQUAD_HTTP_BODY=""; SQUAD_HTTP_RC=0
-  [ "$m" = GET ] || squad_write_guard || return 20
+  [ "$m" = GET ] || [ "${SQUAD_HTTP_UNGUARDED:-}" = 1 ] || squad_write_guard || return 20
   tmp="$(mktemp "${TMPDIR:-/tmp}/squad-http.XXXXXX")" || { echo "squad: http: mktemp failed" >&2; return 20; }
   opts=(-sS -o "$tmp" -w '%{http_code}' -X "$m" -H "Accept: ${SQUAD_HTTP_ACCEPT:-application/json}")
   [ "${SQUAD_HTTP_FOLLOW:-}" != 1 ] || opts+=(-L)

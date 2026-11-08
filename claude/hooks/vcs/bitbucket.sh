@@ -24,7 +24,8 @@
 # supported (Bitbucket has no stacked branches): exit 10, REASON= on stdout; Ralph
 # logs it and carries on. Return codes: 0 ok, 2 usage, 10 precondition not met or
 # unsupported, 20 failure. Writes are refused outside connected mode by
-# squad_write_guard (inside squad_http_call) and by the write policy in the facade.
+# squad_write_guard (inside squad_http_call; pr-create is not gated on tracker
+# mode, as on github) and by the write policy in the facade.
 # Bitbucket's PR payloads carry 12-character commit hashes; HEAD_OID and the PR
 # commit ids are expanded to full hashes where a caller compares them to git.
 
@@ -298,7 +299,7 @@ vcs_pr_data() {
      mergeCommit: (if .merge_commit then {oid: .merge_commit.hash} else null end),
      reviews: [.participants[]? | select(.approved) | {author: {login: (.user.nickname // .user.display_name // "")}, state: "APPROVED", body: ""}],
      headRefName: .source.branch.name, baseRefName: .destination.branch.name} + $x
-    | with_entries(select($want | contains("," + .key + ",")))'
+    | with_entries(. as $e | select($want | contains("," + $e.key + ",")))'
 }
 
 # stack-init: Bitbucket has no stacked branches. Unsupported, not an error.
@@ -399,7 +400,7 @@ vcs_diff() {
   git diff "$b...$h" || return 20
 }
 
-# pr-create --head H --base B --title T --body B: open a PR (write). URL= and PR=.
+# pr-create --head H --base B --title T --body B: open a PR. URL= and PR=.
 vcs_pr_create() {
   local head="" base="" title="" body="" rc payload
   while [ $# -gt 0 ]; do
@@ -411,11 +412,11 @@ vcs_pr_create() {
     shift 2
   done
   [ -n "$head" ] && [ -n "$base" ] && [ -n "$title" ] || { echo "squad: pr-create requires --head, --base and --title" >&2; return 2; }
-  squad_write_guard || return 20
   _bb_ready || return $?
   payload="$(jq -nc --arg h "$head" --arg b "$base" --arg t "$title" --arg d "$body" \
     '{title: $t, description: $d, source: {branch: {name: $h}}, destination: {branch: {name: $b}}}')" || return 20
-  _bb_call POST "$(_bb_repo)/pullrequests" "$payload"; rc=$?
+  # Not gated on tracker mode, like vcs/github.sh (Cody's `open pr`, the vault's own repo).
+  SQUAD_HTTP_UNGUARDED=1 _bb_call POST "$(_bb_repo)/pullrequests" "$payload"; rc=$?
   [ "$rc" -eq 0 ] || { echo "squad: pr create failed" >&2; return 20; }
   printf '%s' "$BB_BODY" | jq -r '"PR=\(.id)", "URL=\(.links.html.href)"'
 }

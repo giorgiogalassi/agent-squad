@@ -176,6 +176,12 @@ the GitHub label machine. An adapter defining `tracker_set_state` (Jira) owns
 exits 10 with `REASON=` on stdout (no mapping, or no live transition to the
 status).
 
+A VCS verb a provider cannot offer exits 10 with `REASON=` on stdout (Bitbucket:
+`stack-init`); its callers degrade (Ralph logs the failed stack adoption and goes
+on, `pr-data` readers skip their section). `diff` may answer from local git when
+the provider API cannot (Bitbucket): the first stdout line is then
+`# squad: local git diff <base>...<head> (...)`, and stderr says so too.
+
 Write policy (#400): a write verb that the project's `chisel.writes.<facade>`
 list does not name (or, without the key, that the provider default excludes) is
 refused by the facade before any adapter runs: stdout `REASON=policy: <verb> not
