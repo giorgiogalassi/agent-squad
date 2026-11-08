@@ -414,7 +414,7 @@ to `curl` through a descriptor, not argv. The keychain/`curl` plumbing is
 | `pr-create`, `pr-for-branch`, `pr-view`, `pr-list`, `merged`, `default-branch`, `branch-exists`, `available`, `auth-status`, `cli-name` | supported |
 | `diff --base --head` | the open PR's own diff from the API (a stacked PR shows only its changes); when the API is unavailable or no such PR exists, the local `git diff base...head`, labelled by a first `# squad: local git diff ...` line and a stderr line |
 | `description-get`, `description-set`, `comment` | supported; the writes are policy-gated, and `comment` is off by default for Bitbucket |
-| `pr-data` | mapped to the GitHub PR vocabulary the stats, retro and atlas readers use (`mergedAt` is the PR's last update when it is merged) |
+| `pr-data` | mapped to the GitHub PR vocabulary the stats, retro and atlas readers use (`mergedAt` is the merge commit's date; when the commit cannot be read it falls back to the PR's `updated_on`, and `mergedAtSource` says which one answered: `mergeCommit` or `updated_on`) |
 | `stack-init` | unsupported: exit 10 with `REASON=`; Ralph logs it and continues |
 
 With the policy denying `description-set`, `squad-pr-desc.sh` keeps Reven's
@@ -433,6 +433,11 @@ description drift in the handoff file (as in detached mode). Tests:
 2. Set `"tracker": "<name>"` and/or `"vcs": "<name>"` under `chisel` in
    the project's `chisel-config.json`.
 3. Prove it the way `scripts/test-squad-tracker.sh` proves the fake.
+
+Two real adapters follow this recipe and are the closest references: Jira
+(`hooks/tracker/jira.sh`, tests in `scripts/test-tracker-jira.sh`) and Bitbucket
+(`hooks/vcs/bitbucket.sh`, tests in `scripts/test-vcs-bitbucket.sh`); both
+are described above and share `hooks/squad-http.sh`.
 
 ## Script layer
 
