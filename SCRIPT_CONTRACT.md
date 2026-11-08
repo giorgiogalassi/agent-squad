@@ -180,7 +180,9 @@ A VCS verb a provider cannot offer exits 10 with `REASON=` on stdout (Bitbucket:
 `stack-init`); its callers degrade (Ralph logs the failed stack adoption and goes
 on, `pr-data` readers skip their section). `diff` may answer from local git when
 the provider API cannot (Bitbucket): the first stdout line is then
-`# squad: local git diff <base>...<head> (...)`, and stderr says so too.
+`# squad: local git diff <base>...<head> (...)`, and stderr says so too. Any
+line starting with `# squad:` as the first line of `diff` output is that marker,
+not diff content: a parser must skip it.
 
 Write policy (#400): a write verb that the project's `chisel.writes.<facade>`
 list does not name (or, without the key, that the provider default excludes) is

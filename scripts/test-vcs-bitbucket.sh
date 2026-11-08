@@ -203,6 +203,7 @@ GET $R/pullrequests/7/diffstat?* diffstat-2.json
 GET $R/pullrequests/7/comments?* comments-7.json
 GET $R/pullrequests/7 pr-7.json
 GET $R/pullrequests/4 pr-4-merged.json
+GET $R/commit/99aabbccdd11 commit-99aa.json
 RT
 bb bash "$VCS" pr-data 7 --fields number,state,createdAt,mergedAt,commits
 check "pr-data: only the requested keys" "commits,createdAt,mergedAt,number,state" "$(printf '%s' "$OUT" | jq -r 'keys | join(",")')"
@@ -215,7 +216,13 @@ check "pr-data: files" "b.txt" "$(printf '%s' "$OUT" | jq -r '[.files[].path] | 
 check "pr-data: comments (deleted dropped), author login" "looks good maria" "$(printf '%s' "$OUT" | jq -r '[.comments[] | "\(.body) \(.author.login)"] | join(",")')"
 check "pr-data: reviews are the approvals" "maria APPROVED" "$(printf '%s' "$OUT" | jq -r '[.reviews[] | "\(.author.login) \(.state)"] | join(",")')"
 bb bash "$VCS" pr-data 4 --fields state,mergedAt,mergeCommit
-check "pr-data: merged PR" "MERGED 2026-11-03T12:30:15Z 99aabbccdd11" "$(printf '%s' "$OUT" | jq -r '"\(.state) \(.mergedAt) \(.mergeCommit.oid)"')"
+check "pr-data: merged PR, mergedAt is the merge commit date" "MERGED 2026-11-03T12:10:05Z mergeCommit 99aabbccdd11" "$(printf '%s' "$OUT" | jq -r '"\(.state) \(.mergedAt) \(.mergedAtSource) \(.mergeCommit.oid)"')"
+routes <<RT
+GET $R/pullrequests/4 pr-4-merged.json
+GET $R/commit/99aabbccdd11 not-found.json 404
+RT
+bb bash "$VCS" pr-data 4 --fields state,mergedAt
+check "pr-data: merge commit unavailable falls back to updated_on, marked" "MERGED 2026-11-03T12:30:15Z updated_on" "$(printf '%s' "$OUT" | jq -r '"\(.state) \(.mergedAt) \(.mergedAtSource)"')"
 bb bash "$VCS" pr-data 7 --fields bogus; check "pr-data unknown field: 2" 2 "$RC"
 
 # --- diff: the PR's own diff; local fallback, labelled
@@ -277,6 +284,7 @@ check "description-set: exit 0" 0 "$RC"
 check "description-set: title kept, description from the file" "[#12] Add the thing|## Summary
 - new line
 \"quoted\" \\ back" "$(body_of "PUT $R/pullrequests/7" | jq -r '"\(.title)|\(.description)"')"
+check "description-set: reviewers and close_source_branch re-sent unchanged" "{aaa-111},{bbb-222} true" "$(body_of "PUT $R/pullrequests/7" | jq -r '"\([.reviewers[].uuid] | join(",")) \(.close_source_branch)"')"
 bb bash "$VCS" pr-create --head 12-feature --base main --title "[#12] New" --body "two
 lines"
 check "pr-create: PR and URL" "PR=11 URL=https://bitbucket.org/acme/app/pull-requests/11" "$(printf '%s' "$OUT" | tr '\n' ' ' | sed 's/ $//')"

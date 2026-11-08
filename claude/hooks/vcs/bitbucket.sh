@@ -266,7 +266,7 @@ vcs_pr_view() {
 
 # pr-data <pr> --fields a,b,c: one JSON object in the GitHub PR vocabulary.
 vcs_pr_data() {
-  local pr="${1:-}" f="" rc fld extra='{}' want
+  local pr="${1:-}" f="" rc fld extra='{}' want mc md msrc=''
   [ -n "$pr" ] || { echo "squad: pr-data requires a pr" >&2; return 2; }
   shift
   while [ $# -gt 0 ]; do
@@ -293,13 +293,24 @@ vcs_pr_data() {
     _bb_pages "$(_bb_repo)/pullrequests/$BB_PR/comments?pagelen=100" || return 20
     extra="$(jq -nc --argjson e "$extra" --argjson v "$BB_ALL" "$_BB_TS"'
       $e + {comments: [$v[] | select(.deleted | not) | {body: .content.raw, author: {login: (.user.nickname // .user.display_name // "")}, createdAt: (.created_on | ts)}]}')" ;; esac
-  printf '%s' "$BB_PRJ" | jq -c --argjson x "$extra" --arg want ",$f," "$_BB_TS"'
+  # mergedAt: the merge commit's date; updated_on moves on any later PR activity, so it
+  # is only the fallback (mergedAtSource says which one answered).
+  case ",$f," in *,mergedAt,*)
+    mc="$(printf '%s' "$BB_PRJ" | jq -r 'select(.state == "MERGED") | .merge_commit.hash // empty')"
+    if [ -n "$mc" ] && _bb_call GET "$(_bb_repo)/commit/$mc" \
+       && md="$(printf '%s' "$BB_BODY" | jq -r "$_BB_TS"' .date // empty | ts')" && [ -n "$md" ]; then
+      extra="$(jq -nc --argjson e "$extra" --arg d "$md" '$e + {mergedAt: $d}')"; msrc=mergeCommit
+    elif [ -n "$mc" ] || [ "$(printf '%s' "$BB_PRJ" | jq -r .state)" = MERGED ]; then
+      echo "squad: bitbucket: merge commit unavailable, mergedAt falls back to updated_on" >&2; msrc=updated_on
+    fi ;; esac
+  printf '%s' "$BB_PRJ" | jq -c --argjson x "$extra" --arg want ",$f," --arg msrc "$msrc" "$_BB_TS"'
     {number: .id, state: '"$_bb_state_jq"', title: .title, body: (.description // ""), url: .links.html.href,
      createdAt: (.created_on | ts), mergedAt: (if .state == "MERGED" then (.updated_on | ts) else null end),
      mergeCommit: (if .merge_commit then {oid: .merge_commit.hash} else null end),
      reviews: [.participants[]? | select(.approved) | {author: {login: (.user.nickname // .user.display_name // "")}, state: "APPROVED", body: ""}],
      headRefName: .source.branch.name, baseRefName: .destination.branch.name} + $x
-    | with_entries(. as $e | select($want | contains("," + $e.key + ",")))'
+    | with_entries(. as $e | select($want | contains("," + $e.key + ",")))
+    | if $msrc != "" and has("mergedAt") then . + {mergedAtSource: $msrc} else . end'
 }
 
 # stack-init: Bitbucket has no stacked branches. Unsupported, not an error.
@@ -328,8 +339,9 @@ vcs_description_get() {
   printf '%s' "$BB_PRJ" | jq -r '.description // ""'
 }
 
-# description-set <pr> --body-file <path> (write): PUT title + description (the
-# title is re-sent so the update never depends on Bitbucket's optional-field rules).
+# description-set <pr> --body-file <path> (write): PUT title + description. Bitbucket's
+# PR update can clear fields it is not sent, so the title, the current reviewers (by
+# uuid) and close_source_branch are re-sent unchanged: only the description changes.
 vcs_description_set() {
   local pr="${1:-}" file="" rc
   [ -n "$pr" ] || { echo "squad: description-set requires a pr" >&2; return 2; }
@@ -343,7 +355,9 @@ vcs_description_set() {
   _bb_pr "$pr"; rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
   _bb_call PUT "$(_bb_repo)/pullrequests/$BB_PR" \
-    "$(jq -nc --arg t "$(printf '%s' "$BB_PRJ" | jq -r .title)" --rawfile d "$file" '{title: $t, description: $d}')" || return 20
+    "$(printf '%s' "$BB_PRJ" | jq -c --rawfile d "$file" '{title: .title, description: $d}
+      + (if (.reviewers | type) == "array" then {reviewers: [.reviewers[] | {uuid: .uuid}]} else {} end)
+      + (if (.close_source_branch | type) == "boolean" then {close_source_branch: .close_source_branch} else {} end)')" || return 20
 }
 
 # comment <pr> --body <text> (write).
