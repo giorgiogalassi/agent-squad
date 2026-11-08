@@ -342,6 +342,40 @@ lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`, `SQUAD_DIR`,
 project's `chisel-config.json` is exactly `connected` (any doubt, including
 a missing file or `jq`, means `detached`).
 
+## Tracker and VCS facades
+
+Skills, agents and hooks never call a vendor CLI. Two facades hold the
+vocabulary, one adapter file per provider sits underneath:
+
+| Facade | Verbs | Adapters |
+|--------|-------|----------|
+| `hooks/squad-tracker.sh` | `batch`, `get`, `create`, `create-child`, `link-blocking`, `project-add`, `set-state`, `claim`, `label`, `labels`, `label-list`, `label-create`, `comment`, `preflight` | `hooks/tracker/<provider>.sh` |
+| `hooks/squad-vcs.sh` | `available`, `auth-status`, `default-branch`, `branch-exists`, `pr-for-branch`, `pr-list`, `pr-view`, `pr-create`, `diff`, `description-get`, `description-set`, `comment`, `merged`, `pr-data`, `stack-init` | `hooks/vcs/<provider>.sh` |
+
+Hooks call the same verbs in-process as `squad_tracker` / `squad_vcs`
+(`squad-common.sh`). Output is `KEY=VALUE` (`ID= TITLE= STATE= URL= PARENT=
+BLOCKED_BY=`, `PR= URL= BASE= HEAD= STATE=`); the exit codes are those of
+`SCRIPT_CONTRACT.md`, and a verb a provider lacks exits 10. The provider is
+`chisel.tracker` / `chisel.vcs` in `chisel-config.json` (default `github`);
+`path-resolve.sh` exports `TRACKER_PROVIDER` and `VCS_PROVIDER`. The
+`github` adapters reproduce the `gh` behaviour exactly and use `gh`'s own
+authentication (OS keychain); `scripts/gh-shim/` stays the test seam.
+`scripts/squad-lint.sh`'s check 6 fails any `gh <command>` outside the two github
+adapters.
+
+### Adding a provider
+
+1. Write `hooks/tracker/<name>.sh` and/or `hooks/vcs/<name>.sh`: sourced
+   files defining `tracker_<verb>` / `vcs_<verb>` functions (`-` becomes
+   `_`). Write verbs go through `squad_provider_write <cli> <argv...>` or
+   call `squad_write_guard`, so detached mode refuses them in one place.
+   Read tokens from the OS keychain (or an env var named in the adapter),
+   never from config or the vault. `hooks/tracker/fake.sh` is the minimal
+   reference.
+2. Set `"tracker": "<name>"` and/or `"vcs": "<name>"` under `chisel` in
+   the project's `chisel-config.json`.
+3. Prove it the way `scripts/test-squad-tracker.sh` proves the fake.
+
 ## Script layer
 
 Steps that must be deterministic are scripts in `claude/hooks/`, and the

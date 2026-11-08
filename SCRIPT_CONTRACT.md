@@ -159,6 +159,16 @@ by re-parsing config. In detached mode scripts make zero `gh` calls,
 reads included, and `squad_gh_write` refuses with 20. `--handoff <path>`
 is required in detached mode and ignored in connected mode.
 
+## Facades
+
+`hooks/squad-tracker.sh` and `hooks/squad-vcs.sh` follow this contract: stdout
+is `KEY=VALUE` lines (list verbs repeat a block, blocks separated by a blank
+line), exit 0 ok / 2 usage / 10 precondition or unsupported verb / 20
+failure. Documented stdout exceptions: `squad-vcs.sh pr-data` (one JSON
+object), `description-get` (the PR body verbatim), `diff` (a unified diff) and
+`pr-list` (display lines). Adapters live in `hooks/tracker/<provider>.sh` and
+`hooks/vcs/<provider>.sh`; see the README, "Tracker and VCS facades".
+
 ## Library
 
 Function return codes (the header of `squad-common.sh` is authoritative):
@@ -166,7 +176,9 @@ Function return codes (the header of `squad-common.sh` is authoritative):
 | Function | Returns |
 |---|---|
 | `squad_resolve` | 0 / 20 |
-| `squad_gh_write` | 0 / 20 (gh stdout is redirected to stderr) |
+| `squad_tracker`, `squad_vcs` | the verb'"'"'s own code: 0 / 2 / 10 (also: verb unsupported by the provider) / 20 |
+| `squad_provider_write`, `squad_write_guard` | 0 / 20 (the CLI'"'"'s stdout is redirected to stderr; detached mode refuses with 20) |
+| `squad_gh_write` | 0 / 20, the github adapter'"'"'s raw-argv write path |
 | `squad_record_local` | 0 changed / 1 unchanged / 20 I/O error |
 | `squad_emit` | 0 / 2 |
 
