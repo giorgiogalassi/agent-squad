@@ -70,6 +70,8 @@ JIRA_STRING_KEYS = {
     "jira_site", "jira_email", "jira_project", "jira_link_type",
     "jira_issue_type", "jira_subtask_type",
 }
+# Bitbucket adapter keys (#399): plain strings.
+BITBUCKET_STRING_KEYS = {"bitbucket_workspace", "bitbucket_repo", "bitbucket_user"}
 JIRA_STATES_KEYS = {"in-progress", "in-review", "needs-review", "done", "blocked", "ready"}
 
 SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
@@ -430,6 +432,12 @@ def validate_config(data, schema):
                                     }
                                 )
         if key in JIRA_STRING_KEYS and not (
+            isinstance(chisel[key], str) and chisel[key].strip()
+        ):
+            violations.append(
+                {"message": f"chisel.{key}: expected a non-empty string", "path": None}
+            )
+        if key in BITBUCKET_STRING_KEYS and not (
             isinstance(chisel[key], str) and chisel[key].strip()
         ):
             violations.append(

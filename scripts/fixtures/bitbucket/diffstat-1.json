@@ -1,0 +1,19 @@
+{
+ "values": [
+  {
+   "new": {
+    "path": "a.txt"
+   },
+   "old": {
+    "path": "a.txt"
+   }
+  },
+  {
+   "new": null,
+   "old": {
+    "path": "gone.txt"
+   }
+  }
+ ],
+ "next": "https://api.bitbucket.org/2.0/repositories/acme/app/pullrequests/7/diffstat?page=2"
+}

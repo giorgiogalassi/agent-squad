@@ -2,7 +2,8 @@
 # tracker/jira.sh -- Jira Cloud adapter (REST v3) for squad-tracker.sh.
 # SOURCED by squad_tracker (squad-common.sh); do not execute. Bash 3.2, needs
 # jq and curl. This file never calls the GitHub CLI; the only vendor call is
-# `curl` (the test seam is scripts/curl-shim/).
+# `curl` through squad-http.sh, shared with vcs/bitbucket.sh (the test seam is
+# scripts/curl-shim/).
 #
 # Config, all under `chisel` in chisel-config.json (non-secret):
 #   jira_site        host, e.g. "acme.atlassian.net"             (required)
@@ -29,6 +30,9 @@
 
 # --- config and credentials -------------------------------------------------
 
+# shellcheck disable=SC1091
+. "$SQUAD_COMMON_DIR/squad-http.sh"
+
 # _jr_ready: load config and token once per process into JR_SITE/JR_EMAIL/
 # JR_PROJECT/JR_AUTH (the base64 credential, a plain shell variable that is
 # never exported or printed).
@@ -45,10 +49,7 @@ _jr_ready() {
   [ -n "$JR_SITE" ] && [ -n "$JR_EMAIL" ] && [ -n "$JR_PROJECT" ] \
     || { echo "squad: jira: chisel.jira_site, jira_email and jira_project must be set in chisel-config.json" >&2; return 10; }
   case "$JR_SITE" in *[!A-Za-z0-9.-]*) echo "squad: jira: chisel.jira_site is not a plain host name" >&2; return 10 ;; esac
-  tok="${SQUAD_JIRA_TOKEN:-}"
-  if [ -z "$tok" ] && command -v security >/dev/null 2>&1; then
-    tok="$(security find-generic-password -s squad-jira -a "$JR_EMAIL" -w 2>/dev/null)"
-  fi
+  tok="$(squad_http_token squad-jira "$JR_EMAIL" SQUAD_JIRA_TOKEN)"
   [ -n "$tok" ] || { echo "squad: jira: no API token (keychain item 'squad-jira' for $JR_EMAIL, or env SQUAD_JIRA_TOKEN)" >&2; return 10; }
   JR_AUTH="$(printf '%s:%s' "$JR_EMAIL" "$tok" | base64 | tr -d '\n')"
   tok=""
@@ -68,22 +69,14 @@ _jr_key() { printf '%s' "$1" | grep -Eq '^[A-Z][A-Z0-9_]*-[0-9]+$'; }
 # message from Jira never contains the token). Non-GET calls pass the
 # detached-mode guard first.
 _jr_call() {
-  local m="$1" p="$2" body="${3:-}" tmp rc=0
+  local m="$1" p="$2" body="${3:-}" rc=0
   _jr_ready || return $?
-  [ "$m" = GET ] || squad_write_guard || return 20
-  tmp="$(mktemp "${TMPDIR:-/tmp}/squad-jira.XXXXXX")" || { echo "squad: jira: mktemp failed" >&2; return 20; }
-  if [ -n "$body" ]; then
-    JR_CODE="$(printf '%s' "$body" | curl -sS -o "$tmp" -w '%{http_code}' -X "$m" \
-      -K <(printf 'header = "Authorization: Basic %s"\n' "$JR_AUTH") \
-      -H 'Accept: application/json' -H 'Content-Type: application/json' \
-      --data-binary @- "https://$JR_SITE/rest/api/3$p")" || rc=$?
-  else
-    JR_CODE="$(curl -sS -o "$tmp" -w '%{http_code}' -X "$m" \
-      -K <(printf 'header = "Authorization: Basic %s"\n' "$JR_AUTH") \
-      -H 'Accept: application/json' "https://$JR_SITE/rest/api/3$p")" || rc=$?
+  squad_http_call "$m" "https://$JR_SITE/rest/api/3$p" "Basic $JR_AUTH" "$body" || rc=$?
+  JR_CODE="$SQUAD_HTTP_CODE"; JR_BODY="$SQUAD_HTTP_BODY"
+  if [ "$rc" -ne 0 ]; then
+    [ "$SQUAD_HTTP_RC" -eq 0 ] || echo "squad: jira $m ${p%%\?*} failed (curl exit $SQUAD_HTTP_RC)" >&2
+    return 20
   fi
-  JR_BODY="$(cat "$tmp" 2>/dev/null)"; rm -f "$tmp"
-  if [ "$rc" -ne 0 ]; then echo "squad: jira $m ${p%%\?*} failed (curl exit $rc)" >&2; return 20; fi
   case "$JR_CODE" in
     2??) return 0 ;;
     404) echo "squad: jira $m ${p%%\?*}: not found (HTTP 404)" >&2; return 10 ;;

@@ -10,7 +10,8 @@
 #   pr-list [--state open] [--limit N]      display lines, not KEY=VALUE
 #   pr-view <pr|branch> --field base|changed-files|state|url|title
 #   pr-create --head H --base B --title T --body B
-#   diff --base B --head H                  unified diff on stdout
+#   diff --base B --head H                  unified diff on stdout (a first line starting with "# squad:"
+#                                           marks a local-git fallback; parsers must skip it)
 #   description-get <pr>                    PR body on stdout, verbatim
 #   description-set <pr> --body-file F      (write)
 #   comment <pr> --body T                   (write)

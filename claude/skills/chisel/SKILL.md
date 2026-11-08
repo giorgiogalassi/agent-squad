@@ -121,7 +121,10 @@ and write:
     "jira_link_type": "Blocks",
     "jira_issue_type": "Task",
     "jira_subtask_type": "Sub-task",
-    "jira_fields": {}
+    "jira_fields": {},
+    "bitbucket_workspace": "acme",
+    "bitbucket_repo": "app",
+    "bitbucket_user": "me"
   }
 }
 ```
@@ -164,6 +167,17 @@ the wire shape the instance wants, for its required custom fields. With
 `tracker: jira`, connected mode works through the tracker facade like any
 other provider; Jira sub-tasks and links replace GitHub sub-issues, and the
 detached batch file stays the fallback.
+
+`bitbucket_*` keys (connected mode, only read when `vcs` is `bitbucket`,
+hand-editable, never prompted for; the token is never stored here, it comes from
+the OS keychain item `squad-bitbucket` or `SQUAD_BITBUCKET_TOKEN`): the
+workspace and repository slug are taken from the `origin` remote, and
+`bitbucket_workspace` / `bitbucket_repo` override them (a fork, a mirror, a remote
+that is not on bitbucket.org). `bitbucket_user` is the username of an app
+password: set, calls authenticate with Basic `user:app password`; unset, with
+`Bearer <token>` (a repository or workspace access token). With `vcs: bitbucket`
+the `comment` write is off unless `writes.vcs` lists it, and `stack-init` is
+unsupported (exit 10, Ralph logs it and goes on).
 
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
 review-and-fix rounds per issue; hand-editable, never prompted for, and

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Fake `curl` for the Jira adapter tests (no network, ever). Put this directory
+# Fake `curl` for the Jira and Bitbucket adapter tests (no network, ever). Put this directory
 # first on PATH. Environment:
 #   CURL_SHIM_ROUTES  file of routes, one per line: METHOD PATH-GLOB FIXTURE [STATUS]
 #                     PATH-GLOB is matched (case glob) against the path and query
-#                     after /rest/api/3; FIXTURE is a file in CURL_SHIM_FIXTURES
+#                     after /rest/api/3 (Jira) or api.bitbucket.org/2.0 (Bitbucket); FIXTURE is a file in CURL_SHIM_FIXTURES
 #                     ("-" = empty body); STATUS defaults to 200.
 #   CURL_SHIM_FIXTURES  directory of recorded responses
 #   CURL_SHIM_LOG     one line per call: "METHOD path" then "BODY <request body>"
 #   CURL_SHIM_ARGV    the raw argv of every call (so tests can prove no secret is on it)
-# A request without an `Authorization: Basic` header in the -K config gets 401.
+# A request without an `Authorization: Basic|Bearer` header in the -K config gets 401.
 # No matching route: logged as REJECTED, HTTP 599, exit 0 (curl prints the code).
 # The shim never logs headers or the -K file. Bash 3.2.
 LOG="${CURL_SHIM_LOG:-/dev/null}"; ARGV="${CURL_SHIM_ARGV:-/dev/null}"
@@ -21,13 +21,17 @@ while [ $# -gt 0 ]; do
     -w) wfmt="$2"; shift 2 ;;
     -K) cfg="$2"; shift 2 ;;
     -H) shift 2 ;;
+    -L) shift ;;
     --data-binary) data=1; shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
   esac
 done
 body=""; [ "$data" = 1 ] && body="$(cat)"
-path="${url#*/rest/api/3}"
+case "$url" in
+  */rest/api/3*) path="${url#*/rest/api/3}" ;;
+  *) path="${url#*api.bitbucket.org/2.0}" ;;
+esac
 printf '%s %s\nBODY %s\n' "$method" "$path" "$body" >> "$LOG"
 emit() {  # emit <status> <file or ->
   if [ -n "$out" ]; then
@@ -36,7 +40,7 @@ emit() {  # emit <status> <file or ->
   case "$wfmt" in *http_code*) printf '%s' "$1" ;; esac
   exit 0
 }
-if ! { [ -n "$cfg" ] && grep -q 'Authorization: Basic ' "$cfg"; }; then emit 401 -; fi
+if ! { [ -n "$cfg" ] && grep -Eq 'Authorization: (Basic|Bearer) ' "$cfg"; }; then emit 401 -; fi
 while read -r m pat file status; do
   [ "$m" = "$method" ] || continue
   case "$path" in $pat) emit "${status:-200}" "$file" ;; esac

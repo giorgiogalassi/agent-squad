@@ -72,5 +72,12 @@ check "jira_states value must be a status name" \
 check "jira_fields must be an object" \
   "{\"chisel\":{$C,\"jira_fields\":[]}}" "chisel.jira_fields: expected an object"
 
+check "bitbucket keys are clean" \
+  "{\"chisel\":{$C,\"vcs\":\"bitbucket\",\"bitbucket_workspace\":\"acme\",\"bitbucket_repo\":\"app\",\"bitbucket_user\":\"bob\"}}" CLEAN
+check "bitbucket_workspace must be a string" \
+  "{\"chisel\":{$C,\"bitbucket_workspace\":3}}" "chisel.bitbucket_workspace: expected a non-empty string"
+check "bitbucket_repo must not be empty" \
+  "{\"chisel\":{$C,\"bitbucket_repo\":\" \"}}" "chisel.bitbucket_repo: expected a non-empty string"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

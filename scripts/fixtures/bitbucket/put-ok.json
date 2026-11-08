@@ -1,0 +1,45 @@
+{
+ "type": "pullrequest",
+ "id": 7,
+ "title": "[#12] Add the thing",
+ "description": "## Summary\n- old line\n- second line\n",
+ "state": "OPEN",
+ "source": {
+  "branch": {
+   "name": "12-feature"
+  },
+  "commit": {
+   "hash": "abcdef123456"
+  }
+ },
+ "destination": {
+  "branch": {
+   "name": "main"
+  }
+ },
+ "links": {
+  "html": {
+   "href": "https://bitbucket.org/acme/app/pull-requests/7"
+  }
+ },
+ "created_on": "2026-11-01T10:00:00.123456+00:00",
+ "updated_on": "2026-11-03T12:30:15.654321+00:00",
+ "merge_commit": null,
+ "participants": [
+  {
+   "role": "REVIEWER",
+   "approved": true,
+   "user": {
+    "nickname": "maria",
+    "display_name": "Maria"
+   }
+  },
+  {
+   "role": "PARTICIPANT",
+   "approved": false,
+   "user": {
+    "nickname": "zed"
+   }
+  }
+ ]
+}
