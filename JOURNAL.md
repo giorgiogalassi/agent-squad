@@ -1654,6 +1654,222 @@ cost a wasted fix round or an unrecorded refusal, and nothing bounded disputes.
 
 ---
 
+### Iteration 46: Forge checks its premises against the code (#459)
+
+**Problem:** a Forge analysis could rest on a claim about the repo that was
+never looked at ("X does not exist yet", "Y already validates Z"). The issues
+inherited the claim, and Cody built on it or duplicated what was there.
+
+**Change (#459):**
+
+- *Premises in the YAML.* Forge lists each repo claim it relies on as a premise
+  with an ID (`P1`, ...), a kind and the evidence it found. A claim it cannot
+  verify is marked as such, not dropped.
+- *Chisel carries the IDs.* Issues name the premises they depend on; a reader
+  failure is marked on the issue rather than silently passing.
+- *Cody stops, Reven re-verifies.* If a premise is false when Cody looks, Cody
+  stops and says so instead of working around it; Reven re-checks the cited
+  premises against the diff. A new `forge-already-covered` eval case covers the
+  "already built" direction.
+- *Rejected:* a separate verifier agent. The reader and Reven already look at
+  the code at the two moments that matter; a third pass would add cost, not a
+  new viewpoint.
+
+> **Key decision:** a premise is evidence with an ID that travels from Forge to
+> Reven, not a sentence in prose.
+
+**Open:** the `forge-already-covered` eval has not run live (5.13).
+
+---
+
+### Iteration 47: Reven checks for orphans and rejected approaches (#480)
+
+**Problem:** a PR could add a function, key or section nothing used, and could
+reintroduce an approach the issue had rejected. Reven's per-line review missed
+both because neither is visible in a hunk.
+
+**Change (#480):**
+
+- *Rejected approaches are blocking.* An approach the issue lists as rejected
+  and the diff takes anyway is a numbered blocking finding.
+- *Orphan check.* For each new symbol, key or file, Reven searches for a user
+  outside the diff and ranks what it finds. An orphan is a finding; "not
+  checked" never becomes INCOMPLETE on its own, so an unchecked orphan does not
+  fail a PR by omission. The check runs per batch of new names and prints under
+  its own heading.
+- *Second parser.* A new reader of data an existing parser already reads is
+  flagged, because two parsers of one format drift (the #485 incident below).
+- *Rejected:* a script that finds orphans. Whether a name has a user depends on
+  what counts as a use in that file type, and a grep that is wrong in both
+  directions is worse than Reven reading.
+
+> **Key decision:** orphans and rejected approaches are findings with IDs, so a
+> contest can rule on them like any other.
+
+---
+
+### Iteration 48: Tracker and VCS facades (#397)
+
+**Problem:** the hooks, skills and agents called `gh` directly. A project on
+Jira or Bitbucket could not use the squad, and every prose mention of `gh` was
+a place a second provider would have to be patched.
+
+**Change (#397):**
+
+- *Two facades.* `squad-tracker.sh` and `squad-vcs.sh` expose provider-neutral
+  verbs; an adapter under `hooks/tracker/` or `hooks/vcs/` defines
+  `tracker_<verb>` / `vcs_<verb>`. `chisel.tracker` and `chisel.vcs` select the
+  adapter, default `github`; `fake` is the reference for tests.
+- *Skills and agents call the facades.* Lint bans `gh` outside the adapters, so
+  the boundary is enforced, not conventional.
+- *`tracker_set_state` hook.* A tracker without labels provides its own state
+  transitions, and `squad-labels.sh` delegates to it.
+- *Rejected:* a generic REST layer in the facade. The providers differ in
+  vocabulary (labels vs statuses, PR vs pull request), so the verbs carry
+  intent and the adapter maps it.
+
+> **Key decision:** the facade verbs describe what the squad wants done, not
+> what the provider calls it.
+
+**Open:** the large issue stalled twice on the turn limit without a checkpoint
+commit (Iteration 53).
+
+---
+
+### Iteration 49: Write policy in the facades (#400)
+
+**Problem:** nothing stopped a connected run from writing to a tracker or forge
+the user only wanted read access to, and a new adapter made that more likely.
+
+**Change (#400):**
+
+- *`chisel.writes`.* Lists the verbs the squad may use, per facade
+  (`tracker`: create, create-child, set-state, claim, label, comment; `vcs`:
+  branch, pr-create, description-set, comment, stack-init). The validator
+  rejects unknown facades and verbs.
+- *Fails closed.* A denied verb returns a failure the caller can read; callers
+  degrade (the PR description drift stays in the handoff file, as in detached
+  mode) rather than retry. No environment variable bypasses it.
+- *`squad-labels.sh` enforces it.* Every flow reaches the labels through that
+  script, so claim needs `claim` and review, needs-review and escalate need
+  `set-state`; the transition's own edits then pass through an in-process flag.
+- *Defaults.* Jira and Bitbucket start with `comment` off.
+- *Rejected:* a per-adapter allowlist. The policy is about what the user lets
+  the squad do, not about what a provider can do.
+
+> **Key decision:** the policy lives in the facade layer, once, and is checked
+> where every flow converges.
+
+---
+
+### Iteration 50: Jira adapter (#398)
+
+**Problem:** the facades had no tracker besides GitHub.
+
+**Change (#398):** `hooks/tracker/jira.sh` (REST v3, `curl` and `jq`) with
+`jira_site`, `jira_email`, `jira_project`, `jira_states`, `jira_link_type`,
+`jira_issue_type`, `jira_subtask_type` and `jira_fields`, all validated.
+Squad states map to Jira statuses and moves go through transitions, since Jira
+has no labels to swap. The token comes from the keychain or `SQUAD_JIRA_TOKEN`
+and reaches `curl` through a descriptor, never argv. Keychain and `curl`
+plumbing moved to `squad-http.sh` so the next adapter shares it. Tests run over
+recorded responses and a `curl` shim.
+
+- *Rejected:* creating Jira statuses from the squad. Workflows are the team's;
+  an unmapped status is an error that names the key.
+
+> **Key decision:** the adapter maps onto the project's workflow instead of
+> imposing one.
+
+**Open:** no live acceptance yet; the direction of the Blocks link is
+unverified (5.13).
+
+---
+
+### Iteration 51: Bitbucket adapter (#399)
+
+**Problem:** the forge side of the facade had only GitHub.
+
+**Change (#399):** `hooks/vcs/bitbucket.sh` (REST 2.0) for PR create, lookup,
+view, list, merged state, diff and description. `pr-data` is mapped to the
+GitHub PR vocabulary the stats, retro and atlas readers already use.
+`mergedAt` is the merge commit's date, with `updated_on` as a fallback that
+`mergedAtSource` marks, because `updated_on` moves on any later activity.
+`description-set` keeps reviewers and `close_source_branch`, since a PUT
+replaces what it does not repeat. `diff` uses the PR's own diff when it exists
+and says when it falls back to local git. `stack-init` is unsupported and
+exits 10 with a reason.
+
+- *Rejected:* emulating stacked-branch retargeting. Bitbucket cannot retarget a
+  PR the way the squad relies on, so the verb says so and Ralph continues.
+
+> **Key decision:** an unsupported verb is a stated exit, not a quiet no-op.
+
+**Open:** live acceptance (5.13).
+
+---
+
+### Iteration 52: Config validation, unmapped cwd and drift keys (#413, #395, #404)
+
+**Problem:** three small defects, each found in use. A config that was not an
+object, or a non-string `mode`, crashed the validator with a traceback;
+`squad-labels.sh` built a vault path from an empty project name in an unmapped
+directory; and the architecture-drift thresholds were fixed in code.
+
+**Change:** the validator guards types and reports violations instead of
+raising (#413); `squad-labels.sh` exits 10 with `no project mapped for <root>;
+run /seed or /lore start` right after path resolution, before any tracker call
+(#395); `chisel.architecture_drift.{days,commits}` is accepted, validated and
+documented, and the vault check prints an `ARCHITECTURE_DRIFT` line (#404).
+Merged with the providers lane, the order in `squad-labels.sh` is resolve,
+unmapped guard, then write policy and adapter logic.
+
+> **Key decision:** the unmapped check comes before the policy check, since the
+> policy is read from the project's config and there is no project to read.
+
+---
+
+### Iteration 53: Batch 2026-11-08: integration branches and what the batch taught
+
+**Setup.** The work ran as one batch and was assembled into four integration
+branches so plugin versions can be tested side by side: `int/readiness` (#420
+plus #482-#486, #459, #480), `int/providers` (that plus #397, #400, #398,
+#399), `int/fixes` (#420 plus #413, #395, #404) and `int/all` (everything).
+Each is a plain merge of reviewed branches, so a regression can be bisected to
+one lane.
+
+**Source of #482-#486.** Google's elephant-goldfish-model (EGM) was the
+reference: a fresh reader that judges the issue as Cody receives it (#482),
+zero-decision narrowed to interface-level decisions (#483), and typed
+responses between Cody and Reven (#485, #486).
+
+**What the batch taught:**
+
+- *A strict parser met a natural format.* A live run showed Cody's own
+  fix-response format failing the strict #485 parser. The parser was made
+  tolerant (list markers, verb variants, notes) in #486. A format written for a
+  model must accept what the model naturally writes.
+- *Targeted tests missed a regression.* The full-suite run caught a safe-tmproot
+  regression that each issue's targeted tests did not. Per-issue test scoping
+  is a speed choice, and the full suite stays the integration gate.
+- *Wrong stacked branch.* Cody once pushed onto the wrong branch because the
+  worktree was left on the base branch. Ralph now tells Cody to create the
+  branch first and to push with an explicit refspec.
+- *Turn-limit stalls.* Two stalls on the large #397 left no checkpoint commit.
+  The 4c checkpoint rule exists for this; the stall shows it must be followed on
+  large issues, not only small ones.
+- *Vault checkout off main.* Switching the vault checkout away from `main`
+  mid-batch redirected `squad-progress` writes onto that branch. That is a bug
+  for #420's write path, which must not follow whatever branch the vault is on.
+- *Planned graph vs structure trail.* Ralph's planned graph uses scout unit
+  names, the structure trail uses directory units, so drift is reported where
+  there is none.
+
+> **Key decision:** keep the integration branches as the unit of release testing
+> until the live acceptances in 5.13 pass.
+
+---
+
 ## 3. Final Architecture
 
 This section describes the repository as it stands after Iteration 34.
@@ -1872,6 +2088,19 @@ The harness spectrum, cheapest first:
 Ralph stacks each issue's branch on its latest blocker. That is lossless for a chain but wrong for a diamond: when an issue has two blockers that are not themselves ordered (#214 needed #211 and #212; #220 needed #213, #217 and #219), the branch contains only one of them and silently drops the others. Batch 1a avoided the problem by running a linear stack in topological order.
 
 > **Action:** specify the rule in Ralph for multi-blocker issues: stack on a merge of all blockers, or fall back to a linear stack when the graph has diamonds, and make Ralph report which it chose. Decide before parallel chains (later batch) make linearizing unavailable.
+
+### 5.13 Batch 2026-11-08 acceptance and bugs
+
+Not yet verified live, or known and unfixed:
+
+- **Jira acceptance.** The direction of the `Blocks` link between issues (which side is "blocks") is unverified against a real site.
+- **Bitbucket acceptance.** Whether the PUT in `description-set` keeps reviewers, the length of the merge hash in the PR payload, and `pr-list` pagination are verified only over recorded responses.
+- **`forge-already-covered` live eval** has not been run.
+- **`reader-blockers` live eval** has not been run since the graders were tightened.
+- **Vault branch switch.** `squad-progress` writes follow whatever branch the vault checkout is on; they must target `main`. Bug for #420's write path.
+- **Planned-graph unit naming.** Ralph's planned graph uses scout unit names and the structure trail uses directory units, so drift is reported falsely.
+
+> **Action:** run each live check on a throwaway project, then close the point it belongs to. Fix the vault branch redirect and the unit naming before the next batch.
 
 ---
 
