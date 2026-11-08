@@ -109,7 +109,19 @@ and write:
     "writes": {
       "tracker": ["create", "create-child", "set-state", "claim", "label", "comment"],
       "vcs": ["branch", "pr-create", "description-set", "comment", "stack-init"]
-    }
+    },
+    "jira_site": "acme.atlassian.net",
+    "jira_email": "me@example.com",
+    "jira_project": "ABC",
+    "jira_states": {
+      "in-progress": "In Progress",
+      "needs-review": "In Review",
+      "done": "Done"
+    },
+    "jira_link_type": "Blocks",
+    "jira_issue_type": "Task",
+    "jira_subtask_type": "Sub-task",
+    "jira_fields": {}
   }
 }
 ```
@@ -137,6 +149,21 @@ verbs, except `comment` when `tracker` is `jira` or `vcs` is `bitbucket`. An
 empty list refuses every write of that facade. `branch` is local git and is
 never refused. JSON has no comments, so the verbs are described here, not in the
 file.
+
+`jira_*` keys (connected mode, only read when `tracker` is `jira`, hand-editable,
+never prompted for; the API token is never stored here, it comes from the OS
+keychain or `SQUAD_JIRA_TOKEN`): `jira_site`, `jira_email` and `jira_project`
+are required; `jira_states` maps the squad states (`in-progress`, `in-review`,
+`needs-review`, `done`, `blocked`) to Jira status names, and a state with no
+entry or no live transition to it is reported, never guessed;
+`jira_link_type` (default `Blocks`) is the issue link type that carries
+dependencies; `jira_issue_type` (default `Task`) and `jira_subtask_type`
+(default `Sub-task`) name the types Chisel creates under an epic or under a
+standard issue; `jira_fields` is merged verbatim into every created issue, in
+the wire shape the instance wants, for its required custom fields. With
+`tracker: jira`, connected mode works through the tracker facade like any
+other provider; Jira sub-tasks and links replace GitHub sub-issues, and the
+detached batch file stays the fallback.
 
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
 review-and-fix rounds per issue; hand-editable, never prompted for, and

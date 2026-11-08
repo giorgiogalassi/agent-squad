@@ -381,6 +381,23 @@ allowed, today's behaviour). `branch` is local git and is never refused.
 Contest evidence goes through `squad-progress.sh` to the vault and is not
 affected. `scripts/test-squad-writes.sh` covers every verb.
 
+### Jira Cloud
+
+`"tracker": "jira"` selects `hooks/tracker/jira.sh` (REST v3, `curl` and `jq`,
+no `gh`). Site, account email, project key, the state mapping and the link type
+live in `chisel-config.json` (keys in Chisel's configuration section); the API
+token never does: it is read from the macOS keychain
+(`security add-generic-password -s squad-jira -a <email> -w`) or, elsewhere, from
+`SQUAD_JIRA_TOKEN`, and is passed to `curl` through a descriptor, not argv.
+`batch` returns the open children of a parent or epic in dependency order
+(links of the configured type), `create`/`create-child` write the acceptance
+criteria and test specs as an Atlassian document with a `squad-<KEY>` label, and
+`claim`/`set-state` transition by the target status found in the live transition
+list (`squad-labels.sh` delegates to the adapter's `tracker_set_state`, so Cody
+and Ralph need no change). A missing mapping or transition is reported, never
+guessed. `comment` is off by default for Jira (write policy). Tests:
+`scripts/test-tracker-jira.sh` over recorded responses and `scripts/curl-shim/`.
+
 ### Adding a provider
 
 1. Write `hooks/tracker/<name>.sh` and/or `hooks/vcs/<name>.sh`: sourced

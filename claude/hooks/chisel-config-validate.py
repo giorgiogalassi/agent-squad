@@ -64,6 +64,14 @@ WRITES_VERBS = {
     "vcs": {"branch", "pr-create", "description-set", "comment", "stack-init"},
 }
 
+# Jira adapter keys (#398): plain strings, plus two objects (jira_states maps
+# squad state -> Jira status name; jira_fields is merged verbatim into create).
+JIRA_STRING_KEYS = {
+    "jira_site", "jira_email", "jira_project", "jira_link_type",
+    "jira_issue_type", "jira_subtask_type",
+}
+JIRA_STATES_KEYS = {"in-progress", "in-review", "needs-review", "done", "blocked", "ready"}
+
 SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
 
 
@@ -421,6 +429,44 @@ def validate_config(data, schema):
                                         "path": None,
                                     }
                                 )
+        if key in JIRA_STRING_KEYS and not (
+            isinstance(chisel[key], str) and chisel[key].strip()
+        ):
+            violations.append(
+                {"message": f"chisel.{key}: expected a non-empty string", "path": None}
+            )
+        if key == "jira_fields" and not isinstance(chisel[key], dict):
+            violations.append(
+                {"message": "chisel.jira_fields: expected an object", "path": None}
+            )
+        if key == "jira_states":
+            states = chisel[key]
+            if not isinstance(states, dict):
+                violations.append(
+                    {"message": "chisel.jira_states: expected an object", "path": None}
+                )
+            else:
+                for inner_key, status in states.items():
+                    if inner_key not in JIRA_STATES_KEYS:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.jira_states.{inner_key}: unknown key "
+                                    f"(expected one of {sorted(JIRA_STATES_KEYS)})"
+                                ),
+                                "path": ("chisel", "jira_states", inner_key),
+                            }
+                        )
+                    elif not isinstance(status, str) or not status.strip():
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.jira_states.{inner_key}: expected a "
+                                    "Jira status name"
+                                ),
+                                "path": None,
+                            }
+                        )
         if key == "project":
             project = chisel[key]
             if not isinstance(project, dict):

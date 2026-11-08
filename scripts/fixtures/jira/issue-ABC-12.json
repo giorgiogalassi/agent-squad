@@ -1,0 +1,70 @@
+{
+  "id": "16",
+  "key": "ABC-12",
+  "fields": {
+    "summary": "Wire the form",
+    "status": {
+      "name": "To Do",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "parent": {
+      "key": "ABC-10"
+    },
+    "labels": [
+      "squad-ABC-12"
+    ],
+    "issuetype": {
+      "name": "Sub-task",
+      "hierarchyLevel": -1
+    },
+    "subtasks": [],
+    "issuelinks": [
+      {
+        "id": "1",
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "inwardIssue": {
+          "key": "ABC-11"
+        }
+      },
+      {
+        "id": "1",
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "inwardIssue": {
+          "key": "ABC-9"
+        }
+      },
+      {
+        "id": "2",
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "outwardIssue": {
+          "key": "ABC-13"
+        }
+      },
+      {
+        "id": "3",
+        "type": {
+          "name": "Relates",
+          "inward": "relates to",
+          "outward": "relates to"
+        },
+        "inwardIssue": {
+          "key": "ABC-99"
+        }
+      }
+    ]
+  }
+}

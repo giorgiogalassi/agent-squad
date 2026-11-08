@@ -24,7 +24,9 @@
 # for the transitions. A tracker without labels (#398) provides its own by
 # defining tracker_set_state <id> <claim|review|needs-review|escalate>
 # [--reason T] [--handoff P] in its adapter; when defined it is used instead
-# and squad-labels.sh is not called. The github adapter does not define it.
+# and squad-labels.sh is not called (squad-labels.sh itself delegates to the hook
+# the same way, so Cody and Ralph reach it either way). The github adapter does not
+# define it. An adapter that does not load is a failure (20), never a fallback.
 # Detached mode: every write verb is refused (20), reads are not.
 # Write policy (#400): a write verb the project's chisel.writes.tracker does not
 # list is refused (20, REASON=policy: ...); see squad_policy_check.
@@ -44,7 +46,11 @@ _state_transition() {
   squad_resolve || squad_fail_incident squad-tracker 20 "cannot resolve project paths"
   squad_policy_check tracker "$pv" || exit 20
   _SQUAD_POLICY_TRANSITION=1   # in-process only (not exported): this transition's own label edits
-  if squad_resolve && squad_adapter_load tracker && declare -F tracker_set_state >/dev/null 2>&1; then
+  # A resolved provider whose adapter does not load is a failure, never a silent
+  # fallback to the GitHub label machine on a project that does not use GitHub.
+  squad_adapter_load tracker \
+    || squad_fail_incident squad-tracker 20 "tracker adapter '${TRACKER_PROVIDER:-github}' failed to load"
+  if declare -F tracker_set_state >/dev/null 2>&1; then
     tracker_set_state "$id" "$lv" "$@"
     exit $?
   fi
