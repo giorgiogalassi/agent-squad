@@ -131,6 +131,8 @@ check "run-row Contests: header and separator widened" "2" "$(grep -cE '^\| Issu
 sp "$V" run-row --issue '#5' --set 'Contests=1/-' --set Verdict=X
 check "run-row Contests: second write by name, other column kept" "| #5 | 5-a | main | 1 | 0 | - | X | running | 1/- |" "$(grep '^| #5 ' "$R")"
 sp "$V" run-row --issue '#5' --set 'Contests=1/-'; check "run-row Contests: repeat unchanged" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
+sp "$V" run-row --issue '#5' --set 'Contests=1/B2/B2,B3/contest'
+check "run-row Contests: four-field value stored" "| #5 | 5-a | main | 1 | 0 | - | X | running | 1/B2/B2,B3/contest |" "$(grep '^| #5 ' "$R")"
 sp "$V" run-status --value complete; check "direct: run-status" 1 "$(cnt "$R" '^Status: complete$')"
 check "direct: resume reads the counters before any fold" 1 "$(cnt "$R" '^\| #5 .*\| 1 \| 0 \|')"
 fold "$V"
