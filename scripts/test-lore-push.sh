@@ -17,6 +17,7 @@ unset SECOND_BRAIN_PATH
 export SQUAD_INCIDENTS=off GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
 HOOKS="$TMPROOT/hooks"; mkdir -p "$HOOKS" "$TMPROOT/bin"
 cp "$REPO_ROOT"/claude/hooks/{lore,lore-checkpoint.sh,lore-orient.sh,path-resolve.sh,squad-common.sh,squad-progress.sh,squad-incidents.sh,vault-check.sh,worktree.sh,squad-session.sh} "$HOOKS/" 2>/dev/null
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$HOOKS/"   # provider adapters (#397)
 LORE="$HOOKS/lore"
 cat > "$TMPROOT/bin/gh" <<'EOP'
 #!/usr/bin/env bash

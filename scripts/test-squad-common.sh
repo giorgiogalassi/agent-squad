@@ -16,6 +16,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 # Hooks dir copy: library and path-resolve.sh side by side, as installed.
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/realbin" "$TMPROOT/shimbin"
 cp "$REPO_ROOT"/claude/hooks/path-resolve.sh "$COMMON" "$TMPROOT/hooks/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 # Recording gh stub: one argv element per line, so exact argv is checkable.
 cat > "$TMPROOT/realbin/gh" <<'EOP'
 #!/usr/bin/env bash

@@ -51,11 +51,11 @@ vcs_pr_for_branch() {
       case "$row" in *" "*) echo "BASE=${row#* }" ;; esac ;;
     all)
       gh pr list --head "$b" --state all --json state,headRefOid --jq '.[]|"\(.state) \(.headRefOid)"' 2>/dev/null \
-        | while read -r s o; do [ -n "$s" ] && { echo "STATE=$s"; echo "HEAD_OID=$o"; }; done
+        | while read -r s o || [ -n "$s" ]; do [ -n "$s" ] && { echo "STATE=$s"; echo "HEAD_OID=$o"; }; done
       return "${PIPESTATUS[0]}" ;;
     merged)
       gh pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null \
-        | while read -r o; do [ -n "$o" ] && echo "HEAD_OID=$o"; done
+        | while read -r o || [ -n "$o" ]; do [ -n "$o" ] && echo "HEAD_OID=$o"; done
       return "${PIPESTATUS[0]}" ;;
     *) echo "squad: pr-for-branch: unknown state '$st'" >&2; return 2 ;;
   esac

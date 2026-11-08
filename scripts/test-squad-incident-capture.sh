@@ -16,6 +16,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 # Repo hooks copied side by side (incidents store resolved via own dir).
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/stubbin" "$TMPROOT/shimbin"
 cp "$REPO_ROOT"/claude/hooks/*.sh "$REPO_ROOT"/claude/hooks/*.py "$TMPROOT/hooks/" 2>/dev/null
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 ln -s "$REPO_ROOT/scripts/gh-shim/gh" "$TMPROOT/shimbin/gh"
 cat > "$TMPROOT/stubbin/gh" <<'EOP'
 #!/usr/bin/env bash
