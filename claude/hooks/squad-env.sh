@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Squad SessionStart env export. Runs path-resolve.sh once and appends the six
+# Squad SessionStart env export. Runs path-resolve.sh once and appends the resolved
 # resolved values to $CLAUDE_ENV_FILE as shell-quoted `export` lines, so every
 # later Bash call in the session (skills and subagents included) sees
 # SQUAD_VAULT_PATH, SQUAD_PROJECT_ROOT, SQUAD_DISPLAY_NAME, SQUAD_DIR and
-# SQUAD_TRACKER_MODE, SQUAD_STATE_DIR and LORE_STATE_DIR (same value: the
+# SQUAD_TRACKER_MODE, SQUAD_TRACKER_PROVIDER, SQUAD_VCS_PROVIDER, SQUAD_STATE_DIR and LORE_STATE_DIR (same value: the
 # per-project vault state directory) and LORE_BIN (the dispatcher shim path)
 # without re-running the script. path-resolve.sh stays the
 # single source of the algorithm (PATH_RESOLUTION.md); this hook only transports
@@ -100,7 +100,7 @@ install_lore_shim() {
 install_lore_shim
 
 # Parsed line by line, never eval'd: the output is not shell-quoted.
-V_VAULT=""; V_ROOT=""; V_NAME=""; V_DIR=""; V_MODE=""; V_STATE=""; GOT_ROOT=0
+V_VAULT=""; V_ROOT=""; V_NAME=""; V_DIR=""; V_MODE=""; V_STATE=""; V_TRK=github; V_VCS=github; GOT_ROOT=0
 while IFS='=' read -r _k _v; do
   case "$_k" in
     VAULT_PATH) V_VAULT="$_v" ;;
@@ -109,6 +109,8 @@ while IFS='=' read -r _k _v; do
     SQUAD_DIR) V_DIR="$_v" ;;
     TRACKER_MODE) V_MODE="$_v" ;;
     STATE_DIR) V_STATE="$_v" ;;
+    TRACKER_PROVIDER) V_TRK="$_v" ;;
+    VCS_PROVIDER) V_VCS="$_v" ;;
   esac
 done < <(bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ "$GOT_ROOT" = 1 ] || exit 0
@@ -116,7 +118,7 @@ done < <(bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 # Drop earlier lines for our own keys (idempotence), keep everything else.
 TMP="$(mktemp "${TMPDIR:-/tmp}/squad-env.XXXXXX" 2>/dev/null)" || exit 0
 if [ -f "$CLAUDE_ENV_FILE" ]; then
-  grep -Ev '^export (SQUAD_(VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|DIR|TRACKER_MODE|STATE_DIR)|LORE_(STATE_DIR|BIN))=' "$CLAUDE_ENV_FILE" > "$TMP" 2>/dev/null || true
+  grep -Ev '^export (SQUAD_(VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|DIR|TRACKER_MODE|STATE_DIR|TRACKER_PROVIDER|VCS_PROVIDER)|LORE_(STATE_DIR|BIN))=' "$CLAUDE_ENV_FILE" > "$TMP" 2>/dev/null || true
 fi
 {
   printf 'export SQUAD_VAULT_PATH=%s\n' "$(squote "$V_VAULT")"
@@ -125,6 +127,8 @@ fi
   printf 'export SQUAD_DIR=%s\n' "$(squote "$V_DIR")"
   printf 'export SQUAD_TRACKER_MODE=%s\n' "$(squote "$V_MODE")"
   printf 'export SQUAD_STATE_DIR=%s\n' "$(squote "$V_STATE")"
+  printf 'export SQUAD_TRACKER_PROVIDER=%s\n' "$(squote "$V_TRK")"
+  printf 'export SQUAD_VCS_PROVIDER=%s\n' "$(squote "$V_VCS")"
   printf 'export LORE_STATE_DIR=%s\n' "$(squote "$V_STATE")"
   [ -z "$LORE_BIN_PATH" ] || printf 'export LORE_BIN=%s\n' "$(squote "$LORE_BIN_PATH")"
 } >> "$TMP"

@@ -5,7 +5,7 @@ description: >
   branch name and the issue it addresses. Reven reads the diff, checks
   it against the acceptance criteria, and produces a structured review.
   Do NOT invoke for planning, implementation, or documentation tasks.
-allowed-tools: Agent, Bash(gh pr view:*), Bash(git diff:*)
+allowed-tools: Agent, Bash(bash:*), Bash(git diff:*)
 ---
 
 # Reven (entrypoint)
@@ -27,9 +27,8 @@ Before delegating, count the changed files. This is metadata, not
 reading the diff. Try in order, stopping at the first that yields a
 number:
 
-1. Connected mode, PR number or branch name: `gh pr view <pr-or-branch>
-   --json changedFiles --jq .changedFiles`. Detached mode: make no `gh`
-   call.
+1. Connected mode, PR number or branch name: `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh pr-view <pr-or-branch> --field changed-files`,
+   read `CHANGED_FILES`. Detached mode: make no VCS call.
 2. Otherwise `git diff --name-only <base>...<branch>`, run on its own
    (no `| wc -l`: a pipeline reports `wc`'s exit status, so a failed git
    would read as 0). Count lines only if the command succeeded and

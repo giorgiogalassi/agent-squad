@@ -42,7 +42,7 @@ check() {
   mode="$(printf '%s\n' "$OUT" | sed -n 's/^TRACKER_MODE=//p')"
   lines="$(printf '%s\n' "$OUT" | grep -c '^[A-Z_]*=')"
   errn="$(printf '%s' "$ERR" | grep -c .)"
-  if [ "$mode" = "$2" ] && [ "$lines" = "6" ] && [ "$errn" = "$3" ]; then
+  if [ "$mode" = "$2" ] && [ "$lines" = "8" ] && [ "$errn" = "$3" ]; then
     ok "$1"
   else
     bad "$1 (mode=$mode lines=$lines stderr_lines=$errn)"
@@ -80,7 +80,7 @@ if command -v jq >/dev/null 2>&1; then
   run ""
   [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local-only mapping -> DISPLAY_NAME" || bad "local-only mapping: $OUT"
   [ "$(val SQUAD_DIR)" = "$PROJ/.squad" ] && ok "local-only context repo -> SQUAD_DIR" || bad "local context: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c '=')" = 6 ] && ok "six output lines (incl. STATE_DIR)" || bad "output shape: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c '=')" = 8 ] && ok "eight output lines (incl. STATE_DIR, TRACKER_PROVIDER, VCS_PROVIDER)" || bad "output shape: $OUT"
   printf '{"projects":{"%s":"tracked-name"}}\n' "$PROJ" > "$MAIN"
   run ""
   [ "$(val DISPLAY_NAME)" = "secret-client" ] && ok "local mapping wins over tracked" || bad "merge precedence: $OUT"
@@ -167,7 +167,7 @@ if command -v jq >/dev/null 2>&1; then
   printf '{"projects":{}}\n' > "$V7/lore-config.json"
   O="$(cd "$U7" && SECOND_BRAIN_PATH="$V7" bash "$H/path-resolve.sh" 2>"$TMPROOT/err441")"
   case "$O" in *"projects//"*) bad "#441: output has projects//: $O" ;; *) ok "#441: no output line contains projects//" ;; esac
-  case "$O" in *"SQUAD_DIR="$'\n'*"STATE_DIR=") ok "#441: SQUAD_DIR and STATE_DIR empty with no project" ;; *) bad "#441 empty dirs: $O" ;; esac
+  case "$O" in *"SQUAD_DIR="$'\n'*"STATE_DIR="$'\n'*) ok "#441: SQUAD_DIR and STATE_DIR empty with no project" ;; *) bad "#441 empty dirs: $O" ;; esac
   case "$O" in *"TRACKER_MODE=detached"*) ok "#441: TRACKER_MODE detached" ;; *) bad "#441 mode: $O" ;; esac
   [ ! -s "$TMPROOT/err441" ] && ok "#441: no chisel-config.json not found on stderr" || bad "#441 stderr: $(cat "$TMPROOT/err441")"
 fi

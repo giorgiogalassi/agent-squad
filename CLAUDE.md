@@ -6,9 +6,10 @@ and is a soft, easily-skipped dependency, which is exactly what got
 removed in Iteration 19. Path resolution is the one deliberate exception,
 and it resolves the tension by being a *script*, not a shared skill or
 doc: the SessionStart hook `hooks/squad-env.sh` runs the plugin's
-`hooks/path-resolve.sh` once and exports five values to `$CLAUDE_ENV_FILE`
-(`SQUAD_VAULT_PATH`/`SQUAD_PROJECT_ROOT`/`SQUAD_DISPLAY_NAME`/`SQUAD_DIR`/`SQUAD_TRACKER_MODE`;
-`SQUAD_TRACKER_MODE` is `detached` unless `chisel.mode` is provably `connected`),
+`hooks/path-resolve.sh` once and exports eight values to `$CLAUDE_ENV_FILE`
+(`SQUAD_VAULT_PATH`/`SQUAD_PROJECT_ROOT`/`SQUAD_DISPLAY_NAME`/`SQUAD_DIR`/`SQUAD_TRACKER_MODE`/`SQUAD_STATE_DIR`/`SQUAD_TRACKER_PROVIDER`/`SQUAD_VCS_PROVIDER`;
+`SQUAD_TRACKER_MODE` is `detached` unless `chisel.mode` is provably `connected`;
+the two providers come from `chisel.tracker`/`chisel.vcs`, default `github`, a non-name value falls back to `github`),
 which every later Bash call in the session, subagents included, sees.
 Each skill and agent carries one fallback line instead of a protocol block:
 use those variables, and if `SQUAD_PROJECT_ROOT` is unset (headless

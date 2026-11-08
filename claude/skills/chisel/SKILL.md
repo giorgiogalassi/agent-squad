@@ -45,18 +45,24 @@ to skip Chisel, confirm with the user before proceeding.
 required fields, read it silently and proceed; else run the
 configuration flow first.
 
-**Preflight (connected mode, before the first `gh` call).** `which gh`;
-`gh auth status`; `gh --version` ≥ 2.95.0 (required for
-`--parent`/`--blocked-by`). If `chisel.project` is configured, extend
-this same preflight before creating anything: confirm the `project`
-scope is present in the `gh auth status` token-scopes line (if missing,
-tell the user to run `gh auth refresh -s project`), then confirm the <!-- lint:gh-ok -->
-project exists and is reachable with
-`gh project view <project.number> --owner <project.owner>`. On any
-preflight failure print the error and stop before creating anything —
-never fail mid-batch leaving a partial issue graph or a project half
-populated. If creation still fails partway, list what was and wasn't
-created before stopping.
+**Preflight (connected mode, before the first tracker call).**
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh preflight [--project-owner <project.owner> --project-number <project.number>]
+```
+
+Pass the project flags when `chisel.project` is configured, so the same
+preflight confirms the tracker's project access before anything is created.
+Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 10 | Print the stderr reason and stop before creating anything — never fail mid-batch leaving a partial issue graph or a project half populated. |
+| 20 | Same as 10. |
+
+If creation still fails partway, list what was and wasn't created before
+stopping.
 
 ## Configuration flow
 
@@ -86,6 +92,8 @@ and write:
   "chisel": {
     "mode": "connected",
     "review_label": "...",
+    "tracker": "github",
+    "vcs": "github",
     "state_labels": {
       "in_progress": "in-progress",
       "in_review": "in-review",
@@ -106,9 +114,11 @@ and write:
 `review_label`). `project` is optional — omit the key entirely when the
 answer is 'none'; only prompted for as part of this connected-mode
 configuration flow above, never as a stand-alone question when a config
-already exists. GitHub is the only connected tracker — the config
-carries no `tracker` field; if found, report `tracker` by name as
-disavowed, not as a generic unknown key. A config without `mode` is
+already exists. `tracker` and `vcs` name the provider adapters
+(`hooks/tracker/<tracker>.sh`, `hooks/vcs/<vcs>.sh`) the facades load;
+both default to `github` when absent, are hand-editable and never prompted
+for. Adding a provider is one adapter file plus one of these values (README,
+"Adding a provider"). A config without `mode` is
 connected (backward compatibility).
 
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
@@ -271,50 +281,45 @@ and no batch file is written until this section has run, in both modes.
 
 ## Issue creation (connected mode)
 
-`gh` via Bash. Titles: verb + noun, ≤60 chars. Bodies: markdown —
-context, acceptance criteria, test specs, notes; never a `Blocked by:` line
-(dependencies are native GitHub state, queryable via
-`gh issue view --json parent,blockedBy,blocking`).
+Through `squad-tracker.sh` (the tracker facade). Titles: verb + noun, ≤60
+chars. Bodies: markdown — context, acceptance criteria, test specs, notes;
+never a `Blocked by:` line (dependencies are native tracker state, queryable
+with `squad-tracker.sh get <id>`, keys `PARENT`, `BLOCKED_BY`, `BLOCKING`).
+Every create verb reads `ID` and `URL`; exit 20 means the issue was not
+created: report it and stop the batch.
 
 1. Decompose first. Exactly one issue → create it flat, no parent.
 2. 2+ sub-issues → create the parent container first:
-   `gh issue create --title "<batch title>" --body "<summary from the input>"`,
-   capture its number from the printed URL. The parent is never executed
-   or claimed — it only groups.
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh create --title "<batch title>" --body "<summary from the input>"`.
+   The parent is never executed or claimed — it only groups.
 3. Create each sub-issue in topological order (blockers before
-   dependents — `--blocked-by` needs an existing number):
+   dependents — `--blocked-by` needs an existing id):
    ```bash
-   gh issue create --title "<title>" --body "<description>" \
-     --parent <parent-number> \
-     --blocked-by <blocker-number>[,...]
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh create-child <parent-id> --title "<title>" --body "<description>" \
+     --blocked-by <blocker-id>[,...]
    ```
-   Omit `--parent` in the single-issue case; omit `--blocked-by` when
-   independent. The body is the draft file with its `## Readiness` section.
-   An issue whose `BLOCKERS` is above zero also gets `--label <state_labels.blocked>`
-   (row L10 of `LABEL_STATE_MACHINE.md`; the `Readiness: blocked (<n>)` line is
-   already in the body). Blocker-side recording (rare):
-   `gh issue edit <blocker> --add-blocking <dependent>`.
+   Use plain `create` (no parent) in the single-issue case; omit
+   `--blocked-by` when independent. The body is the draft file with its
+   `## Readiness` section. An issue whose `BLOCKERS` is above zero also gets
+   `--label <state_labels.blocked>` (row L10 of `LABEL_STATE_MACHINE.md`; the
+   `Readiness: blocked (<n>)` line is already in the body). Blocker-side
+   recording (rare):
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh link-blocking <blocker> <dependent>`.
 4. Apply `review_label` to every created issue (parent included) at
-   creation (`--label`), or after the fact with `--add-label`. Skip
-   entirely when `none`. Chisel is the only place that ever adds
-   `review_label` — see `LABEL_STATE_MACHINE.md` for where and why it
-   is removed later.
+   creation (`--label`), or after the fact with
+   `squad-tracker.sh label <id> --add <review_label>`. Skip entirely when
+   `none`. Chisel is the only place that ever adds `review_label` — see
+   `LABEL_STATE_MACHINE.md` for where and why it is removed later.
 5. If `chisel.project` is configured, add every created issue (parent
-   included) to it as a separate step right after that issue is
-   created — capture the issue's URL from the `gh issue create` output
-   and run:
+   included) to it as a separate step right after that issue is created:
    ```bash
-   gh project item-add <project.number> --owner <project.owner> --url <issue-url>
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh project-add <issue-url> --owner <project.owner> --number <project.number>
    ```
-   Do not use `gh issue create --project`: on gh 2.95.0 that flag takes
-   a project **title**, not the stable owner+number pair Chisel already
-   verified in preflight, and folding it into issue creation would mean
-   a project-side failure surfaces as a `gh issue create` failure —
-   muddying whether the issue itself was created. Keeping it separate
-   means an `item-add` failure never loses or retries the issue: report
-   it inline (`WARNING: could not add #<n> to project: <error>`) and
-   continue creating the rest of the batch. Skip this step entirely
-   when `chisel.project` is absent.
+   Kept separate from creation so a project-side failure never loses or
+   retries the issue: on a non-zero exit report it inline
+   (`WARNING: could not add #<n> to project: <error>`) and continue creating
+   the rest of the batch. Skip this step entirely when `chisel.project` is
+   absent.
 
 ## Issue creation (detached mode)
 

@@ -50,10 +50,10 @@ squad_fail_incident() {
 }
 
 # squad_resolve: run path-resolve.sh and export VAULT_PATH, PROJECT_ROOT,
-# DISPLAY_NAME, SQUAD_DIR, TRACKER_MODE, STATE_DIR. Returns 0, or 20 if resolution fails.
+# DISPLAY_NAME, SQUAD_DIR, TRACKER_MODE, STATE_DIR, TRACKER_PROVIDER, VCS_PROVIDER. Returns 0, or 20 if resolution fails.
 squad_resolve() {
   local out line key val
-  unset TRACKER_MODE
+  unset TRACKER_MODE TRACKER_PROVIDER VCS_PROVIDER
   if ! out="$(bash "$SQUAD_HOOKS_DIR/path-resolve.sh" 2>/dev/null)"; then
     echo "squad: path-resolve.sh failed" >&2
     return 20
@@ -61,7 +61,7 @@ squad_resolve() {
   while IFS= read -r line; do
     key="${line%%=*}"; val="${line#*=}"
     case "$key" in
-      VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|SQUAD_DIR|TRACKER_MODE|STATE_DIR)
+      VAULT_PATH|PROJECT_ROOT|DISPLAY_NAME|SQUAD_DIR|TRACKER_MODE|STATE_DIR|TRACKER_PROVIDER|VCS_PROVIDER)
         export "$key=$val" ;;
     esac
   done <<EOF2
@@ -71,6 +71,8 @@ EOF2
     echo "squad: path-resolve.sh did not emit TRACKER_MODE" >&2
     return 20
   fi
+  # Providers default to github when path-resolve.sh does not name them.
+  export TRACKER_PROVIDER="${TRACKER_PROVIDER:-github}" VCS_PROVIDER="${VCS_PROVIDER:-github}"
   return 0
 }
 
@@ -134,21 +136,77 @@ EOF_PATTERNS
   return 0
 }
 
-# squad_gh_write <argv...>: the ONLY place a mutating gh verb may run.
-# Detached (or unresolved) mode: refuses, executes nothing, returns 20.
-# Connected: runs `gh <argv>`; returns 0 on success, 20 on any gh failure
-# (gh's own exit code is never passed through). gh stdout goes to stderr so
-# stdout stays contract-only.
-squad_gh_write() {
+# squad_write_guard: the one detached-mode refusal. 0 in connected mode; in
+# detached (or unresolved) mode it prints one stderr line and returns 20 so
+# the caller executes nothing.
+squad_write_guard() {
   if [ "${TRACKER_MODE:-}" != "connected" ]; then
-    echo "squad: refused gh write in ${TRACKER_MODE:-unresolved} mode" >&2
+    echo "squad: refused write in ${TRACKER_MODE:-unresolved} mode" >&2
     return 20
   fi
-  if gh "$@" >&2; then
+  return 0
+}
+
+# squad_provider_write <cli> <argv...>: the ONLY mutating path of every
+# adapter. Guarded by squad_write_guard; runs `<cli> <argv>`; returns 0 on
+# success, 20 on any failure (the CLI's own exit code is never passed
+# through). The CLI's stdout goes to stderr so stdout stays contract-only.
+squad_provider_write() {
+  local cli="$1"
+  shift
+  squad_write_guard || return 20
+  if "$cli" "$@" >&2; then
     return 0
   fi
-  echo "squad: gh $1 failed" >&2
+  echo "squad: $cli $1 failed" >&2
   return 20
+}
+
+# squad_adapter_load <tracker|vcs>: source the adapter file of the configured
+# provider (TRACKER_PROVIDER / VCS_PROVIDER, else the session export
+# SQUAD_TRACKER_PROVIDER / SQUAD_VCS_PROVIDER, else github) from
+# <hooks>/<kind>/<provider>.sh. Adding a provider = one adapter file plus one
+# chisel-config.json value. 2 on a bad name, 10 when no such adapter exists.
+squad_adapter_load() {
+  local kind="$1" prov f
+  case "$kind" in
+    tracker) prov="${TRACKER_PROVIDER:-${SQUAD_TRACKER_PROVIDER:-github}}" ;;
+    vcs) prov="${VCS_PROVIDER:-${SQUAD_VCS_PROVIDER:-github}}" ;;
+    *) echo "squad: unknown adapter kind '$kind'" >&2; return 2 ;;
+  esac
+  case "$prov" in ''|*[!a-z0-9_-]*) echo "squad: invalid $kind provider '$prov'" >&2; return 2 ;; esac
+  f="$SQUAD_COMMON_DIR/$kind/$prov.sh"
+  [ -f "$f" ] || { echo "squad: no $kind adapter for '$prov' ($f)" >&2; return 10; }
+  # shellcheck disable=SC1090
+  . "$f"
+}
+
+# squad_tracker <verb> [args]: the tracker facade, in-process. squad-tracker.sh
+# is the same call as a command. Verbs: see hooks/squad-tracker.sh. A verb the
+# provider lacks returns 10.
+squad_tracker() { _squad_facade tracker tracker_ "$@"; }
+# squad_vcs <verb> [args]: the VCS facade, in-process (see squad-vcs.sh).
+squad_vcs() { _squad_facade vcs vcs_ "$@"; }
+_squad_facade() {
+  local kind="$1" pre="$2" verb="${3:-}" fn
+  [ -n "$verb" ] || { echo "squad: $kind: verb required" >&2; return 2; }
+  shift 3
+  squad_adapter_load "$kind" || return $?
+  fn="$pre$(printf '%s' "$verb" | tr - _)"
+  case "$verb" in *[!a-z-]*) echo "squad: invalid $kind verb '$verb'" >&2; return 2 ;; esac
+  if ! declare -F "$fn" >/dev/null 2>&1; then
+    echo "squad: $kind verb '$verb' is not supported by this provider" >&2
+    return 10
+  fi
+  "$fn" "$@"
+}
+
+# squad_gh_write <argv...>: raw-argv entry to the github tracker adapter's
+# write path (tracker_write). Kept for callers and tests that hold a literal
+# argv; detached refusal is squad_write_guard, shared by every adapter.
+squad_gh_write() {
+  TRACKER_PROVIDER=github squad_adapter_load tracker || return 20
+  tracker_write "$@"
 }
 
 # squad_record_local <handoff> <line>: append <line> to <handoff> unless an
@@ -209,7 +267,7 @@ squad_vault_pr_mode() {
 # squad_vault_main_local <vault>: 0 when the vault has no remote workflow (#427):
 # `"vault_main": "local-only"` in lore-config.json, or (no explicit "pr"/"direct")
 # no `origin` remote. Such a vault commits on whatever branch is checked out and
-# never pushes, opens a PR or calls gh.
+# never pushes, opens a PR or calls the provider.
 squad_vault_main_local() {
   local cfg="$1/lore-config.json"
   if [ -f "$cfg" ]; then
@@ -279,16 +337,17 @@ _squad_vault_pr_mode_on() {
   return "$rc"
 }
 
-# squad_vault_bounded_gh <vault> <gh args...>: run gh in <vault>, print its stdout, stop it
-# after SQUAD_FETCH_TIMEOUT seconds (default 8; background pid + watcher, as in
-# squad_vault_ff: macOS has no `timeout`). Returns gh's status, 1 on timeout or error.
-squad_vault_bounded_gh() {
+# squad_vault_bounded_vcs <vault> <vcs verb args...>: run a VCS facade verb in <vault>, print
+# its stdout, stop it after SQUAD_FETCH_TIMEOUT seconds (default 8; background pid +
+# watcher, as in squad_vault_ff: macOS has no `timeout`). Returns the verb's status, 1 on
+# timeout or error.
+squad_vault_bounded_vcs() {
   local v="$1" bound="${SQUAD_FETCH_TIMEOUT:-8}" out gpid wpid rc
   shift
   out="$(mktemp 2>/dev/null)" || return 1
-  ( cd "$v" && exec gh "$@" ) >"$out" 2>/dev/null </dev/null &
+  ( cd "$v" && squad_vcs "$@" ) >"$out" 2>/dev/null </dev/null &
   gpid=$!
-  ( sleep "$bound"; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
+  ( sleep "$bound"; pkill -P "$gpid" 2>/dev/null; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
   wpid=$!
   wait "$gpid" 2>/dev/null; rc=$?
   pkill -P "$wpid" 2>/dev/null; kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
@@ -328,8 +387,8 @@ EOL
 # without merging and no PR of the name is open (#467, #472): those commits were
 # rejected, so a session must not carry them into a new PR. Decided by the tip, not the
 # name: a branch recreated under the name of a closed PR, or with commits added after
-# the close, is new work and is reused. Needs gh; without gh, offline or on any error:
-# 1, the branch is reused as before. Write path only: one gh call per local branch.
+# the close, is new work and is reused. Needs the provider CLI; without it, offline or on any error:
+# 1, the branch is reused as before. Write path only: one provider call per local branch.
 squad_vault_pr_closed() {
   local v="$1" b="$2" st oids cd tip key
   # Already found closed in this call (the open-worktree scan, then the suffix scan).
@@ -338,10 +397,12 @@ ${_SQUAD_PR_CLOSED:-}
 " in *"
 $b
 "*) return 0 ;; esac
-  command -v gh >/dev/null 2>&1 || return 1
+  squad_vcs available || return 1
   # One bounded call (SQUAD_FETCH_TIMEOUT, default 8 s): a slow or hung network counts
   # as "not known closed", so SessionStart never waits on it for long.
-  st="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state all --json state,headRefOid --jq '.[]|"\(.state) \(.headRefOid)"')" || return 1
+  st="$(squad_vault_bounded_vcs "$v" pr-for-branch "$b" --state all)" || return 1
+  # STATE=/HEAD_OID= pairs -> "STATE OID" lines, as the checks below read them.
+  st="$(printf '%s\n' "$st" | sed -n 's/^STATE=//p;s/^HEAD_OID=//p' | paste -d' ' - -)"
   case "
 $st
 " in *"
@@ -364,9 +425,9 @@ CLOSED "*) ;; *) return 1 ;; esac
   return 0
 }
 
-# squad_vault_landed <vault> <branch> [gh]: 0 when the branch's work already reached
+# squad_vault_landed <vault> <branch> [vcs]: 0 when the branch's work already reached
 # origin's main (merge, squash or rebase): its commits are ahead of main but every
-# file it changed equals main's, or (gh given, connected) a merged PR has this tip
+# file it changed equals main's, or (vcs given, connected) a merged PR has this tip
 # as its head. A branch with no commits and a tip equal to main is empty, not landed.
 squad_vault_landed() {
   local v="$1" b="$2" br0 base n tip mb f any=0 oid
@@ -378,8 +439,8 @@ squad_vault_landed() {
   if [ "${n:-0}" -eq 0 ]; then
     [ "$tip" != "$(git -C "$v" rev-parse "$base")" ]; return
   fi
-  if [ "${3:-}" = gh ]; then
-    oid="$(squad_vault_bounded_gh "$v" pr list --head "$b" --state merged --json headRefOid --jq '.[].headRefOid')"
+  if [ "${3:-}" = vcs ]; then
+    oid="$(squad_vault_bounded_vcs "$v" pr-for-branch "$b" --state merged | sed -n 's/^HEAD_OID=//p')"
     squad_vault_tip_in_heads "$v" "$b" "$oid" && return 0
   fi
   mb="$(git -C "$v" merge-base "$base" "$b" 2>/dev/null)" || return 1
@@ -653,16 +714,16 @@ squad_vault_rroot() {
 # and open its PR (an open one is updated by the push). Branches whose work already
 # landed are dropped (worktree and local branch) instead of pushed. Gated on the
 # vault's PR mode and an origin remote, not on TRACKER_MODE: the vault is the user's
-# own repo, so pushing to it is not a tracker write (hence plain gh, not squad_gh_write). Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
+# own repo, so pushing to it is not a tracker write (hence a plain VCS facade call, not a write guarded by tracker mode). Sets SQUAD_VAULT_PUSHED to the number of pushes plus PRs created.
 # A branch of a local-only project (#351) is never pushed; the project is read from each
-# branch name (lore/<project>-<YYYY-MM-DD>[-N]), not from the caller. Without gh on PATH the
+# branch name (lore/<project>-<YYYY-MM-DD>[-N]), not from the caller. Without the provider CLI on PATH the
 # branch is still pushed and one stderr notice names the manual step: not a failure.
-# Returns 0 done or nothing to do, 20 on push failure or a failure of a present gh.
+# Returns 0 done or nothing to do, 20 on push failure or a failure of a present provider CLI.
 squad_vault_finish() {
   local v="$1" wt b bproj br0 base n open tip rtip rc=0 hasgh=1 url
   SQUAD_VAULT_PUSHED=0
   squad_vault_main_local "$v" && return 0
-  command -v gh >/dev/null 2>&1 || hasgh=0
+  squad_vcs available || hasgh=0
   squad_vault_pr_mode_any "$v" || return 0
   git -C "$v" remote get-url origin >/dev/null 2>&1 || return 0
   br0="$(squad_vault_default_branch "$v")" || return 0
@@ -674,7 +735,7 @@ squad_vault_finish() {
     case "$b" in lore/*) ;; *) continue ;; esac
     bproj="$(printf '%s' "${b#lore/}" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$//')"
     squad_local_only "$v" "$bproj" && continue
-    if squad_vault_landed "$v" "$b" "$([ "$hasgh" = 1 ] && echo gh)"; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
+    if squad_vault_landed "$v" "$b" "$([ "$hasgh" = 1 ] && echo vcs)"; then squad_vault_drop "$v" "$wt" "$b" || rc=20; continue; fi
     n="$(git -C "$v" rev-list --count "$base..$b" 2>/dev/null)"
     [ "${n:-0}" -gt 0 ] || continue
     # Closed unmerged (#467): rejected work is neither pushed nor re-PR'd, nor dropped.
@@ -687,12 +748,12 @@ squad_vault_finish() {
     fi
     if [ "$hasgh" = 0 ]; then
       url="$(git -C "$v" remote get-url origin | sed -n 's|^git@github.com:\(.*\)$|https://github.com/\1|p; s|^\(https://github.com/.*\)$|\1|p' | sed 's|\.git$||')"
-      echo "squad: gh not found; $b pushed, open its PR manually${url:+: $url/compare/$br0...$b}" >&2
+      echo "squad: $(squad_vcs cli-name | sed -n 's/^CLI_NAME=//p') not found; $b pushed, open its PR manually${url:+: $url/compare/$br0...$b}" >&2
       continue
     fi
-    open="$(cd "$v" && gh pr list --head "$b" --state open --json number --jq '.[0].number // empty' 2>/dev/null)"
+    open="$(cd "$v" && squad_vcs pr-for-branch "$b" --state open 2>/dev/null | sed -n 's/^PR=//p')"
     case "$open" in ''|*[!0-9]*) ;; *) continue ;; esac
-    ( cd "$v" && gh pr create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
+    ( cd "$v" && squad_vcs pr-create --head "$b" --base "$br0" --title "lore: ${b#lore/}" \
         --body "Vault changes written by Lore during one session ($n commit(s))." >&2 ) \
       && SQUAD_VAULT_PUSHED=$((SQUAD_VAULT_PUSHED+1)) || rc=20
   done

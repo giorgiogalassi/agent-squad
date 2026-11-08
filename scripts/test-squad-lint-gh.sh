@@ -47,15 +47,25 @@ out="$(run "$TMP/d")"
 printf '%s\n' "$out" | grep -q 'lint-allowlist-1b.txt:.*retires' && ok "tag-less allowlist line is reported" || bad "tag-less allowlist line is reported"
 bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$TMP/d" >/dev/null 2>&1 && bad "tag-less allowlist exits non-zero" || ok "tag-less allowlist exits non-zero"
 
-# 5. gh api graphql: query allowed, mutation fenced block rejected
+# 5. since #397 reads are violations too (the facades own every call)
 fixture "$TMP/e"
-printf '\n```bash\ngh api graphql -f query=%s\n```\n' "'query { x }'" >> "$TMP/e/claude/agents/cody.md"
+printf '\nRun gh pr view 3 --json body now.\n' >> "$TMP/e/claude/agents/cody.md"
 out="$(run "$TMP/e")"
-printf '%s\n' "$out" | sed -n '/== 6/,/== summary/p' | grep -q '\[FAIL\]' && bad "graphql query is a read" || ok "graphql query is a read"
+printf '%s\n' "$out" | grep -q 'cody.md:.*gh pr view 3' && ok "a read form is rejected outside the adapters" || bad "a read form is rejected outside the adapters"
 fixture "$TMP/f"
-printf '\n```bash\ngh api graphql -f query=%s\n# mutation\n```\n' "'x'" >> "$TMP/f/claude/agents/cody.md"
+printf '\n```bash\ngh api graphql -f query=%s\n```\n' "'query { x }'" >> "$TMP/f/claude/agents/cody.md"
 out="$(run "$TMP/f")"
-printf '%s\n' "$out" | grep -q 'cody.md:.*gh api graphql' && ok "graphql in a mutation block is rejected" || bad "graphql in a mutation block is rejected"
+printf '%s\n' "$out" | grep -q 'cody.md:.*gh api graphql' && ok "graphql query is rejected too" || bad "graphql query is rejected too"
+
+# 6. hooks are scanned; the github adapters are exempt
+fixture "$TMP/g"
+printf '\n# calls gh pr list directly\n' >> "$TMP/g/claude/hooks/squad-labels.sh"
+out="$(run "$TMP/g")"
+printf '%s\n' "$out" | grep -q 'squad-labels.sh:.*gh pr list' && ok "a hook with a gh call is rejected" || bad "a hook with a gh call is rejected"
+fixture "$TMP/h"
+printf '\n# gh pr list\n' >> "$TMP/h/claude/hooks/vcs/github.sh"
+out="$(run "$TMP/h")"
+printf '%s\n' "$out" | sed -n '/== 6/,/== summary/p' | grep -q '\[FAIL\]' && bad "the github adapter is exempt" || ok "the github adapter is exempt"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

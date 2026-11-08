@@ -10,7 +10,7 @@
 #   with a commit after Last updated). Stale -> headless `claude -p`
 #   reconstruct of status.md from git evidence. Fresh -> no write.
 #   "Local branch" = refs/heads only (git log --branches): remote-tracking refs
-#   and stash never count, so `git fetch` / `gh pr merge` trigger nothing.
+#   and stash never count, so `git fetch` / a pull request merge trigger nothing.
 #   Known limits: --since compares COMMITTER dates, not ref-move time, so a
 #   rebase/cherry-pick that keeps old committer dates is missed; a worktree on
 #   a detached HEAD has no branch ref and is invisible.

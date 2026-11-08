@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # worktree-divergence.sh -- round preflight for `claude -w` worktree sessions:
 # fetch, compare HEAD with origin/<branch> and with the base, fast-forward when
-# safe. Contract: SCRIPT_CONTRACT.md. Bash 3.2; no jq, no gh calls.
+# safe. Contract: SCRIPT_CONTRACT.md. Bash 3.2; no jq, no provider calls.
 #
 # Usage: worktree-divergence.sh check [--base <base>] [--no-ff]
 #   Operates on the cwd's repository (a linked worktree). --base defaults to

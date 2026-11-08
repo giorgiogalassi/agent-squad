@@ -35,8 +35,8 @@ timeline". Without a plan or events the sections say so. Keys DRIFT (count or
 `none`) and TIMELINE_EVENTS.
 
 Range resolution:
-  pr number   connected mode: `gh pr view` for head/base/title/body
-              (reads only; moves onto squad-vcs.sh after #397). Else
+  pr number   connected mode: squad-vcs.sh pr-data for head/base/title/body
+              (reads only). Else
               SOURCE=git-only and the number must match a
               "[#ID] resolved. PR: #N" line in progress.txt to find the
               branch in ralph-run.md.
@@ -191,13 +191,6 @@ def git(*args, cwd=None, check=True):
     return out.stdout
 
 
-def gh_json(args):
-    out = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=60)
-    if out.returncode != 0:
-        raise RuntimeError(((out.stderr or "").strip().splitlines() or ["gh failed"])[-1])
-    return json.loads(out.stdout or "null")
-
-
 # --------------------------------------------------------------- gather
 
 def default_branch(root):
@@ -312,13 +305,13 @@ def resolve_target(target, paths, sd):
         issue = issue_for_pr(sd, pr)
         if connected:
             try:
-                d = gh_json(["pr", "view", str(pr), "--json", "title,body,headRefName,baseRefName"])
+                d = lib.vcs_json(pr, "title,body,headRefName,baseRefName")
                 return {"id": "pr-%d" % pr, "title": d.get("title") or "PR #%d" % pr,
                         "body": d.get("body") or "", "base": d["baseRefName"],
                         "head": d["headRefName"], "issue": issue or branch_issue(d["headRefName"]),
                         "source": "vcs"}
             except (RuntimeError, KeyError, ValueError) as e:
-                sys.stderr.write("squad-atlas: gh: %s\n" % e)
+                sys.stderr.write("squad-atlas: vcs: %s\n" % e)
         if issue is not None and issue in rows:
             return {"id": "pr-%d" % pr, "title": "PR #%d (issue %s)" % (pr, issue if "-" in issue else "#" + issue), "body": "",
                     "base": rows[issue][2], "head": rows[issue][1], "issue": issue, "source": "git-only"}

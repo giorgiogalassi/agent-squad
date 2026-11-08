@@ -16,6 +16,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
 cp "$REPO_ROOT"/claude/hooks/{cody-checkpoint.sh,lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh,squad-progress.sh,lore} "$TMPROOT/hooks/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 SUT="$TMPROOT/hooks/cody-checkpoint.sh"
 # Fake gh: `pr list` prints "<number> <base>" when FAKE_PR is set, nothing otherwise.
 printf '#!/bin/sh\n[ -n "$FAKE_PR" ] && echo "$FAKE_PR"\nexit 0\n' > "$TMPROOT/fakebin/gh"
@@ -301,6 +302,15 @@ grep -q 'squad-labels.sh claim --issue' "$CODY" && ok "cody.md: claim step" || b
 check "cody.md: claim runs before review and again at PR time" 2 "$(grep -c 'squad-labels.sh claim --issue' "$CODY")"
 check "cody.md: re-claim and review each handle exit 20" 2 "$(awk '/claim --issue <n>/{f=1} f&&/^ *\| 20 \|/{c++} END{print c+0}' "$CODY")"
 grep -q 'git commit -m "\[#<issue-number>\]' "$CODY" && ok "cody.md: commit subject uses [#N]" || bad "cody.md: commit subject uses [#N]"
+
+# 4i. B2 (#397): a non-github chisel.vcs reaches squad_adapter_load through path-resolve's
+#     VCS_PROVIDER; the fake vcs adapter reports a PR where the gh shim reports none.
+setup connected
+jq '.chisel.vcs = "fake"' "$F_VAULT/projects/fixture/.squad/chisel-config.json" > "$TMPROOT/cfg.json" \
+  && mv "$TMPROOT/cfg.json" "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+commit_on 297-f "[#297] fake vcs"
+FAKE_PR="" SQUAD_FAKE_VCS_PR="9 main" run_hook
+grep -q 'PR #9 opened. Branch: 297-f @' "$STATUS" && ok "chisel.vcs=fake is honoured by cody-checkpoint" || bad "chisel.vcs=fake is honoured by cody-checkpoint"
 
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?

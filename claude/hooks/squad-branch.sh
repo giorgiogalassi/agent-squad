@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # squad-branch.sh -- branch checkout mechanics for Cody (create vs continue).
-# Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; no jq, no gh calls.
+# Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; no jq, no provider calls.
 #
 # Usage:
 #   squad-branch.sh create   <branch> --base <base>

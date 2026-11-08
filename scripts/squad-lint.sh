@@ -13,8 +13,8 @@
 #   4. dangling documentation pointers (referenced files must exist)
 #   5. delegation tool: a SKILL.md whose body delegates to an agent must list
 #      `Agent` in allowed-tools, and no skill may use the legacy `Task` name
-#   6. gh write ban: every `gh <sub>` in claude/skills and claude/agents must
-#      be a read form, carry <!-- lint:gh-ok -->, or match an entry in
+#   6. vendor CLI ban: every `gh <sub>` in claude/skills, agents and hooks (outside the
+#      github adapters) must carry <!-- lint:gh-ok -->, or match an entry in
 #      scripts/lint-allowlist-1b.txt (each entry must name its retiring batch)
 #   7. label-doc/test tie: every LABEL_STATE_MACHINE.md row whose "Performed
 #      by" cell names squad-labels.sh has a test in scripts/test-squad-labels.sh
@@ -356,16 +356,16 @@ check_delegation_tool() {
 }
 
 # ---------------------------------------------------------------------
-# Check 6: label (and other tracker) writes live in scripts, not prose.
-# Every `gh <subcommand>` token in skill and agent prose must be a read
-# form, carry <!-- lint:gh-ok --> on the same line, or match an entry in
+# Check 6: the facades own every vendor call (#397). Outside
+# claude/hooks/tracker/github.sh and claude/hooks/vcs/github.sh, any
+# `gh <subcommand>` token in skills, agents and hooks is a violation (reads
+# included), unless it carries <!-- lint:gh-ok --> on the same line or matches an entry in
 # scripts/lint-allowlist-1b.txt. Allowlist line format:
 #   <file>|<regex matched against "gh <rest of line>">|retires: <batch>|<YYYY-MM-DD>
 # The regex field must not contain '|'. A line lacking the retires tag or
 # the date is itself a violation. Tokens whose first word is not lowercase
 # ("gh CLI", "gh is") are prose, not commands, and are ignored.
 # ---------------------------------------------------------------------
-GH_READ_RE='^(issue (view|list)|pr (view|list|checks|diff)|project view|repo view|auth status|stack init|--version)([^[:alnum:]-]|$)'
 GH_CMD_RE='^(issue|pr|project|repo|label|api|auth|stack|release|run|workflow|secret|variable|gist|search|ruleset|cache|codespace|extension|alias|config|browse|status|--[a-z]+)([^[:alnum:]-]|$)'
 GH_TOKEN_RE='(^|[^[:alnum:]_/.-])gh +([a-z-].*)'
 
@@ -373,7 +373,7 @@ check_gh_write_ban() {
   local before="$VIOLATIONS" allow=scripts/lint-allowlist-1b.txt
   local f line n rest cmd hit afile are a_rest i start hasmut infence
   local lines=() mut=() a_files=() a_res=()
-  section "6. gh write ban in skills and agents"
+  section "6. no vendor CLI calls outside the github adapters"
 
   if [ -f "$allow" ]; then
     n=0
@@ -392,7 +392,8 @@ check_gh_write_ban() {
   fi
 
   local targets
-  targets="$( { find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null; } | sort)"
+  targets="$( { find claude/skills -type f -name '*.md' 2>/dev/null; find claude/agents -maxdepth 1 -type f -name '*.md' 2>/dev/null
+    find claude/hooks -type f ! -path 'claude/hooks/tracker/github.sh' ! -path 'claude/hooks/vcs/github.sh' ! -name 'lore-redact.patterns' 2>/dev/null; } | sort)"
   for f in $targets; do
     lines=(); mut=()
     while IFS= read -r line || [ -n "$line" ]; do lines[${#lines[@]}]="$line"; done < "$f"
@@ -420,15 +421,6 @@ check_gh_write_ban() {
       while [[ "$rest" =~ $GH_TOKEN_RE ]]; do
         rest="${BASH_REMATCH[2]}"
         [[ "$rest" =~ $GH_CMD_RE ]] || continue   # prose ("gh and", "gh preflight")
-        if [[ "$rest" =~ $GH_READ_RE ]]; then continue; fi
-        case "$rest" in
-          'api graphql'*)
-            case "$line" in
-              *mutation*) ;;
-              *) [ "${mut[$i]}" -eq 0 ] && continue ;;
-            esac ;;
-          api*'-X GET'*) continue ;;
-        esac
         hit=0
         for ((n = 0; n < ${#a_files[@]}; n++)); do
           [ "${a_files[$n]}" = "$f" ] || continue
@@ -436,11 +428,11 @@ check_gh_write_ban() {
         done
         [ "$hit" -eq 1 ] && continue
         cmd="$(printf '%s' "$rest" | cut -c1-50)"
-        fail "$f:$((i + 1)): 'gh $cmd' is not a read form, not in $allow, and the line lacks <!-- lint:gh-ok --> -- route writes through a script"
+        fail "$f:$((i + 1)): 'gh $cmd' is outside the github adapters, not in $allow, and the line lacks <!-- lint:gh-ok --> -- call squad-tracker.sh / squad-vcs.sh"
       done
     done
   done
-  [ "$VIOLATIONS" -eq "$before" ] && ok "every gh token in skills/agents is a read, lint:gh-ok, or allowlisted"
+  [ "$VIOLATIONS" -eq "$before" ] && ok "no gh call outside the github adapters (or lint:gh-ok / allowlisted)"
 }
 
 # ---------------------------------------------------------------------

@@ -74,7 +74,10 @@
 # `path-resolve.sh --state-name` prints just the directory name (for scripts
 # that hold a vault and a project name but no project root).
 #
-# Output: six KEY=VALUE lines on stdout, always in this order. Read
+# TRACKER_PROVIDER and VCS_PROVIDER (github by default) come from `chisel.tracker`
+# and `chisel.vcs` and select the adapter the tracker and VCS facades load (#397).
+#
+# Output: eight KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
 # Ships in the plugin's hooks/ directory; skills and agents call it as
@@ -269,9 +272,27 @@ else
   esac
 fi
 
+# TRACKER_PROVIDER / VCS_PROVIDER: `chisel.tracker` / `chisel.vcs` of the same
+# file, which adapter hooks/tracker/<p>.sh and hooks/vcs/<p>.sh the facades load.
+# Default github when the file, jq or the key is missing; a value that is not a
+# plain name (a-z 0-9 _ -) falls back to github with one stderr line.
+TRACKER_PROVIDER="github"; VCS_PROVIDER="github"
+if [ -n "$STATE_DIR" ] && [ -f "$CHISEL_CONFIG" ] && command -v jq >/dev/null 2>&1; then
+  for _pk in tracker vcs; do
+    _pv="$(jq -r ".chisel.$_pk // empty | strings" "$CHISEL_CONFIG" 2>/dev/null)"
+    case "$_pv" in
+      "") ;;
+      *[!a-z0-9_-]*) echo "path-resolve: invalid chisel.$_pk '$_pv' in $CHISEL_CONFIG; using github" >&2 ;;
+      *) if [ "$_pk" = tracker ]; then TRACKER_PROVIDER="$_pv"; else VCS_PROVIDER="$_pv"; fi ;;
+    esac
+  done
+fi
+
 echo "VAULT_PATH=$VAULT"
 echo "PROJECT_ROOT=$ROOT"
 echo "DISPLAY_NAME=$DISPLAY"
 echo "SQUAD_DIR=$SQUAD_DIR"
 echo "TRACKER_MODE=$TRACKER_MODE"
 echo "STATE_DIR=$STATE_DIR"
+echo "TRACKER_PROVIDER=$TRACKER_PROVIDER"
+echo "VCS_PROVIDER=$VCS_PROVIDER"

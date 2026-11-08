@@ -16,6 +16,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 # Hooks dir copy with path-resolve.sh alongside, as installed.
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/nojq"
 cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/path-resolve.sh" "$REPO_ROOT/claude/hooks/worktree.sh" "$REPO_ROOT/claude/hooks/squad-session.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 mkdir -p "$TMPROOT/skills/seed"   # the squad skills ship beside the hooks, as installed
 export SQUAD_SESSION_DIR="$TMPROOT/session-state"
 # PATH without jq: symlink the tools the hook needs, minus jq.
@@ -35,6 +36,7 @@ printf '# Status\nquote " backslash \\ tab\tend\n' > "$F_VAULT/projects/fixture/
 # output is only reachable via a stub that supplies it; this exercises the printf branch.
 mkdir -p "$TMPROOT/hooks-nojq"
 cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks-nojq/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks-nojq/"   # provider adapters (#397)
 cat > "$TMPROOT/hooks-nojq/path-resolve.sh" <<EOP
 #!/usr/bin/env bash
 echo "VAULT_PATH=$F_VAULT"; echo "PROJECT_ROOT=$F_PROJECT"; echo "DISPLAY_NAME=fixture"; echo "SQUAD_DIR=$F_VAULT/projects/fixture/.squad"
@@ -277,6 +279,7 @@ rm -f "$LV/lore-config.local.json"
 
 # Inline fallback (no path-resolve.sh alongside) reads the local config first.
 mkdir -p "$TMPROOT/hooks-inline"; cp "$REPO_ROOT/claude/hooks/lore-orient.sh" "$REPO_ROOT/claude/hooks/squad-common.sh" "$TMPROOT/hooks-inline/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks-inline/"   # provider adapters (#397)
 printf '{"projects":{"%s":"app"}}\n' "$LP" > "$LV/lore-config.json"
 printf '{"projects":{"%s":"clientx"}}\n' "$LP" > "$LV/lore-config.local.json"
 o="$(cd "$LP" && SECOND_BRAIN_PATH="$LV" bash "$TMPROOT/hooks-inline/lore-orient.sh" 2>/dev/null)"

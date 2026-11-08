@@ -68,10 +68,17 @@ their tracker manually.
 Run once at startup, before touching any issue. On any failure, print the
 error and stop:
 
-1. `which gh` → `ERROR: gh CLI not found on PATH. Install gh and authenticate before running Ralph.`
-2. `gh auth status` → `ERROR: gh CLI is not authenticated. Run 'gh auth login' and retry.` <!-- lint:gh-ok -->
-3. `gh --version` older than 2.95.0 (needed for `--parent`/`--blocked-by`/
-   `--blocking`/`--add-sub-issue`) → `ERROR: gh CLI version <found> is older than the required 2.95.0. Upgrade gh and retry.`
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh preflight
+```
+
+Read `PROVIDER` and `VERSION`. Act on the exit code:
+
+| Exit | Action |
+|------|--------|
+| 0 | Continue. |
+| 10 | Print the stderr reason (`ERROR: ...`) and stop. |
+| 20 | Print the stderr reason and stop. |
 
 ## Phase 1: build the execution order
 
@@ -79,21 +86,19 @@ error and stop:
 
 - **No issue ID given** (optionally `--parent <n>`):
   ```bash
-  gh issue list -R <owner>/<repo> --state open -L 200 --json number,title,labels,subIssuesSummary,parent,createdAt
+  bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh batch <n|latest>
   ```
-  Always pass `-L 200` (the default is 30 and truncates silently). If the
-  result has 200 entries, warn that the backlog may be truncated.
-  Containers are issues with `subIssuesSummary.total > 0` — never
-  executable work; each is excluded independently on its own field.
-  **Scope:** the batch is the sub-issues of one container, selected by
-  filtering `parent.number == <parent>` on the list above.
-  `--parent <n>` names the container (it must be a container, else refuse
-  as below). With no `--parent`, default to the most recently created open
-  container (max `createdAt`) and announce it:
-  `No parent given — using #<n> "<title>" (most recent open container).`
-  No open container: stop and ask for an explicit ID or `--parent`.
-  If `parent` is not returned by `gh issue list`, fall back to the
-  `gh api graphql` `subIssues` query on the container.
+  `<n>` is the `--parent` container; `latest` picks the most recently
+  created open container and emits `CONTAINER_ID` and `CONTAINER_TITLE`:
+  announce `No parent given — using #<id> "<title>" (most recent open container).`
+  Output is one block per open sub-issue (`ID`, `TITLE`, `STATE`, `URL`,
+  `PARENT`, `BLOCKED_BY`, `BLOCKING`, `LABELS`, `CONTAINER`), blocks separated
+  by a blank line. `TRUNCATED=yes` means the backlog may be truncated: warn.
+  Items with `CONTAINER=yes` are never executable work; each is excluded
+  independently. A named `--parent` must itself be a container (check it with
+  `get <n>`, `CONTAINER=yes`), else refuse as below.
+  Exit 10 (no open container): stop and ask for an explicit ID or `--parent`.
+  Exit 20: report the stderr reason and stop.
   **Blocked gate:** exclude issues carrying `state_labels.blocked` — an
   escalated issue stays out until a human clears the label or names it
   explicitly. Report: `Skipped N issue(s) labeled <blocked>.`
@@ -110,7 +115,7 @@ error and stop:
   The remaining issues are the batch. Report the count:
   `Found N open sub-issue(s) of #<parent>; batch: M.`
 - **Specific issue ID(s) given** (`/ralph #171 #172`, space-separated):
-  for each, `gh issue view <n> -R <owner>/<repo> --json subIssuesSummary,labels`.
+  for each, `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-tracker.sh get <n>` (read `CONTAINER` and `LABELS`).
   If any is a container, refuse:
 
     <n> is a parent/container issue (N sub-issues). Ralph does not
@@ -121,9 +126,8 @@ error and stop:
   proceed — an explicit ID is a user override of both gates. Otherwise the
   batch is exactly the named issues.
 
-**Dependency graph:** per issue,
-`gh issue view <n> -R <owner>/<repo> --json blockedBy,blocking`; edges from `blockedBy`
-(in) and `blocking` (out). Excluded containers never enter the graph:
+**Dependency graph:** per issue, the `BLOCKED_BY` (in) and `BLOCKING` (out) keys of
+`squad-tracker.sh get <n>`; edges from those. Excluded containers never enter the graph:
 never claimed, retried, escalated, state-changed, or commented on.
 
 ### Detached mode: text dependency graph
@@ -453,14 +457,14 @@ once every issue in it finished Phase 2 successfully, run once, branches
 in bottom-to-top topological order:
 
 ```bash
-gh stack init <branch-1> ... <branch-N>
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh stack-init <branch-1> ... <branch-N>
 ```
 
-Requires the `gh-stack` CLI extension. It is not installed
-automatically and not checked by the Preflight section above — the
-first sign of a missing extension is the failed run here. If it is
-missing or the command fails for any reason, log one line
-(`gh stack init failed for chain <lead-id>: <error>`) and continue — no
+Needs a provider with stacked-branch support (GitHub: the `gh-stack`
+extension, not installed automatically and not checked by the Preflight
+section above — exit 10 is the first sign it is missing). If the verb exits
+non-zero for any reason, log one line
+(`stack-init failed for chain <lead-id>: <error>`) and continue — no
 retry, no effect on recorded results. If any issue in the chain
 escalated, skip the chain entirely and log
 `Skipped stack adoption for chain <lead-issue-id>: <issue-id> escalated`.
@@ -519,7 +523,7 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
 
    | Exit | Action |
    |------|--------|
-   | 0 | Continue. `MISSED` above 0: list the unmatched lines in the end-of-batch report. Connected and `CHANGED=yes`: re-read the PR body with `gh pr view <n> --json body` and check each `to:` and `add:` text is present; list any that is not in the report. |
+   | 0 | Continue. `MISSED` above 0: list the unmatched lines in the end-of-batch report. Connected and `CHANGED=yes`: re-read the PR body with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-vcs.sh description-get <n>` and check each `to:` and `add:` text is present; list any that is not in the report. |
    | 10 | The section is missing or malformed: re-run Reven once for the section only, then continue with the verdict as is and note the reason in the report. |
    | 20 | Note the stderr reason in the end-of-batch report and continue. |
 

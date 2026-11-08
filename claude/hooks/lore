@@ -50,7 +50,7 @@
 # `push` (#427) wraps squad_vault_finish: push each lore/* session branch and open or
 # update its PR. SessionEnd starts it detached, SessionStart retries it. The vault lock
 # is taken only around the local git step that mutates worktrees (dropping a landed
-# session branch), never across a fetch, push or gh call. It writes
+# session branch), never across a fetch, push or provider call. It writes
 # <git-common-dir>/lore-push-status (AT=<epoch>, OUTCOME=applied|unchanged|failed,
 # REASON=<one line>) and emits OUTCOME/CHANGED. A local-only vault (vault_main
 # "local-only", or no origin) is OUTCOME=unchanged and never calls gh.

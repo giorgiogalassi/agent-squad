@@ -3,7 +3,8 @@
 The algorithm behind `path-resolve.sh`, the shared utility whose output
 the SessionStart hook `squad-env.sh` exports once per session as
 `SQUAD_VAULT_PATH`, `SQUAD_PROJECT_ROOT`, `SQUAD_DISPLAY_NAME`,
-`SQUAD_DIR` and `SQUAD_TRACKER_MODE`. Skills and agents read those
+`SQUAD_DIR`, `SQUAD_TRACKER_MODE`, `SQUAD_STATE_DIR`,
+`SQUAD_TRACKER_PROVIDER` and `SQUAD_VCS_PROVIDER`. Skills and agents read those
 variables and fall back to running the script when they are unset.
 
 > **This document is not read by any skill or agent at runtime — the
@@ -97,7 +98,7 @@ not attempt to resolve.
 ## The script
 
 `claude/hooks/path-resolve.sh` implements the algorithm above plus the
-`lore-config.json` lookup, and prints six lines to stdout:
+`lore-config.json` lookup, and prints eight lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
@@ -106,7 +107,19 @@ DISPLAY_NAME=<mapped display name, or empty if none exists yet>
 SQUAD_DIR=<where project knowledge lives>
 TRACKER_MODE=<connected|detached>
 STATE_DIR=<vault>/projects/<name>/<state_dir>
+TRACKER_PROVIDER=<chisel.tracker, default github>
+VCS_PROVIDER=<chisel.vcs, default github>
 ```
+
+`TRACKER_PROVIDER` and `VCS_PROVIDER` name the adapter (`hooks/tracker/<p>.sh`,
+`hooks/vcs/<p>.sh`) the tracker and VCS facades load. They come from `chisel.tracker`
+and `chisel.vcs` in the same `chisel-config.json` as `TRACKER_MODE`; the file, jq or
+the key missing gives `github`, and a value that is not a plain name (`a-z 0-9 _ -`)
+gives `github` plus one stderr line. `squad-env.sh` exports them as
+`SQUAD_TRACKER_PROVIDER` and `SQUAD_VCS_PROVIDER`; `squad_adapter_load` reads
+`TRACKER_PROVIDER`/`VCS_PROVIDER` first, then those exports, then `github`. Hooks that
+parse the script's output themselves (`cody-checkpoint.sh`, `lore-orient.sh`) read the
+two keys too.
 
 `DISPLAY_NAME` and the `context` map are read from `<vault>/lore-config.local.json`
 first, then `<vault>/lore-config.json` (#355). The local file is optional, untracked
@@ -200,11 +213,12 @@ policy inline, exactly as before. Only the mechanical resolution step moved into
 
 Every skill and agent now carries one fallback line instead of a
 protocol block: use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`,
-`$SQUAD_DISPLAY_NAME`, `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE` (exported by
+`$SQUAD_DISPLAY_NAME`, `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE` (plus
+`$SQUAD_STATE_DIR`, `$SQUAD_TRACKER_PROVIDER`, `$SQUAD_VCS_PROVIDER`; exported by
 `squad-env.sh`); if `$SQUAD_PROJECT_ROOT` is unset (headless `claude -p`,
 evals), run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its
 `KEY=value` lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`,
-`SQUAD_DIR`, `TRACKER_MODE`, `STATE_DIR`; parse by key, not position). `squad-lint.sh`
+`SQUAD_DIR`, `TRACKER_MODE`, `STATE_DIR`, `TRACKER_PROVIDER`, `VCS_PROVIDER`; parse by key, not position). `squad-lint.sh`
 forbids the full block and requires the fallback.
 
 ## What does NOT change

@@ -9,7 +9,7 @@
 #
 # Evidence, in the working directory (same checks as Ralph 2b):
 #   branch, HEAD sha + subject, `status --porcelain`, and in connected mode an
-#   open PR for the branch (`gh pr list --head`).
+#   open PR for the branch (squad_vcs pr-for-branch).
 # The issue ID is taken from HEAD's subject ([#N], [KEY-N]; a bare [N] becomes [#N]); no ID, a shared
 # integration branch, or HEAD already on another branch means Cody committed nothing: no write.
 #
@@ -40,6 +40,8 @@ while IFS='=' read -r _key _value; do
     PROJECT_ROOT) ROOT="$_value" ;;
     DISPLAY_NAME) DISPLAY="$_value" ;;
     TRACKER_MODE) TMODE="$_value" ;;
+    TRACKER_PROVIDER) export TRACKER_PROVIDER="$_value" ;;
+    VCS_PROVIDER) export VCS_PROVIDER="$_value" ;;
   esac
 done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -d "${VAULT:-}" ] && [ -n "${ROOT:-}" ] || exit 0
@@ -76,7 +78,7 @@ case "$ISSUE" in [0-9]*) ISSUE="#$ISSUE" ;; "#"*) ISSUE_BARE="${ISSUE#\#}" ;; es
 DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 TREE=clean; [ "${DIRTY:-0}" -gt 0 ] && TREE=dirty
 
-# HEAD-moved check (no PR needed, so it runs before the `gh` call): Cody committed
+# HEAD-moved check (no PR needed, so it runs before the VCS call): Cody committed
 # nothing when HEAD is already reachable from another branch (the stacked base,
 # main, ...). This branch itself is excluded, with its own remote-tracking copies
 # on any remote (refs/remotes/*/<branch>) and fetched pull refs (refs/remotes/*/pr/*).
@@ -91,9 +93,10 @@ _others="$(git for-each-ref --format='%(refname)' --contains HEAD refs/heads ref
 
 STATE=committed; PR=""; BASE=""
 if [ "${TMODE:-detached}" = connected ]; then
-  if command -v gh >/dev/null 2>&1; then
-    row="$(gh pr list --head "$BRANCH" --state open --json number,baseRefName --jq '.[0] | select(. != null) | "\(.number) \(.baseRefName)"' 2>/dev/null)"
-    PR="${row%% *}"; BASE="${row#* }"; [ -n "$PR" ] || BASE=""
+  if squad_vcs available; then
+    row="$(squad_vcs pr-for-branch "$BRANCH" --state open 2>/dev/null)"
+    PR="$(printf '%s\n' "$row" | sed -n 's/^PR=//p')"; BASE="$(printf '%s\n' "$row" | sed -n 's/^BASE=//p')"
+    [ -n "$PR" ] || BASE=""
   fi
   [ -n "$PR" ] && STATE=pr
 else

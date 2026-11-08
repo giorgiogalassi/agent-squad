@@ -7,7 +7,7 @@ description: >
   Reven verdicts and, in connected mode, PR outcomes. Triggers: /stats,
   /stats --days <n>, /stats --branch <name>, "squad stats", "how much did the squad cost",
   "usage report". Do NOT trigger for questions about a single PR or
-  issue; use gh or the tracker for those.
+  issue; use the VCS or tracker facade for those.
 allowed-tools: Read, Write, Bash
 ---
 
@@ -106,7 +106,7 @@ Claude Code stats, last <DAYS> days (API-equivalent cost)
 Then one line per condition that holds:
 
 - `UNPRICED_MODELS` non-empty: `Unpriced models: <list>. Add them to <VAULT_PATH>/squad-stats/prices.json.`
-- `QUALITY=gh-error`: `GitHub section skipped: gh failed (see above).`
+- `QUALITY=gh-error`: `GitHub section skipped: the VCS provider failed (see above).`
 - `ROWS_ADDED` is 0 and `SESSIONS` is 0: `No usage in the window yet.`
 - `OLDEST_TRANSCRIPT` is more than 25 days before today:
   `Claude Code prunes transcripts after cleanupPeriodDays (default 30). Run /stats at least weekly, or raise cleanupPeriodDays in ~/.claude/settings.json.`
@@ -131,7 +131,7 @@ Never invent, rephrase or add questions on the user's behalf.
 
 - Write only to `<VAULT_PATH>/squad-stats/questions.md`. The script owns
   every other file in the store.
-- No `gh` calls of your own; the script owns GitHub reads.
+- No vendor CLI calls of your own; the script owns GitHub reads.
 - Never commit the vault.
 - Write `questions.md` lines in the user's words; everything else you
   print is in English.

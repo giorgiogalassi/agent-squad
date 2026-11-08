@@ -16,13 +16,13 @@
 # or a section with no valid item, is a precondition failure (10): the
 # section is mandatory in every Reven review.
 #
-# Connected: reads the PR body (read-only gh), applies the items, writes it
-# back with one `gh pr edit --body-file` through squad_gh_write. Replacing is
+# Connected: reads the PR body (squad_vcs description-get), applies the items, writes it
+# back with one squad_vcs description-set (guarded by tracker mode). Replacing is
 # exact whole-line match, first occurrence; unmatched `line:` items are
 # counted in MISSED and left for the caller to report, never guessed.
-# Detached: zero gh calls; appends one checklist line per item to --handoff.
+# Detached: zero tracker calls; appends one checklist line per item to --handoff.
 # Emits: OUTCOME, CHANGED, REPLACED, ADDED, MISSED (connected) or ITEMS
-# (detached). Exit: 0 ok, 2 usage, 10 block missing/invalid, 20 gh/io failure.
+# (detached). Exit: 0 ok, 2 usage, 10 block missing/invalid, 20 provider/io failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 
@@ -75,7 +75,7 @@ fi
 
 squad_resolve || squad_fail_incident squad-pr-desc 20 "cannot resolve project paths"
 
-# --- detached: record only, no gh calls of any kind --------------------------
+# --- detached: record only, no provider calls of any kind --------------------------
 if [ "$TRACKER_MODE" != connected ]; then
   [ -n "$HANDOFF" ] || squad_fail 2 "--handoff is required in detached mode"
   [ -n "$ISSUE" ] || squad_fail 2 "--issue is required in detached mode"
@@ -103,7 +103,7 @@ if [ "$NL" -eq 0 ] && [ "$NA" -eq 0 ]; then
   squad_emit REPLACED 0; squad_emit ADDED 0; squad_emit MISSED 0
   exit 0
 fi
-BODY="$(gh pr view "$PR" --json body -q .body)" || squad_fail_incident squad-pr-desc 20 "gh pr view $PR failed"
+BODY="$(squad_vcs description-get "$PR")" || squad_fail_incident squad-pr-desc 20 "reading the description of PR $PR failed"
 
 TMP="$(mktemp "${TMPDIR:-/tmp}/squad-pr-desc.XXXXXX")" || squad_fail 20 "cannot create temp file"
 trap 'rm -f "$TMP"' EXIT
@@ -135,7 +135,7 @@ done
 if [ "$REPLACED" -eq 0 ] && [ "$ADDED" -eq 0 ]; then
   squad_emit OUTCOME unchanged; squad_emit CHANGED no
 else
-  squad_gh_write pr edit "$PR" --body-file "$TMP" || squad_fail_incident squad-pr-desc 20 "gh pr edit $PR failed"
+  squad_vcs description-set "$PR" --body-file "$TMP" || squad_fail_incident squad-pr-desc 20 "writing the description of PR $PR failed"
   squad_emit OUTCOME applied; squad_emit CHANGED yes
 fi
 squad_emit REPLACED "$REPLACED"; squad_emit ADDED "$ADDED"; squad_emit MISSED "$MISSED"

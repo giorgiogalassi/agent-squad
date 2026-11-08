@@ -39,10 +39,12 @@ check() {  # check <name> <expected> <actual>
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/hooks-conn" "$TMPROOT/stubbin" "$TMPROOT/shimbin" "$TMPROOT/nojq"
 cp "$SUT_DIR/$SUT_NAME" "$SUT_DIR/squad-common.sh" "$SUT_DIR/path-resolve.sh" "$TMPROOT/hooks/" 2>/dev/null \
   || { echo "error: override dir lacks squad-common.sh/path-resolve.sh" >&2; exit 2; }
+cp -R "$SUT_DIR/tracker" "$SUT_DIR/vcs" "$TMPROOT/hooks/" 2>/dev/null || cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 # hooks-conn: same script, but path-resolve.sh is replaced by a stub that always
 # reports connected (the real one needs jq to say "connected", and has its own
 # tests), so config handling can be exercised with jq hidden or config missing.
 cp "$TMPROOT/hooks/$SUT_NAME" "$TMPROOT/hooks/squad-common.sh" "$TMPROOT/hooks-conn/"
+cp -R "$TMPROOT/hooks/tracker" "$TMPROOT/hooks/vcs" "$TMPROOT/hooks-conn/"   # provider adapters (#397)
 cat > "$TMPROOT/hooks-conn/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
 echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"
