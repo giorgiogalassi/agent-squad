@@ -12,12 +12,13 @@ SLOT = 1.3  # seconds per step
 STATIONS = [
     ("forge", "/forge", "Forge", "step"),
     ("chisel", "/chisel", "Chisel", "step"),
+    ("ready", "reader", "Readiness", "step"),
     ("gate", "you", "Review issues", "gate"),
     ("ralph", "/ralph", "Ralph", "step"),
     ("cody", "agent", "Cody", "step"),
     ("reven", "/reven", "Reven", "step"),
     ("merge", "you", "Merge", "gate"),
-    ("ckpt", "SessionEnd", "lore-checkpoint", "hook"),
+    ("ckpt", "SessionEnd", "checkpoint", "hook"),
 ]
 SIDE = ("sidecar", "claude -w", "worktree", "side")  # side path, below the track
 
@@ -25,35 +26,37 @@ SIDE = ("sidecar", "claude -w", "worktree", "side")  # side path, below the trac
 STEPS = [
     ("Forge plans the change and sizes it", "forge", None, None, "forge"),
     ("Chisel turns the plan into issues #12 and #13, both labelled needs-review", None, "chisel", "chisel", "chisel"),
+    ("The reader checks the drafts: ## Readiness, and an open blocker marks the issue blocked", None, "ready", "ready", "ready"),
     ("You lift the needs-review gate", None, "gate", "gate", "gate"),
     ("Ralph's loop, issue 1 of 2: #12 goes to Cody", None, "ralph", "ralph", "ralph"),
     ("Cody writes failing tests for #12, then code until green, then opens PR #12", None, "cody", "ralph", "cody"),
     ("Ralph loops, issue 2 of 2: #13 branches from #12's branch", None, "cody", "cody", "ralph"),
     ("Tests first again. PR #13 is stacked on #12's branch", None, "cody", "cody", "cody"),
     ("You run Reven on each PR. Each diffs against its own base", None, "reven", "reven", "reven"),
+    ("Reven numbers its findings; Cody answers with FIX, CONTEST or ESCALATE and Ralph allows one contest", None, "reven", "cody", "cody"),
     ("You fix a review note on #13 in a worktree opened by hooks (claude -w)", None, "reven", "sidecar", "sidecar"),
     ("You retarget #13 to main, then merge #12", None, "merge", "reven", "merge"),
     ("Then #13 merges", None, "merge", "merge", "merge"),
-    ("SessionEnd: lore-checkpoint updates status.md", None, "ckpt", "ckpt", "ckpt"),
+    ("SessionEnd: the checkpoint hook updates status.md", None, "ckpt", "ckpt", "ckpt"),
     (None, None, None, None, None),  # fade out, loop
 ]
 # time windows (in steps) for overlays
 WINDOWS = {
-    "b13s": (7, 8),                # #13 -> 12-... once tests are done (hidden in the sidecar)
-    "b13m": (9, 10),               # #13 -> main: the retarget
-    "mg12": (9, 11.9), "mg13": (10, 11.9),  # merged labels, only at the end
-    "m12": (9, 11.9), "m13": (10, 11.9),
-    "red12": (4, 4.45), "grn12": (4.45, 5),
-    "red13": (6, 6.45), "grn13": (6.45, 7),
-    "fix13": (8, 9),
-    "n1": (3, 5), "n2": (5, 7),    # Ralph counter
-    "loop": (3, 7),                # Ralph <-> Cody loop arc visible/flowing
+    "b13s": (8, 9),                # #13 -> 12-... once tests are done (hidden in the sidecar)
+    "b13m": (11, 12),              # #13 -> main: the retarget
+    "mg12": (11, 13.9), "mg13": (12, 13.9),  # merged labels, only at the end
+    "m12": (11, 13.9), "m13": (12, 13.9),
+    "red12": (5, 5.45), "grn12": (5.45, 6),
+    "red13": (7, 7.45), "grn13": (7.45, 8),
+    "fix13": (10, 11),
+    "n1": (4, 6), "n2": (6, 8),    # Ralph counter
+    "loop": (4, 8),                # Ralph <-> Cody loop arc visible/flowing
 }
 
 N = len(STEPS)
 DUR = round(SLOT * N, 2)
 W, H = 1280, 400
-BOX_W, BOX_H, BOX_Y = 132, 64, 56
+BOX_W, BOX_H, BOX_Y = 120, 64, 56
 MARGIN = 24
 X0 = MARGIN + BOX_W / 2
 DX = (W - 2 * MARGIN - BOX_W) / (len(STATIONS) - 1)
@@ -153,15 +156,15 @@ for key in [k for k, *_r in STATIONS] + [SIDE[0]]:
     if active:
         animate(f"#hl_{key}", f"hl_{key}", window_keyframes(f"hl_{key}", runs_of(active)))
 
-# reduced motion: step 7 (both PRs open, stacked, under review)
+# reduced motion: step 8 (both PRs open, stacked, under review)
 static = (f"#t12{{{tf(pos('reven', '12'))}}}#t13{{{tf(pos('reven', '13'))}}}"
           "#t12>.body,#t13>.body,#b13s,#cstatic,#loop{opacity:1}")
 
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="ttl dsc">',
        '<title id="ttl">Agent Squad: one batch through the pipeline</title>',
-       '<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue '
-       '(tests first, the second PR stacked on the first), you review with Reven and fix one note in a hook-opened worktree, '
-       'retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>',
+       '<desc id="dsc">Forge plans, Chisel opens two issues, the reader checks them for blockers, you lift the review gate, Ralph loops Cody over each issue '
+       '(tests first, the second PR stacked on the first), you review with Reven (numbered findings, one contest allowed) and fix one note in a hook-opened worktree, '
+       'retarget the child PR to main and merge both, and a checkpoint hook updates status.</desc>',
        '<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'
        '<path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker>'
        '<marker id="arrh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">'

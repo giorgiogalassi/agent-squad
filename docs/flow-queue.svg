@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="ttl dsc">
 <title id="ttl">Agent Squad: one batch through the pipeline</title>
-<desc id="dsc">Forge plans, Chisel opens two issues, you lift the review gate, Ralph loops Cody over each issue (tests first, the second PR stacked on the first), you review with Reven and fix one note in a hook-opened worktree, retarget the child PR to main and merge both, and lore-checkpoint updates status.</desc>
+<desc id="dsc">Forge plans, Chisel opens two issues, the reader checks them for blockers, you lift the review gate, Ralph loops Cody over each issue (tests first, the second PR stacked on the first), you review with Reven (numbered findings, one contest allowed) and fix one note in a hook-opened worktree, retarget the child PR to main and merge both, and a checkpoint hook updates status.</desc>
 <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--accent)"/></marker><marker id="arrh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--hook)"/></marker></defs>
 <style>
 :root{--bg:#f6f7f9;--surface:#fff;--ink:#1c2230;--muted:#5d6675;--line:#d7dce4;--accent:#0f766e;--accent-soft:#d9f0ec;
@@ -39,132 +39,142 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
 .capstep{font-size:12px;fill:var(--muted)}
 .ov{opacity:0}
 
-@keyframes mvplan{0%{transform:translate(90.0px,0.0px)}7.692%{transform:translate(90.0px,0.0px)}8.846%{transform:translate(90.0px,0.0px)}15.385%{transform:translate(90.0px,0.0px)}16.538%{transform:translate(90.0px,0.0px)}23.077%{transform:translate(90.0px,0.0px)}24.231%{transform:translate(90.0px,0.0px)}30.769%{transform:translate(90.0px,0.0px)}31.923%{transform:translate(90.0px,0.0px)}38.462%{transform:translate(90.0px,0.0px)}39.615%{transform:translate(90.0px,0.0px)}46.154%{transform:translate(90.0px,0.0px)}47.308%{transform:translate(90.0px,0.0px)}53.846%{transform:translate(90.0px,0.0px)}55.000%{transform:translate(90.0px,0.0px)}61.538%{transform:translate(90.0px,0.0px)}62.692%{transform:translate(90.0px,0.0px)}69.231%{transform:translate(90.0px,0.0px)}70.385%{transform:translate(90.0px,0.0px)}76.923%{transform:translate(90.0px,0.0px)}78.077%{transform:translate(90.0px,0.0px)}84.615%{transform:translate(90.0px,0.0px)}85.769%{transform:translate(90.0px,0.0px)}92.308%{transform:translate(90.0px,0.0px)}93.462%{transform:translate(90.0px,0.0px)}100%{transform:translate(90.0px,0.0px)}}
-@keyframes visplan{0%{opacity:0}0.000%{opacity:0}0.462%{opacity:1}7.231%{opacity:1}7.692%{opacity:0}100%{opacity:0}}
-@keyframes mv12{0%{transform:translate(247.1px,0.0px)}15.385%{transform:translate(247.1px,0.0px)}16.538%{transform:translate(404.3px,0.0px)}23.077%{transform:translate(404.3px,0.0px)}24.231%{transform:translate(561.4px,0.0px)}30.769%{transform:translate(561.4px,0.0px)}31.923%{transform:translate(718.6px,0.0px)}38.462%{transform:translate(718.6px,0.0px)}39.615%{transform:translate(718.6px,0.0px)}46.154%{transform:translate(718.6px,0.0px)}47.308%{transform:translate(718.6px,0.0px)}53.846%{transform:translate(718.6px,0.0px)}55.000%{transform:translate(875.7px,0.0px)}61.538%{transform:translate(875.7px,0.0px)}62.692%{transform:translate(875.7px,0.0px)}69.231%{transform:translate(875.7px,0.0px)}70.385%{transform:translate(1032.9px,0.0px)}76.923%{transform:translate(1032.9px,0.0px)}78.077%{transform:translate(1032.9px,0.0px)}84.615%{transform:translate(1032.9px,0.0px)}85.769%{transform:translate(1190.0px,0.0px)}92.308%{transform:translate(1190.0px,0.0px)}93.462%{transform:translate(1190.0px,0.0px)}100%{transform:translate(1190.0px,0.0px)}}
-@keyframes vis12{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
-@keyframes mv13{0%{transform:translate(247.1px,0.0px)}15.385%{transform:translate(247.1px,0.0px)}16.538%{transform:translate(404.3px,0.0px)}23.077%{transform:translate(404.3px,0.0px)}24.231%{transform:translate(561.4px,0.0px)}30.769%{transform:translate(561.4px,0.0px)}31.923%{transform:translate(561.4px,0.0px)}38.462%{transform:translate(561.4px,0.0px)}39.615%{transform:translate(718.6px,0.0px)}46.154%{transform:translate(718.6px,0.0px)}47.308%{transform:translate(718.6px,0.0px)}53.846%{transform:translate(718.6px,0.0px)}55.000%{transform:translate(875.7px,0.0px)}61.538%{transform:translate(875.7px,0.0px)}62.692%{transform:translate(850.3px,72.0px)}69.231%{transform:translate(850.3px,72.0px)}70.385%{transform:translate(875.7px,0.0px)}76.923%{transform:translate(875.7px,0.0px)}78.077%{transform:translate(1032.9px,0.0px)}84.615%{transform:translate(1032.9px,0.0px)}85.769%{transform:translate(1190.0px,0.0px)}92.308%{transform:translate(1190.0px,0.0px)}93.462%{transform:translate(1190.0px,0.0px)}100%{transform:translate(1190.0px,0.0px)}}
-@keyframes vis13{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
-@keyframes w_b13s{0%{opacity:0}53.846%{opacity:0}54.308%{opacity:1}61.077%{opacity:1}61.538%{opacity:0}100%{opacity:0}}
-@keyframes w_b13m{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}76.462%{opacity:1}76.923%{opacity:0}100%{opacity:0}}
-@keyframes w_mg12{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
-@keyframes w_mg13{0%{opacity:0}76.923%{opacity:0}77.385%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
-@keyframes w_m12{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
-@keyframes w_m13{0%{opacity:0}76.923%{opacity:0}77.385%{opacity:1}91.077%{opacity:1}91.538%{opacity:0}100%{opacity:0}}
-@keyframes w_red12{0%{opacity:0}30.769%{opacity:0}31.231%{opacity:1}33.769%{opacity:1}34.231%{opacity:0}100%{opacity:0}}
-@keyframes w_grn12{0%{opacity:0}34.231%{opacity:0}34.692%{opacity:1}38.000%{opacity:1}38.462%{opacity:0}100%{opacity:0}}
-@keyframes w_red13{0%{opacity:0}46.154%{opacity:0}46.615%{opacity:1}49.154%{opacity:1}49.615%{opacity:0}100%{opacity:0}}
-@keyframes w_grn13{0%{opacity:0}49.615%{opacity:0}50.077%{opacity:1}53.385%{opacity:1}53.846%{opacity:0}100%{opacity:0}}
-@keyframes w_fix13{0%{opacity:0}61.538%{opacity:0}62.000%{opacity:1}68.769%{opacity:1}69.231%{opacity:0}100%{opacity:0}}
-@keyframes w_n1{0%{opacity:0}23.077%{opacity:0}23.538%{opacity:1}38.000%{opacity:1}38.462%{opacity:0}100%{opacity:0}}
-@keyframes w_n2{0%{opacity:0}38.462%{opacity:0}38.923%{opacity:1}53.385%{opacity:1}53.846%{opacity:0}100%{opacity:0}}
-@keyframes w_loop{0%{opacity:0}23.077%{opacity:0}23.538%{opacity:1}53.385%{opacity:1}53.846%{opacity:0}100%{opacity:0}}
+@keyframes mvplan{0%{transform:translate(84.0px,0.0px)}6.667%{transform:translate(84.0px,0.0px)}7.667%{transform:translate(84.0px,0.0px)}13.333%{transform:translate(84.0px,0.0px)}14.333%{transform:translate(84.0px,0.0px)}20.000%{transform:translate(84.0px,0.0px)}21.000%{transform:translate(84.0px,0.0px)}26.667%{transform:translate(84.0px,0.0px)}27.667%{transform:translate(84.0px,0.0px)}33.333%{transform:translate(84.0px,0.0px)}34.333%{transform:translate(84.0px,0.0px)}40.000%{transform:translate(84.0px,0.0px)}41.000%{transform:translate(84.0px,0.0px)}46.667%{transform:translate(84.0px,0.0px)}47.667%{transform:translate(84.0px,0.0px)}53.333%{transform:translate(84.0px,0.0px)}54.333%{transform:translate(84.0px,0.0px)}60.000%{transform:translate(84.0px,0.0px)}61.000%{transform:translate(84.0px,0.0px)}66.667%{transform:translate(84.0px,0.0px)}67.667%{transform:translate(84.0px,0.0px)}73.333%{transform:translate(84.0px,0.0px)}74.333%{transform:translate(84.0px,0.0px)}80.000%{transform:translate(84.0px,0.0px)}81.000%{transform:translate(84.0px,0.0px)}86.667%{transform:translate(84.0px,0.0px)}87.667%{transform:translate(84.0px,0.0px)}93.333%{transform:translate(84.0px,0.0px)}94.333%{transform:translate(84.0px,0.0px)}100%{transform:translate(84.0px,0.0px)}}
+@keyframes visplan{0%{opacity:0}0.000%{opacity:0}0.400%{opacity:1}6.267%{opacity:1}6.667%{opacity:0}100%{opacity:0}}
+@keyframes mv12{0%{transform:translate(223.0px,0.0px)}13.333%{transform:translate(223.0px,0.0px)}14.333%{transform:translate(362.0px,0.0px)}20.000%{transform:translate(362.0px,0.0px)}21.000%{transform:translate(501.0px,0.0px)}26.667%{transform:translate(501.0px,0.0px)}27.667%{transform:translate(640.0px,0.0px)}33.333%{transform:translate(640.0px,0.0px)}34.333%{transform:translate(779.0px,0.0px)}40.000%{transform:translate(779.0px,0.0px)}41.000%{transform:translate(779.0px,0.0px)}46.667%{transform:translate(779.0px,0.0px)}47.667%{transform:translate(779.0px,0.0px)}53.333%{transform:translate(779.0px,0.0px)}54.333%{transform:translate(918.0px,0.0px)}60.000%{transform:translate(918.0px,0.0px)}61.000%{transform:translate(918.0px,0.0px)}66.667%{transform:translate(918.0px,0.0px)}67.667%{transform:translate(918.0px,0.0px)}73.333%{transform:translate(918.0px,0.0px)}74.333%{transform:translate(1057.0px,0.0px)}80.000%{transform:translate(1057.0px,0.0px)}81.000%{transform:translate(1057.0px,0.0px)}86.667%{transform:translate(1057.0px,0.0px)}87.667%{transform:translate(1196.0px,0.0px)}93.333%{transform:translate(1196.0px,0.0px)}94.333%{transform:translate(1196.0px,0.0px)}100%{transform:translate(1196.0px,0.0px)}}
+@keyframes vis12{0%{opacity:0}6.667%{opacity:0}7.067%{opacity:1}92.933%{opacity:1}93.333%{opacity:0}100%{opacity:0}}
+@keyframes mv13{0%{transform:translate(223.0px,0.0px)}13.333%{transform:translate(223.0px,0.0px)}14.333%{transform:translate(362.0px,0.0px)}20.000%{transform:translate(362.0px,0.0px)}21.000%{transform:translate(501.0px,0.0px)}26.667%{transform:translate(501.0px,0.0px)}27.667%{transform:translate(640.0px,0.0px)}33.333%{transform:translate(640.0px,0.0px)}34.333%{transform:translate(640.0px,0.0px)}40.000%{transform:translate(640.0px,0.0px)}41.000%{transform:translate(779.0px,0.0px)}46.667%{transform:translate(779.0px,0.0px)}47.667%{transform:translate(779.0px,0.0px)}53.333%{transform:translate(779.0px,0.0px)}54.333%{transform:translate(918.0px,0.0px)}60.000%{transform:translate(918.0px,0.0px)}61.000%{transform:translate(779.0px,0.0px)}66.667%{transform:translate(779.0px,0.0px)}67.667%{transform:translate(889.5px,72.0px)}73.333%{transform:translate(889.5px,72.0px)}74.333%{transform:translate(918.0px,0.0px)}80.000%{transform:translate(918.0px,0.0px)}81.000%{transform:translate(1057.0px,0.0px)}86.667%{transform:translate(1057.0px,0.0px)}87.667%{transform:translate(1196.0px,0.0px)}93.333%{transform:translate(1196.0px,0.0px)}94.333%{transform:translate(1196.0px,0.0px)}100%{transform:translate(1196.0px,0.0px)}}
+@keyframes vis13{0%{opacity:0}6.667%{opacity:0}7.067%{opacity:1}92.933%{opacity:1}93.333%{opacity:0}100%{opacity:0}}
+@keyframes w_b13s{0%{opacity:0}53.333%{opacity:0}53.733%{opacity:1}59.600%{opacity:1}60.000%{opacity:0}100%{opacity:0}}
+@keyframes w_b13m{0%{opacity:0}73.333%{opacity:0}73.733%{opacity:1}79.600%{opacity:1}80.000%{opacity:0}100%{opacity:0}}
+@keyframes w_mg12{0%{opacity:0}73.333%{opacity:0}73.733%{opacity:1}92.267%{opacity:1}92.667%{opacity:0}100%{opacity:0}}
+@keyframes w_mg13{0%{opacity:0}80.000%{opacity:0}80.400%{opacity:1}92.267%{opacity:1}92.667%{opacity:0}100%{opacity:0}}
+@keyframes w_m12{0%{opacity:0}73.333%{opacity:0}73.733%{opacity:1}92.267%{opacity:1}92.667%{opacity:0}100%{opacity:0}}
+@keyframes w_m13{0%{opacity:0}80.000%{opacity:0}80.400%{opacity:1}92.267%{opacity:1}92.667%{opacity:0}100%{opacity:0}}
+@keyframes w_red12{0%{opacity:0}33.333%{opacity:0}33.733%{opacity:1}35.933%{opacity:1}36.333%{opacity:0}100%{opacity:0}}
+@keyframes w_grn12{0%{opacity:0}36.333%{opacity:0}36.733%{opacity:1}39.600%{opacity:1}40.000%{opacity:0}100%{opacity:0}}
+@keyframes w_red13{0%{opacity:0}46.667%{opacity:0}47.067%{opacity:1}49.267%{opacity:1}49.667%{opacity:0}100%{opacity:0}}
+@keyframes w_grn13{0%{opacity:0}49.667%{opacity:0}50.067%{opacity:1}52.933%{opacity:1}53.333%{opacity:0}100%{opacity:0}}
+@keyframes w_fix13{0%{opacity:0}66.667%{opacity:0}67.067%{opacity:1}72.933%{opacity:1}73.333%{opacity:0}100%{opacity:0}}
+@keyframes w_n1{0%{opacity:0}26.667%{opacity:0}27.067%{opacity:1}39.600%{opacity:1}40.000%{opacity:0}100%{opacity:0}}
+@keyframes w_n2{0%{opacity:0}40.000%{opacity:0}40.400%{opacity:1}52.933%{opacity:1}53.333%{opacity:0}100%{opacity:0}}
+@keyframes w_loop{0%{opacity:0}26.667%{opacity:0}27.067%{opacity:1}52.933%{opacity:1}53.333%{opacity:0}100%{opacity:0}}
 @keyframes dash{to{stroke-dashoffset:-12}}
-@keyframes c0{0%{opacity:0}0.000%{opacity:0}0.462%{opacity:1}7.231%{opacity:1}7.692%{opacity:0}100%{opacity:0}}
-@keyframes c1{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}14.923%{opacity:1}15.385%{opacity:0}100%{opacity:0}}
-@keyframes c2{0%{opacity:0}15.385%{opacity:0}15.846%{opacity:1}22.615%{opacity:1}23.077%{opacity:0}100%{opacity:0}}
-@keyframes c3{0%{opacity:0}23.077%{opacity:0}23.538%{opacity:1}30.308%{opacity:1}30.769%{opacity:0}100%{opacity:0}}
-@keyframes c4{0%{opacity:0}30.769%{opacity:0}31.231%{opacity:1}38.000%{opacity:1}38.462%{opacity:0}100%{opacity:0}}
-@keyframes c5{0%{opacity:0}38.462%{opacity:0}38.923%{opacity:1}45.692%{opacity:1}46.154%{opacity:0}100%{opacity:0}}
-@keyframes c6{0%{opacity:0}46.154%{opacity:0}46.615%{opacity:1}53.385%{opacity:1}53.846%{opacity:0}100%{opacity:0}}
-@keyframes c7{0%{opacity:0}53.846%{opacity:0}54.308%{opacity:1}61.077%{opacity:1}61.538%{opacity:0}100%{opacity:0}}
-@keyframes c8{0%{opacity:0}61.538%{opacity:0}62.000%{opacity:1}68.769%{opacity:1}69.231%{opacity:0}100%{opacity:0}}
-@keyframes c9{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}76.462%{opacity:1}76.923%{opacity:0}100%{opacity:0}}
-@keyframes c10{0%{opacity:0}76.923%{opacity:0}77.385%{opacity:1}84.154%{opacity:1}84.615%{opacity:0}100%{opacity:0}}
-@keyframes c11{0%{opacity:0}84.615%{opacity:0}85.077%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
-@keyframes hl_forge{0%{opacity:0}0.000%{opacity:0}0.462%{opacity:1}7.231%{opacity:1}7.692%{opacity:0}100%{opacity:0}}
-@keyframes hl_chisel{0%{opacity:0}7.692%{opacity:0}8.154%{opacity:1}14.923%{opacity:1}15.385%{opacity:0}100%{opacity:0}}
-@keyframes hl_gate{0%{opacity:0}15.385%{opacity:0}15.846%{opacity:1}22.615%{opacity:1}23.077%{opacity:0}100%{opacity:0}}
-@keyframes hl_ralph{0%{opacity:0}23.077%{opacity:0}23.538%{opacity:1}30.308%{opacity:1}30.769%{opacity:0}38.462%{opacity:0}38.923%{opacity:1}45.692%{opacity:1}46.154%{opacity:0}100%{opacity:0}}
-@keyframes hl_cody{0%{opacity:0}30.769%{opacity:0}31.231%{opacity:1}38.000%{opacity:1}38.462%{opacity:0}46.154%{opacity:0}46.615%{opacity:1}53.385%{opacity:1}53.846%{opacity:0}100%{opacity:0}}
-@keyframes hl_reven{0%{opacity:0}53.846%{opacity:0}54.308%{opacity:1}61.077%{opacity:1}61.538%{opacity:0}100%{opacity:0}}
-@keyframes hl_merge{0%{opacity:0}69.231%{opacity:0}69.692%{opacity:1}84.154%{opacity:1}84.615%{opacity:0}100%{opacity:0}}
-@keyframes hl_ckpt{0%{opacity:0}84.615%{opacity:0}85.077%{opacity:1}91.846%{opacity:1}92.308%{opacity:0}100%{opacity:0}}
-@keyframes hl_sidecar{0%{opacity:0}61.538%{opacity:0}62.000%{opacity:1}68.769%{opacity:1}69.231%{opacity:0}100%{opacity:0}}
-@media (prefers-reduced-motion:no-preference){#tplan{animation:mvplan 16.9s linear infinite}
-#tplan>.body{animation:visplan 16.9s linear infinite}
-#t12{animation:mv12 16.9s linear infinite}
-#t12>.body{animation:vis12 16.9s linear infinite}
-#t13{animation:mv13 16.9s linear infinite}
-#t13>.body{animation:vis13 16.9s linear infinite}
-#b13s{animation:w_b13s 16.9s linear infinite}
-#b13m{animation:w_b13m 16.9s linear infinite}
-#mg12{animation:w_mg12 16.9s linear infinite}
-#mg13{animation:w_mg13 16.9s linear infinite}
-#m12{animation:w_m12 16.9s linear infinite}
-#m13{animation:w_m13 16.9s linear infinite}
-#red12{animation:w_red12 16.9s linear infinite}
-#grn12{animation:w_grn12 16.9s linear infinite}
-#red13{animation:w_red13 16.9s linear infinite}
-#grn13{animation:w_grn13 16.9s linear infinite}
-#fix13{animation:w_fix13 16.9s linear infinite}
-#n1{animation:w_n1 16.9s linear infinite}
-#n2{animation:w_n2 16.9s linear infinite}
-#loop{animation:w_loop 16.9s linear infinite}
+@keyframes c0{0%{opacity:0}0.000%{opacity:0}0.400%{opacity:1}6.267%{opacity:1}6.667%{opacity:0}100%{opacity:0}}
+@keyframes c1{0%{opacity:0}6.667%{opacity:0}7.067%{opacity:1}12.933%{opacity:1}13.333%{opacity:0}100%{opacity:0}}
+@keyframes c2{0%{opacity:0}13.333%{opacity:0}13.733%{opacity:1}19.600%{opacity:1}20.000%{opacity:0}100%{opacity:0}}
+@keyframes c3{0%{opacity:0}20.000%{opacity:0}20.400%{opacity:1}26.267%{opacity:1}26.667%{opacity:0}100%{opacity:0}}
+@keyframes c4{0%{opacity:0}26.667%{opacity:0}27.067%{opacity:1}32.933%{opacity:1}33.333%{opacity:0}100%{opacity:0}}
+@keyframes c5{0%{opacity:0}33.333%{opacity:0}33.733%{opacity:1}39.600%{opacity:1}40.000%{opacity:0}100%{opacity:0}}
+@keyframes c6{0%{opacity:0}40.000%{opacity:0}40.400%{opacity:1}46.267%{opacity:1}46.667%{opacity:0}100%{opacity:0}}
+@keyframes c7{0%{opacity:0}46.667%{opacity:0}47.067%{opacity:1}52.933%{opacity:1}53.333%{opacity:0}100%{opacity:0}}
+@keyframes c8{0%{opacity:0}53.333%{opacity:0}53.733%{opacity:1}59.600%{opacity:1}60.000%{opacity:0}100%{opacity:0}}
+@keyframes c9{0%{opacity:0}60.000%{opacity:0}60.400%{opacity:1}66.267%{opacity:1}66.667%{opacity:0}100%{opacity:0}}
+@keyframes c10{0%{opacity:0}66.667%{opacity:0}67.067%{opacity:1}72.933%{opacity:1}73.333%{opacity:0}100%{opacity:0}}
+@keyframes c11{0%{opacity:0}73.333%{opacity:0}73.733%{opacity:1}79.600%{opacity:1}80.000%{opacity:0}100%{opacity:0}}
+@keyframes c12{0%{opacity:0}80.000%{opacity:0}80.400%{opacity:1}86.267%{opacity:1}86.667%{opacity:0}100%{opacity:0}}
+@keyframes c13{0%{opacity:0}86.667%{opacity:0}87.067%{opacity:1}92.933%{opacity:1}93.333%{opacity:0}100%{opacity:0}}
+@keyframes hl_forge{0%{opacity:0}0.000%{opacity:0}0.400%{opacity:1}6.267%{opacity:1}6.667%{opacity:0}100%{opacity:0}}
+@keyframes hl_chisel{0%{opacity:0}6.667%{opacity:0}7.067%{opacity:1}12.933%{opacity:1}13.333%{opacity:0}100%{opacity:0}}
+@keyframes hl_ready{0%{opacity:0}13.333%{opacity:0}13.733%{opacity:1}19.600%{opacity:1}20.000%{opacity:0}100%{opacity:0}}
+@keyframes hl_gate{0%{opacity:0}20.000%{opacity:0}20.400%{opacity:1}26.267%{opacity:1}26.667%{opacity:0}100%{opacity:0}}
+@keyframes hl_ralph{0%{opacity:0}26.667%{opacity:0}27.067%{opacity:1}32.933%{opacity:1}33.333%{opacity:0}40.000%{opacity:0}40.400%{opacity:1}46.267%{opacity:1}46.667%{opacity:0}100%{opacity:0}}
+@keyframes hl_cody{0%{opacity:0}33.333%{opacity:0}33.733%{opacity:1}39.600%{opacity:1}40.000%{opacity:0}46.667%{opacity:0}47.067%{opacity:1}52.933%{opacity:1}53.333%{opacity:0}60.000%{opacity:0}60.400%{opacity:1}66.267%{opacity:1}66.667%{opacity:0}100%{opacity:0}}
+@keyframes hl_reven{0%{opacity:0}53.333%{opacity:0}53.733%{opacity:1}59.600%{opacity:1}60.000%{opacity:0}100%{opacity:0}}
+@keyframes hl_merge{0%{opacity:0}73.333%{opacity:0}73.733%{opacity:1}86.267%{opacity:1}86.667%{opacity:0}100%{opacity:0}}
+@keyframes hl_ckpt{0%{opacity:0}86.667%{opacity:0}87.067%{opacity:1}92.933%{opacity:1}93.333%{opacity:0}100%{opacity:0}}
+@keyframes hl_sidecar{0%{opacity:0}66.667%{opacity:0}67.067%{opacity:1}72.933%{opacity:1}73.333%{opacity:0}100%{opacity:0}}
+@media (prefers-reduced-motion:no-preference){#tplan{animation:mvplan 19.5s linear infinite}
+#tplan>.body{animation:visplan 19.5s linear infinite}
+#t12{animation:mv12 19.5s linear infinite}
+#t12>.body{animation:vis12 19.5s linear infinite}
+#t13{animation:mv13 19.5s linear infinite}
+#t13>.body{animation:vis13 19.5s linear infinite}
+#b13s{animation:w_b13s 19.5s linear infinite}
+#b13m{animation:w_b13m 19.5s linear infinite}
+#mg12{animation:w_mg12 19.5s linear infinite}
+#mg13{animation:w_mg13 19.5s linear infinite}
+#m12{animation:w_m12 19.5s linear infinite}
+#m13{animation:w_m13 19.5s linear infinite}
+#red12{animation:w_red12 19.5s linear infinite}
+#grn12{animation:w_grn12 19.5s linear infinite}
+#red13{animation:w_red13 19.5s linear infinite}
+#grn13{animation:w_grn13 19.5s linear infinite}
+#fix13{animation:w_fix13 19.5s linear infinite}
+#n1{animation:w_n1 19.5s linear infinite}
+#n2{animation:w_n2 19.5s linear infinite}
+#loop{animation:w_loop 19.5s linear infinite}
 #loop .flow{animation:dash 0.8s linear infinite}
-#c0{animation:c0 16.9s linear infinite}
-#c1{animation:c1 16.9s linear infinite}
-#c2{animation:c2 16.9s linear infinite}
-#c3{animation:c3 16.9s linear infinite}
-#c4{animation:c4 16.9s linear infinite}
-#c5{animation:c5 16.9s linear infinite}
-#c6{animation:c6 16.9s linear infinite}
-#c7{animation:c7 16.9s linear infinite}
-#c8{animation:c8 16.9s linear infinite}
-#c9{animation:c9 16.9s linear infinite}
-#c10{animation:c10 16.9s linear infinite}
-#c11{animation:c11 16.9s linear infinite}
-#hl_forge{animation:hl_forge 16.9s linear infinite}
-#hl_chisel{animation:hl_chisel 16.9s linear infinite}
-#hl_gate{animation:hl_gate 16.9s linear infinite}
-#hl_ralph{animation:hl_ralph 16.9s linear infinite}
-#hl_cody{animation:hl_cody 16.9s linear infinite}
-#hl_reven{animation:hl_reven 16.9s linear infinite}
-#hl_merge{animation:hl_merge 16.9s linear infinite}
-#hl_ckpt{animation:hl_ckpt 16.9s linear infinite}
-#hl_sidecar{animation:hl_sidecar 16.9s linear infinite}}
-@media (prefers-reduced-motion:reduce){#t12{transform:translate(875.7px,0.0px)}#t13{transform:translate(875.7px,0.0px)}#t12>.body,#t13>.body,#b13s,#cstatic,#loop{opacity:1}}
+#c0{animation:c0 19.5s linear infinite}
+#c1{animation:c1 19.5s linear infinite}
+#c2{animation:c2 19.5s linear infinite}
+#c3{animation:c3 19.5s linear infinite}
+#c4{animation:c4 19.5s linear infinite}
+#c5{animation:c5 19.5s linear infinite}
+#c6{animation:c6 19.5s linear infinite}
+#c7{animation:c7 19.5s linear infinite}
+#c8{animation:c8 19.5s linear infinite}
+#c9{animation:c9 19.5s linear infinite}
+#c10{animation:c10 19.5s linear infinite}
+#c11{animation:c11 19.5s linear infinite}
+#c12{animation:c12 19.5s linear infinite}
+#c13{animation:c13 19.5s linear infinite}
+#hl_forge{animation:hl_forge 19.5s linear infinite}
+#hl_chisel{animation:hl_chisel 19.5s linear infinite}
+#hl_ready{animation:hl_ready 19.5s linear infinite}
+#hl_gate{animation:hl_gate 19.5s linear infinite}
+#hl_ralph{animation:hl_ralph 19.5s linear infinite}
+#hl_cody{animation:hl_cody 19.5s linear infinite}
+#hl_reven{animation:hl_reven 19.5s linear infinite}
+#hl_merge{animation:hl_merge 19.5s linear infinite}
+#hl_ckpt{animation:hl_ckpt 19.5s linear infinite}
+#hl_sidecar{animation:hl_sidecar 19.5s linear infinite}}
+@media (prefers-reduced-motion:reduce){#t12{transform:translate(918.0px,0.0px)}#t13{transform:translate(918.0px,0.0px)}#t12>.body,#t13>.body,#b13s,#cstatic,#loop{opacity:1}}
 </style>
 <rect class="bg" x="0" y="0" width="1280" height="400" rx="8"/>
-<line class="track" x1="90.0" y1="146" x2="1190.0" y2="146"/>
-<rect class="box step" x="24.0" y="56" width="132" height="64" rx="6"/><rect id="hl_forge" class="hl ov" x="21.0" y="53" width="138" height="70" rx="8"/><text class="cmd mono step" x="36.0" y="80">/forge</text><text class="name" x="36.0" y="102">Forge</text>
-<path d="M159.0 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box step" x="181.1" y="56" width="132" height="64" rx="6"/><rect id="hl_chisel" class="hl ov" x="178.1" y="53" width="138" height="70" rx="8"/><text class="cmd mono step" x="193.1" y="80">/chisel</text><text class="name" x="193.1" y="102">Chisel</text>
-<path d="M316.1 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box gate" x="338.3" y="56" width="132" height="64" rx="6"/><rect id="hl_gate" class="hl ov" x="335.3" y="53" width="138" height="70" rx="8"/><text class="cmd mono gate" x="350.3" y="80">you</text><text class="name" x="350.3" y="102">Review issues</text>
-<path d="M473.3 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box step" x="495.4" y="56" width="132" height="64" rx="6"/><rect id="hl_ralph" class="hl ov" x="492.4" y="53" width="138" height="70" rx="8"/><text class="cmd mono step" x="507.4" y="80">/ralph</text><text class="name" x="507.4" y="102">Ralph</text>
-<path d="M630.4 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box step" x="652.6" y="56" width="132" height="64" rx="6"/><rect id="hl_cody" class="hl ov" x="649.6" y="53" width="138" height="70" rx="8"/><text class="cmd mono step" x="664.6" y="80">agent</text><text class="name" x="664.6" y="102">Cody</text>
-<path d="M787.6 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box step" x="809.7" y="56" width="132" height="64" rx="6"/><rect id="hl_reven" class="hl ov" x="806.7" y="53" width="138" height="70" rx="8"/><text class="cmd mono step" x="821.7" y="80">/reven</text><text class="name" x="821.7" y="102">Reven</text>
-<path d="M944.7 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box gate" x="966.9" y="56" width="132" height="64" rx="6"/><rect id="hl_merge" class="hl ov" x="963.9" y="53" width="138" height="70" rx="8"/><text class="cmd mono gate" x="978.9" y="80">you</text><text class="name" x="978.9" y="102">Merge</text>
-<path d="M1101.9 88.0 h19.1" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
-<rect class="box hook" x="1124.0" y="56" width="132" height="64" rx="6"/><rect id="hl_ckpt" class="hl ov" x="1121.0" y="53" width="138" height="70" rx="8"/><text class="cmd mono hook" x="1136.0" y="80">SessionEnd</text><text class="name" x="1136.0" y="102">lore-checkpoint</text>
-<path class="sidelink" d="M875.7 230 Q875.7 282.0 888.3 282.0"/>
-<path class="sidelink" d="M1020.3 282.0 Q1032.9 282.0 1032.9 230"/>
-<rect class="box side" x="888.3" y="250" width="132" height="64" rx="6"/><rect id="hl_sidecar" class="hl ov" x="885.3" y="247" width="138" height="70" rx="8"/><text class="cmd mono side" x="900.3" y="274">claude -w</text><text class="name" x="900.3" y="296">worktree</text>
-<path class="looparc" d="M698.6 54 C698.6 14 581.4 14 581.4 54" stroke-opacity="0.35" marker-end="url(#arrh)"/>
-<g id="loop" class="ov"><path class="looparc flow" d="M698.6 54 C698.6 14 581.4 14 581.4 54" marker-end="url(#arrh)"/></g>
-<text class="looplbl" x="640.0" y="20" text-anchor="middle">↻ next issue</text>
-<g id="n1" class="ov"><rect class="badge" x="589.4" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="605.4" y="72" text-anchor="middle">1/2</text></g>
-<g id="n2" class="ov"><rect class="badge" x="589.4" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="605.4" y="72" text-anchor="middle">2/2</text></g>
+<line class="track" x1="84.0" y1="146" x2="1196.0" y2="146"/>
+<rect class="box step" x="24.0" y="56" width="120" height="64" rx="6"/><rect id="hl_forge" class="hl ov" x="21.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="36.0" y="80">/forge</text><text class="name" x="36.0" y="102">Forge</text>
+<path d="M147.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box step" x="163.0" y="56" width="120" height="64" rx="6"/><rect id="hl_chisel" class="hl ov" x="160.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="175.0" y="80">/chisel</text><text class="name" x="175.0" y="102">Chisel</text>
+<path d="M286.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box step" x="302.0" y="56" width="120" height="64" rx="6"/><rect id="hl_ready" class="hl ov" x="299.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="314.0" y="80">reader</text><text class="name" x="314.0" y="102">Readiness</text>
+<path d="M425.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box gate" x="441.0" y="56" width="120" height="64" rx="6"/><rect id="hl_gate" class="hl ov" x="438.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono gate" x="453.0" y="80">you</text><text class="name" x="453.0" y="102">Review issues</text>
+<path d="M564.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box step" x="580.0" y="56" width="120" height="64" rx="6"/><rect id="hl_ralph" class="hl ov" x="577.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="592.0" y="80">/ralph</text><text class="name" x="592.0" y="102">Ralph</text>
+<path d="M703.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box step" x="719.0" y="56" width="120" height="64" rx="6"/><rect id="hl_cody" class="hl ov" x="716.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="731.0" y="80">agent</text><text class="name" x="731.0" y="102">Cody</text>
+<path d="M842.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box step" x="858.0" y="56" width="120" height="64" rx="6"/><rect id="hl_reven" class="hl ov" x="855.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono step" x="870.0" y="80">/reven</text><text class="name" x="870.0" y="102">Reven</text>
+<path d="M981.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box gate" x="997.0" y="56" width="120" height="64" rx="6"/><rect id="hl_merge" class="hl ov" x="994.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono gate" x="1009.0" y="80">you</text><text class="name" x="1009.0" y="102">Merge</text>
+<path d="M1120.0 88.0 h13.0" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect class="box hook" x="1136.0" y="56" width="120" height="64" rx="6"/><rect id="hl_ckpt" class="hl ov" x="1133.0" y="53" width="126" height="70" rx="8"/><text class="cmd mono hook" x="1148.0" y="80">SessionEnd</text><text class="name" x="1148.0" y="102">checkpoint</text>
+<path class="sidelink" d="M918.0 230 Q918.0 282.0 927.5 282.0"/>
+<path class="sidelink" d="M1047.5 282.0 Q1057.0 282.0 1057.0 230"/>
+<rect class="box side" x="927.5" y="250" width="120" height="64" rx="6"/><rect id="hl_sidecar" class="hl ov" x="924.5" y="247" width="126" height="70" rx="8"/><text class="cmd mono side" x="939.5" y="274">claude -w</text><text class="name" x="939.5" y="296">worktree</text>
+<path class="looparc" d="M759.0 54 C759.0 14 660.0 14 660.0 54" stroke-opacity="0.35" marker-end="url(#arrh)"/>
+<g id="loop" class="ov"><path class="looparc flow" d="M759.0 54 C759.0 14 660.0 14 660.0 54" marker-end="url(#arrh)"/></g>
+<text class="looplbl" x="709.5" y="20" text-anchor="middle">↻ next issue</text>
+<g id="n1" class="ov"><rect class="badge" x="662.0" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="678.0" y="72" text-anchor="middle">1/2</text></g>
+<g id="n2" class="ov"><rect class="badge" x="662.0" y="59" width="32" height="18" rx="9"/><text class="badgetx mono" x="678.0" y="72" text-anchor="middle">2/2</text></g>
 <g id="tplan"><g class="body ov"><rect class="pill plan" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="178.5" text-anchor="middle">plan</text></g></g>
 <g id="t12"><g class="body ov"><rect class="pill" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="178.5" text-anchor="middle">#12</text><g id="m12" class="ov"><rect class="pill merged" x="-28.0" y="161.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="178.5" text-anchor="middle">#12</text></g><text id="mg12" class="grn mono ov" x="36.0" y="178.5">✓ merged</text><text id="red12" class="red mono ov" x="36.0" y="178.5">✗ tests</text><text id="grn12" class="grn mono ov" x="36.0" y="178.5">✓ tests</text></g></g>
 <g id="t13"><g class="body ov"><rect class="pill" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid" x="0" y="214.5" text-anchor="middle">#13</text><g id="m13" class="ov"><rect class="pill merged" x="-28.0" y="197.0" width="56" height="26" rx="13"/><text class="tid on" x="0" y="214.5" text-anchor="middle">#13</text></g><text id="b13s" class="tag mono ov" x="36.0" y="214.5">→ 12-…</text><text id="b13m" class="tag mono ov" x="36.0" y="214.5">→ main</text><text id="red13" class="red mono ov" x="36.0" y="214.5">✗ tests</text><text id="grn13" class="grn mono ov" x="36.0" y="214.5">✓ tests</text><text id="mg13" class="grn mono ov" x="36.0" y="214.5">✓ merged</text></g></g>
-<text id="fix13" class="fix mono ov" x="1030.3" y="286.0">fix review note</text>
-<g id="c0" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 1 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Forge plans the change and sizes it</text></g>
-<g id="c1" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 2 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Chisel turns the plan into issues #12 and #13, both labelled needs-review</text></g>
-<g id="c2" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 3 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You lift the needs-review gate</text></g>
-<g id="c3" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 4 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Ralph's loop, issue 1 of 2: #12 goes to Cody</text></g>
-<g id="c4" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 5 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Cody writes failing tests for #12, then code until green, then opens PR #12</text></g>
-<g id="c5" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 6 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Ralph loops, issue 2 of 2: #13 branches from #12's branch</text></g>
-<g id="c6" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 7 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Tests first again. PR #13 is stacked on #12's branch</text></g>
-<g id="c7" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 8 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You run Reven on each PR. Each diffs against its own base</text></g>
-<g id="c8" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 9 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You fix a review note on #13 in a worktree opened by hooks (claude -w)</text></g>
-<g id="c9" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 10 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">You retarget #13 to main, then merge #12</text></g>
-<g id="c10" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 11 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">Then #13 merges</text></g>
-<g id="c11" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 12 of 12</text><text class="cap" x="640.0" y="376" text-anchor="middle">SessionEnd: lore-checkpoint updates status.md</text></g>
+<text id="fix13" class="fix mono ov" x="1057.5" y="286.0">fix review note</text>
+<g id="c0" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 1 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Forge plans the change and sizes it</text></g>
+<g id="c1" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 2 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Chisel turns the plan into issues #12 and #13, both labelled needs-review</text></g>
+<g id="c2" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 3 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">The reader checks the drafts: ## Readiness, and an open blocker marks the issue blocked</text></g>
+<g id="c3" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 4 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">You lift the needs-review gate</text></g>
+<g id="c4" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 5 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Ralph's loop, issue 1 of 2: #12 goes to Cody</text></g>
+<g id="c5" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 6 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Cody writes failing tests for #12, then code until green, then opens PR #12</text></g>
+<g id="c6" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 7 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Ralph loops, issue 2 of 2: #13 branches from #12's branch</text></g>
+<g id="c7" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 8 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Tests first again. PR #13 is stacked on #12's branch</text></g>
+<g id="c8" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 9 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">You run Reven on each PR. Each diffs against its own base</text></g>
+<g id="c9" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 10 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Reven numbers its findings; Cody answers with FIX, CONTEST or ESCALATE and Ralph allows one contest</text></g>
+<g id="c10" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 11 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">You fix a review note on #13 in a worktree opened by hooks (claude -w)</text></g>
+<g id="c11" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 12 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">You retarget #13 to main, then merge #12</text></g>
+<g id="c12" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 13 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">Then #13 merges</text></g>
+<g id="c13" class="ov"><text class="capstep mono" x="640.0" y="354" text-anchor="middle">step 14 of 14</text><text class="cap" x="640.0" y="376" text-anchor="middle">SessionEnd: the checkpoint hook updates status.md</text></g>
 <text id="cstatic" class="cap ov" x="640.0" y="376" text-anchor="middle">Both PRs under review: #13 is stacked on #12’s branch until you retarget it to main</text>
 </svg>

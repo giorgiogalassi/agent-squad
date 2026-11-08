@@ -139,7 +139,7 @@
     <div class="node">
       <span class="cmd">/forge</span>
       <h3>Forge</h3>
-      <p>Interactive discovery with an opening challenge. Cites a decision when a premise conflicts with it.</p>
+      <p>Interactive discovery with an opening challenge. Cites a decision when a premise conflicts with it. Premise check: each claim about the repo it relies on gets an ID and the evidence for it, and one that does not hold stops the plan.</p>
       <div class="chips"><span class="chip r">decisions.md</span><span class="chip w">forge/output.yaml</span></div>
     </div>
     <div class="node side">
@@ -151,8 +151,8 @@
     <div class="node">
       <span class="cmd">/chisel</span>
       <h3>Chisel</h3>
-      <p>Parent container plus sub-issues with native blocked-by edges. Archives its input after use.</p>
-      <div class="chips"><span class="chip r">output.yaml or PRD</span><span class="chip w">GitHub issues</span></div>
+      <p>Parent container plus sub-issues with native blocked-by edges. Archives its input after use. Readiness step: the <code>reader</code> agent judges the drafts as Cody would receive them; <code>## Readiness</code> goes into each issue and an open blocker marks it <code>blocked</code> so Ralph skips it.</p>
+      <div class="chips"><span class="chip r">output.yaml or PRD</span><span class="chip r">reader</span><span class="chip w">tracker issues</span></div>
     </div>
     <div class="node gate">
       <span class="cmd">you</span>
@@ -166,26 +166,26 @@
     <div class="node">
       <span class="cmd">/ralph --parent n</span>
       <h3>Ralph</h3>
-      <p>Sub-issues of one container, topologically ordered. One stacked branch and PR per issue. Resumable.</p>
+      <p>Sub-issues of one container, topologically ordered. One stacked branch and PR per issue. Resumable. After a fix round it parses Cody's responses: a round of only contests is outside the fix budget and spends the contest cap of 1.</p>
       <div class="chips"><span class="chip w">ralph-run.md</span><span class="chip w">progress.txt</span></div>
     </div>
     <div class="node">
       <span class="cmd">agent</span>
       <h3>Cody</h3>
-      <p>Branches from <code>origin/&lt;base&gt;</code>. Gets preferences, active decisions and the last 30 progress lines injected. Test-first when the issue has test specs: failing tests, then code until green.</p>
+      <p>Branches from <code>origin/&lt;base&gt;</code>. Gets preferences, active decisions and the last 30 progress lines injected. Test-first when the issue has test specs: failing tests, then code until green. In a fix round it answers each numbered finding in <code>## Fix responses</code> with <code>FIX</code>, <code>CONTEST</code> (with evidence) or <code>ESCALATE</code>.</p>
       <div class="chips"><span class="chip r">development.md</span><span class="chip r">decisions.md</span><span class="chip w">PR</span></div>
     </div>
     <div class="node">
       <span class="cmd">agent</span>
       <h3>Reven</h3>
-      <p>Diffs against the PR's own base, so a stacked PR shows only its change. Authority order on conflicts.</p>
+      <p>Diffs against the PR's own base, so a stacked PR shows only its change. Authority order on conflicts. Numbers its blocking findings (B1, B2, ...), checks for orphans and rejected approaches, re-verifies the premises, and rules on each contest: upheld or finding withdrawn.</p>
       <div class="chips"><span class="chip r">development.md</span><span class="chip r">decisions.md</span><span class="chip w">review</span></div>
     </div>
     <div class="node gate">
       <span class="cmd">you</span>
       <h3>Merge</h3>
       <p>Top-down through the stack. Retarget children to main before each parent merges; branches auto-delete.</p>
-      <div class="chips"><span class="chip">GitHub</span></div>
+      <div class="chips"><span class="chip">forge</span></div>
     </div>
     <div class="node hook">
       <span class="cmd">SessionEnd</span>
@@ -245,6 +245,8 @@
     <div class="note"><b>Reading the cells</b><p><span class="R">R</span> reads, <span class="W">W</span> writes. A qualifier says how much: "once" means scaffolded on first run and never overwritten; "+1 line" means an append; "rules + last 20" means every active <code>[rule]</code> entry (cap 15) plus the last 20 active untagged entries, active meaning no <code>Superseded by:</code> line; "last 30 lines" is what Ralph injects into Cody. "archive" means the file is moved out after being consumed.</p></div>
     <div class="note"><b>Authority order</b><p>issue text › architecture.md › scout-cache.md › decisions.md › development.md. Higher wins; Cody notes the conflict in the PR body, Reven under Observations, Forge as an open question.</p></div>
     <div class="note"><b>Incident store</b><p>One global squad-incidents.tsv for all projects. Besides the checkpoint's denial pass, every squad script appends a line when it fails, whichever step called it. Orient only shows a count once an incident recurs.</p></div>
+    <div class="note"><b>Tracker and VCS facades</b><p>Skills, agents and hooks never call <code>gh</code>: they go through <code>squad-tracker.sh</code> and <code>squad-vcs.sh</code>. <code>chisel.tracker</code> and <code>chisel.vcs</code> pick the adapter: <code>github</code> (default), <code>jira</code> (tracker), <code>bitbucket</code> (vcs), or <code>fake</code> for tests. Detached mode makes no provider call.</p></div>
+    <div class="note"><b>Write policy</b><p><code>chisel.writes</code> lists the verbs the squad may use per facade (tracker: create, set-state, claim, label, comment; vcs: branch, pr-create, description-set, comment, stack-init). A denied verb fails closed and the caller degrades, for example Reven's description drift stays in the handoff file. Jira and Bitbucket start with comments off.</p></div>
     <div class="note"><b>Update and forget</b><p>A decision that reverses another carries <code>Supersedes:</code>; the old one gets <code>Superseded by:</code>. At 60 active entries the superseded ones move to decisions-archive.md, which nothing loads.</p></div>
   </div>
 </div>
