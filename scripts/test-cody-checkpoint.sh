@@ -16,6 +16,7 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3
 
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
 cp "$REPO_ROOT"/claude/hooks/{cody-checkpoint.sh,lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh,squad-progress.sh,lore} "$TMPROOT/hooks/"
+cp -R "$REPO_ROOT"/claude/hooks/{tracker,vcs} "$TMPROOT/hooks/"   # provider adapters (#397)
 SUT="$TMPROOT/hooks/cody-checkpoint.sh"
 # Fake gh: `pr list` prints "<number> <base>" when FAKE_PR is set, nothing otherwise.
 printf '#!/bin/sh\n[ -n "$FAKE_PR" ] && echo "$FAKE_PR"\nexit 0\n' > "$TMPROOT/fakebin/gh"

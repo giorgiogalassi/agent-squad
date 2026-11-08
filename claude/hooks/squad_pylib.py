@@ -1,11 +1,12 @@
 """squad_pylib.py -- helpers shared by squad-retro.py and squad-atlas.py
-(and squad-graph.py's callers): the progress.txt review parser and the
+(and squad-graph.py's callers): the PR reader over the VCS facade, the progress.txt review parser and the
 write-if-changed helper behind OUTCOME/CHANGED.
 
 Imported with the hooks directory on sys.path; never run directly.
 Python 3.8+ standard library only.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -13,6 +14,22 @@ import subprocess
 ID = r"([A-Za-z]+-\d+|\d+)"
 REVIEW_RE = re.compile(r"^\[#?" + ID + r"\]\s+(?:(\d{4}-\d{2}-\d{2})\s+)?review:\s+([A-Z_]+|incomplete)\s+r(\d+)\b(.*)$")
 OBS_RE = re.compile(r"\b[Oo]bs:\s*(.*)$")
+
+
+def vcs_json(pr, fields):
+    """One PR as a dict, through the VCS facade (squad-vcs.sh pr-data): the
+    requested fields in the PR JSON vocabulary every vcs adapter maps to.
+    Raises RuntimeError with the facade's last stderr line on failure."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run(["bash", os.path.join(here, "squad-vcs.sh"), "pr-data", str(pr),
+                              "--fields", fields], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError(str(e))
+    if out.returncode != 0:
+        lines = (out.stderr or "").strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else "squad-vcs exited %d" % out.returncode)
+    return json.loads(out.stdout or "null")
 
 
 def unwrap(text):

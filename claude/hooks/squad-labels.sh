@@ -9,12 +9,12 @@
 #   squad-labels.sh escalate --issue <n> --reason <text> [--handoff <p>]
 #   squad-labels.sh needs-review --issue <n> [--handoff <p>]
 #
-# Connected: mutates via squad_gh_write only; label names come ONLY from
+# Connected: mutates via the tracker facade (squad_tracker) only; label names come ONLY from
 # chisel-config.json (state_labels.{in_progress,in_review,blocked} required,
 # review_label absent/"none" = not configured), parsed with grep/sed. A
 # missing/unreadable config or missing state label is a hard failure (20);
 # there are no built-in defaults. The issue's current labels are read with
-# `gh issue view --json labels`.
+# the tracker facade (squad_tracker labels).
 # Two-step verbs are re-runnable after a partial failure:
 #   review    swap edit, then remove review_label; a re-run that finds
 #             in_review but review_label still present does only the remove.
@@ -23,8 +23,8 @@
 #             order would lose the comment (not recoverable).
 #   needs-review  re-applies review_label to an issue whose PR is open (in_review
 #             present), keeping in_review. review_label not configured = 10.
-# Detached: zero gh calls; appends a checklist line to --handoff (required).
-# Exit: 0 ok, 2 usage, 10 illegal transition, 20 gh/io failure.
+# Detached: zero tracker calls; appends a checklist line to --handoff (required).
+# Exit: 0 ok, 2 usage, 10 illegal transition, 20 tracker/io failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 
@@ -56,7 +56,7 @@ fi
 
 squad_resolve || squad_fail_incident squad-labels 20 "cannot resolve project paths"
 
-# --- detached: record only, no gh calls of any kind -------------------------
+# --- detached: record only, no tracker calls of any kind -------------------------
 if [ "$TRACKER_MODE" != connected ]; then
   if [ "$VERB" = ensure ]; then
     squad_emit OUTCOME unchanged; squad_emit CHANGED no
@@ -92,12 +92,9 @@ L_RV="$(cfgval review_label)"; [ -n "$L_RV" ] || L_RV=none
 [ -n "$L_BL" ] || squad_fail_incident squad-labels 20 "chisel.state_labels.blocked missing in $CFG"
 
 # One repo lookup per call (read-only).
-REPO_JSON="$(gh repo view --json nameWithOwner)" || squad_fail_incident squad-labels 20 "gh repo view failed"
-REPO="$(printf '%s' "$REPO_JSON" | sed -n 's/.*"nameWithOwner" *: *"\([^"]*\)".*/\1/p')"
-[ -n "$REPO" ] || squad_fail_incident squad-labels 20 "cannot determine owner/repo"
+# Unwrapped on purpose: the adapter caches the lookup in this shell.
+squad_tracker repo >/dev/null || squad_fail_incident squad-labels 20 "tracker repo lookup failed"
 
-# names_of: label names from gh JSON on stdin, one per line.
-names_of() { grep -o '"name" *: *"[^"]*"' | sed 's/^"name" *: *"//; s/"$//'; }
 # in_list <list> <name>
 in_list() { printf '%s\n' "$1" | grep -qxF -- "$2"; }
 join() { printf '%s' "$1" | grep -v '^$' | tr '\n' ',' | sed 's/,$//'; }
@@ -122,13 +119,12 @@ finish() {  # finish <outcome> <changed> <from> <to>
 }
 
 if [ "$VERB" = ensure ]; then
-  LIST="$(gh label list -R "$REPO" --json name)" || squad_fail_incident squad-labels 20 "gh label list failed"
-  HAVE="$(printf '%s' "$LIST" | names_of)"
+  HAVE="$(squad_tracker label-list)" || squad_fail_incident squad-labels 20 "tracker label list failed"
   CREATED=""
   for n in "$L_RV" "$L_IP" "$L_IR" "$L_BL"; do
     [ "$n" = none ] && continue
     in_list "$HAVE" "$n" && continue
-    squad_gh_write label create "$n" -R "$REPO" || squad_fail_incident squad-labels 20 "gh label create $n failed"
+    squad_tracker label-create "$n" || squad_fail_incident squad-labels 20 "tracker label create $n failed"
     CREATED="$CREATED$n
 "
   done
@@ -138,8 +134,7 @@ if [ "$VERB" = ensure ]; then
   exit 0
 fi
 
-VIEW="$(gh issue view "$ISSUE" -R "$REPO" --json labels)" || squad_fail_incident squad-labels 20 "gh issue view $ISSUE failed"
-FROM="$(printf '%s' "$VIEW" | names_of)"
+FROM="$(squad_tracker labels "$ISSUE")" || squad_fail_incident squad-labels 20 "tracker issue lookup $ISSUE failed"
 has_ip=0; has_ir=0; has_bl=0; has_rv=0
 in_list "$FROM" "$L_IP" && has_ip=1
 in_list "$FROM" "$L_IR" && has_ir=1
@@ -151,24 +146,24 @@ case "$VERB" in
     [ "$has_ip" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ir" = 1 ] && squad_fail 10 "cannot claim $ISSUE: already $L_IR"
     [ "$has_bl" = 1 ] && squad_fail 10 "cannot claim $ISSUE: $L_BL present (no such transition)"
-    squad_gh_write issue edit "$ISSUE" -R "$REPO" --add-assignee @me --add-label "$L_IP" \
-      || squad_fail_incident squad-labels 20 "gh issue edit failed"
+    squad_tracker label "$ISSUE" --assign-me --add "$L_IP" \
+      || squad_fail_incident squad-labels 20 "tracker label edit failed"
     finish applied yes "$FROM" "$(add "$FROM" "$L_IP")" ;;
   review)
     if [ "$has_ip" = 0 ] && [ "$has_ir" = 1 ]; then
       # Already swapped; only a leftover review_label (partial failure) remains.
       [ "$has_rv" = 1 ] || finish unchanged no "$FROM" "$FROM"
-      squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
-        || squad_fail_incident squad-labels 20 "gh issue edit (remove $L_RV) failed"
+      squad_tracker label "$ISSUE" --remove "$L_RV" \
+        || squad_fail_incident squad-labels 20 "tracker label edit (remove $L_RV) failed"
       finish applied yes "$FROM" "$(drop "$FROM" "$L_RV")"
     fi
     [ "$has_ip" = 0 ] && squad_fail_incident squad-labels 10 "cannot review $ISSUE: neither $L_IP nor $L_IR present"
-    squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_IR" \
-      || squad_fail_incident squad-labels 20 "gh issue edit failed"
+    squad_tracker label "$ISSUE" --remove "$L_IP" --add "$L_IR" \
+      || squad_fail_incident squad-labels 20 "tracker label edit failed"
     TO="$(add "$(drop "$FROM" "$L_IP")" "$L_IR")"
     if [ "$L_RV" != none ]; then
-      squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_RV" \
-        || squad_fail_incident squad-labels 20 "gh issue edit (remove $L_RV) failed; re-run review to finish"
+      squad_tracker label "$ISSUE" --remove "$L_RV" \
+        || squad_fail_incident squad-labels 20 "tracker label edit (remove $L_RV) failed; re-run review to finish"
       TO="$(drop "$TO" "$L_RV")"
     fi
     finish applied yes "$FROM" "$TO" ;;
@@ -176,16 +171,16 @@ case "$VERB" in
     [ "$L_RV" = none ] && squad_fail 10 "cannot mark $ISSUE needs-review: review_label not configured"
     [ "$has_rv" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ir" = 1 ] || squad_fail 10 "cannot mark $ISSUE needs-review: $L_IR not present"
-    squad_gh_write issue edit "$ISSUE" -R "$REPO" --add-label "$L_RV" \
-      || squad_fail_incident squad-labels 20 "gh issue edit failed"
+    squad_tracker label "$ISSUE" --add "$L_RV" \
+      || squad_fail_incident squad-labels 20 "tracker label edit failed"
     finish applied yes "$FROM" "$(add "$FROM" "$L_RV")" ;;
   escalate)
     [ "$has_ip" = 0 ] && [ "$has_bl" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot escalate $ISSUE: $L_IP not present"
-    squad_gh_write issue comment "$ISSUE" -R "$REPO" --body "$REASON" \
-      || squad_fail_incident squad-labels 20 "gh issue comment failed"
-    squad_gh_write issue edit "$ISSUE" -R "$REPO" --remove-label "$L_IP" --add-label "$L_BL" \
-      || squad_fail_incident squad-labels 20 "gh issue edit failed after comment posted; a retry may duplicate the comment"
+    squad_tracker comment "$ISSUE" --body "$REASON" \
+      || squad_fail_incident squad-labels 20 "tracker comment failed"
+    squad_tracker label "$ISSUE" --remove "$L_IP" --add "$L_BL" \
+      || squad_fail_incident squad-labels 20 "tracker label edit failed after comment posted; a retry may duplicate the comment"
     squad_incident squad-labels 0 "escalated $ISSUE: $REASON" escalation
     finish applied yes "$FROM" "$(add "$(drop "$FROM" "$L_IP")" "$L_BL")" ;;
 esac

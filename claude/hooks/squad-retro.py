@@ -22,10 +22,8 @@ Sources, all read-only:
   verdicts.tsv        not read: progress.txt is the verdict source (model and
                       timestamp per verdict stay a /stats matter)
   squad-stats.py      `branch <name>` for the cost per branch (COST_USD)
-  VCS                 merged/reverted/follow-ups/human comments. Until
-                      #397 lands this is `gh` directly, reads only
-                      (pr view, pr list, api .../comments); it moves
-                      onto squad-vcs.sh / squad-tracker.sh unchanged.
+  VCS                 merged/reverted/follow-ups/human comments. Read
+                      through squad-vcs.sh pr-data (reads only).
                       TRACKER_MODE != connected -> SOURCE=git-only:
                       merge and follow-up state from the local clone.
 
@@ -217,22 +215,14 @@ def blocker_kinds(rounds):
     return sorted(kinds)
 
 
-def gh_json(args):
-    out = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=60)
-    if out.returncode != 0:
-        raise RuntimeError((out.stderr or "").strip().splitlines()[-1:] or ["gh failed"])
-    return json.loads(out.stdout or "null")
-
-
 def git_out(args, root):
     out = subprocess.run(["git"] + args, capture_output=True, text=True, cwd=root or None)
     return out.stdout if out.returncode == 0 else ""
 
 
 def post_merge_vcs(pr, root):
-    """Via gh until #397; same shape expected from squad-vcs.sh pr-events."""
-    d = gh_json(["pr", "view", str(pr), "--json",
-                 "state,mergedAt,mergeCommit,files,reviews,comments,headRefName,baseRefName"])
+    """PR facts through the VCS facade (squad-vcs.sh pr-data)."""
+    d = lib.vcs_json(pr, "state,mergedAt,mergeCommit,files,reviews,comments,headRefName,baseRefName")
     merged_at = d.get("mergedAt") or ""
     ev = {"state": d.get("state"), "merged": merged_at[:10] or None,
           "human_comments": 0, "reverted": False, "followups": 0, "reopened": None}

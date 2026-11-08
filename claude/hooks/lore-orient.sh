@@ -369,9 +369,9 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
     # Base, first match wins: open PR (connected), progress.txt naming this
     # branch, then main (said explicitly, never silently).
     WT_BASE=""; WT_BASE_SRC=""
-    if [ "${TRACKER_MODE:-}" = connected ] && command -v gh >/dev/null 2>&1; then
+    if [ "${TRACKER_MODE:-}" = connected ] && [ -n "$SQUAD_COMMON_OK" ] && squad_vcs available; then
       _bf="$(mktemp 2>/dev/null)"
-      ( gh pr view "$WT_BRANCH" --json baseRefName -q .baseRefName > "$_bf" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+      ( squad_vcs pr-view "$WT_BRANCH" --field base 2>/dev/null | sed -n 's/^BASE=//p' > "$_bf" ) </dev/null >/dev/null 2>&1 &
       _pid=$!; _i=0
       while kill -0 "$_pid" 2>/dev/null && [ "$_i" -lt 50 ]; do sleep 0.1; _i=$((_i + 1)); done
       if kill -0 "$_pid" 2>/dev/null; then pkill -P "$_pid" 2>/dev/null; kill "$_pid" 2>/dev/null; fi
@@ -491,25 +491,25 @@ fi
 if [ "${TRACKER_MODE:-}" = connected ]; then
   PR_TIMEOUT="${SQUAD_ORIENT_PR_TIMEOUT:-5}"
   PR_OUT=""
-  if ! command -v gh >/dev/null 2>&1; then
-    PR_OUT="Open PRs: unavailable (gh not found)"
+  _cli=gh; [ -n "$SQUAD_COMMON_OK" ] && _cli="$(squad_vcs cli-name 2>/dev/null | sed -n 's/^CLI_NAME=//p')"
+  if [ -z "$SQUAD_COMMON_OK" ] || ! squad_vcs available; then
+    PR_OUT="Open PRs: unavailable (${_cli} not found)"
   else
     _prf="$(mktemp 2>/dev/null)"
-    ( gh auth status >/dev/null 2>&1 || { echo "AUTH" > "$_prf.err"; exit 1; }
-      gh pr list --state open --limit 10 --json number,title,headRefName,baseRefName \
-        --jq '.[] | "#\(.number) \(.title) (\(.headRefName) -> \(.baseRefName))"' > "$_prf" 2>/dev/null
+    ( squad_vcs auth-status || { echo "AUTH" > "$_prf.err"; exit 1; }
+      squad_vcs pr-list --state open --limit 10 > "$_prf" 2>/dev/null
     ) </dev/null >/dev/null 2>&1 &
     _pid=$!; _i=0
     while kill -0 "$_pid" 2>/dev/null && [ "$_i" -lt $((PR_TIMEOUT * 10)) ]; do sleep 0.1; _i=$((_i + 1)); done
     if kill -0 "$_pid" 2>/dev/null; then
       pkill -P "$_pid" 2>/dev/null; kill "$_pid" 2>/dev/null
-      PR_OUT="Open PRs: unavailable (gh timed out after ${PR_TIMEOUT}s)"
+      PR_OUT="Open PRs: unavailable (${_cli} timed out after ${PR_TIMEOUT}s)"
     elif wait "$_pid" 2>/dev/null; then
       if [ -s "$_prf" ]; then PR_OUT="Open PRs:${NL}$(cat "$_prf")"; else PR_OUT="Open PRs: none"; fi
     elif [ -f "$_prf.err" ]; then
-      PR_OUT="Open PRs: unavailable (gh not authenticated)"
+      PR_OUT="Open PRs: unavailable (${_cli} not authenticated)"
     else
-      PR_OUT="Open PRs: unavailable (gh pr list failed)"
+      PR_OUT="Open PRs: unavailable (${_cli} pr list failed)"
     fi
     rm -f "$_prf" "$_prf.err"
   fi

@@ -41,7 +41,7 @@ Cost is the API-list-price equivalent. On a subscription it is a
 comparison unit, not what you pay.
 
 Exit codes: 0 success, 2 usage error, 10 precondition (vault missing),
-20 I/O error. A gh failure during `report` is not fatal: the report is
+20 I/O error. A VCS facade failure during `report` is not fatal: the report is
 written without the GitHub section and QUALITY=gh-error is emitted
 (exception documented in SCRIPT_CONTRACT.md).
 
@@ -479,7 +479,7 @@ def verdict_rows(records, session_id, project):
     through the SubagentHandback tool, so that tool's input is read too. A
     review posted as text and again via the handback is one review: handback
     rows count only when the transcript has no text verdict. Other tool
-    inputs (the `gh pr comment` bodies) repeat the review and are ignored."""
+    inputs (the PR comment bodies) repeat the review and are ignored."""
     text_rows, handback_rows = {}, {}
     for rec in records:
         if rec.get("type") != "assistant":
@@ -882,17 +882,6 @@ def normalized_table(label, groups, total):
     return lines + [""]
 
 
-def gh_json(args):
-    try:
-        out = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        raise RuntimeError(str(e))
-    if out.returncode != 0:
-        lines = (out.stderr or "").strip().splitlines()
-        raise RuntimeError(lines[-1] if lines else "gh exited %d" % out.returncode)
-    return json.loads(out.stdout or "null")
-
-
 def resolve_paths():
     here = os.path.dirname(os.path.abspath(__file__))
     try:
@@ -928,7 +917,7 @@ def pr_outcomes(since, paths):
     results = []
     try:
         for n in sorted(prs):
-            d = gh_json(["pr", "view", str(n), "--json", "number,state,createdAt,mergedAt,commits"])
+            d = lib.vcs_json(n, "number,state,createdAt,mergedAt,commits")
             created = parse_ts(d.get("createdAt"))
             merged = parse_ts(d.get("mergedAt"))
             later = sum(1 for c in d.get("commits") or []
