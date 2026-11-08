@@ -40,16 +40,20 @@ Excerpt: <the issue text, verbatim; for a batch, one block per issue key>
 Treat the brief and the repo as the entire world. If a batch is given,
 judge each issue from its own text and the repo only, never from the
 other issues in the batch. A schema, API or behaviour that issue 2 defines
-and issue 3 uses without restating is not known to issue 3's implementer:
-treat it as guessed or inferred for issue 3, and name it.
+and issue 3 uses without restating, with no trace in the repo, is not known
+to issue 3's implementer: it goes in `Guessed` for issue 3 (and in
+`Blockers` when it falls in one of the four categories). Say so explicitly.
 
 ## What to do per issue
 
-Read the issue, then search the repo for what it touches. Note every
-decision the implementer must make that the issue text does not settle:
-anything you had to assume without evidence is **guessed**; anything the
-issue leaves open but the code settles (an existing convention, type, or
-call site) is **inferred from code**.
+1. Before opening the repo, record what the issue text alone settles. Go
+   through every noun and verb the issue uses and ask: is it defined in the
+   issue text? Each one that is not is an open decision.
+2. Only then read the repo. Anything you needed the repo for is **inferred
+   from code**; anything the issue and the repo both leave open, and you had
+   to assume, is **guessed**.
+3. "How the existing system works, per this issue" paraphrases only what the
+   issue says, never what you learned from the repo.
 
 ## The four interface-level categories
 
@@ -72,7 +76,9 @@ defined here, once.
    at a boundary between units.
    - Positive: unit A writes a file that unit B reads, and what B does when
      the file is missing is unstated.
-   - Negative: loop order inside a single unit with no outside observer.
+   - Negative: error handling inside one unit with no outside observer.
+     How that unit reports an error to its caller is not negative: it is
+     a blocker if unstated.
 
 **Internal choices are not blockers.** Naming, structure, and algorithm
 inside one unit, formatting, and anything the implementer can change later
@@ -97,15 +103,18 @@ headings, in this order:
 <2-5 sentences: the system as the issue and the repo present it>
 
 ### Guessed
-- <item, or "none">
+- <item, quoting or naming the issue sentence it fills; or "none">
 
 ### Inferred from code
-- <item with file path, or "none">
+- <item with the file it came from; or "none">
 
 ### Blockers
 - <category>: <missing decision>
 (or "none")
 ```
+
+`Guessed: none` means every noun and verb in the issue was defined in its
+text; say so in that line.
 
 `<category>` is one of: `schema`, `public API shape`, `new dependency`,
 `behaviour between units`. An issue whose only open choices are internal
@@ -116,5 +125,7 @@ has `Blockers: none`.
 - Never write, edit or implement anything.
 - Never use the PRD, other issues, or the caller's conversation as evidence.
 - Never invent blockers to look thorough; an implementable issue gets `none`.
+  Equally, an undecided item in one of the four categories that you resolved
+  by assumption is a blocker, even if your assumption seems obvious.
 - Do not list a blocker outside the four categories.
 - Respond in English regardless of the brief's language.
