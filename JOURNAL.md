@@ -1656,27 +1656,47 @@ cost a wasted fix round or an unrecorded refusal, and nothing bounded disputes.
 
 ### Iteration 46: Forge checks its premises against the code (#459)
 
-**Problem:** a Forge analysis could rest on a claim about the repo that was
-never looked at ("X does not exist yet", "Y already validates Z"). The issues
-inherited the claim, and Cody built on it or duplicated what was there.
+**Problem:** Forge turned each requirement straight into a solution, assuming
+the problem it describes exists in the current code. For a conditional
+requirement ("when X happens in state Y, do Z") the behaviour can already exist,
+or the condition can never hold when the trigger fires. The squad then built,
+tested and reviewed code that changed nothing, and reviewing against the
+acceptance criteria could not catch it because the issue itself was wrong.
 
 **Change (#459):**
 
-- *Premises in the YAML.* Forge lists each repo claim it relies on as a premise
-  with an ID (`P1`, ...), a kind and the evidence it found. A claim it cannot
-  verify is marked as such, not dropped.
-- *Chisel carries the IDs.* Issues name the premises they depend on; a reader
-  failure is marked on the issue rather than silently passing.
-- *Cody stops, Reven re-verifies.* If a premise is false when Cody looks, Cody
-  stops and says so instead of working around it; Reven re-checks the cited
-  premises against the diff. A new `forge-already-covered` eval case covers the
-  "already built" direction.
-- *Rejected:* a separate verifier agent. The reader and Reven already look at
-  the code at the two moments that matter; a third pass would add cost, not a
-  new viewpoint.
+- *Premises in the YAML.* Forge gives each requirement a premise ID (`P1`, ...)
+  and a status: `gap confirmed`, `already covered` or `not verifiable`. A new
+  capability gets a light check (name what was searched and not found); a
+  conditional one gets a full trace, with the trigger and the state at that
+  moment as `file:line`. Forge reads the target repo's own context first, and a
+  code graph only picks what to read, never counts as evidence. `already
+  covered` and `not verifiable` go to the user with the evidence; Forge never
+  drops or reshapes a requirement on its own. Archy copies the premises into a
+  `## Premises` section of the PRD unchanged.
+- *Chisel: kind and premise IDs.* Every code issue carries `Kind: behaviour |
+  enabler | refactor | hardening`. A `behaviour` issue lists its premise IDs,
+  with the trigger and state locations next to each, and needs a `gap
+  confirmed` one; the other kinds state a `Reason:`. A `behaviour` issue with no
+  confirmed gap goes to the user, and if still unconfirmed at creation it gets a
+  `premise:` blocker line and is marked blocked through the #483 readiness path,
+  also when the reader failed.
+- *Cody stops, Reven re-verifies.* For a `behaviour` issue Cody re-checks each
+  premise on the checked-out code before the fix; one that no longer holds is a
+  stop with no commit and `ESCALATION: premise`, which Ralph treats as an
+  immediate escalation. Reven asks two questions on the branch: does the code
+  close the gap, and does the premise still hold. A failure is a blocking `B<n>`
+  naming the premise and the path traced.
+- *Eval.* `forge-already-covered` runs Forge non-interactively on a TypeScript
+  fixture where leaving a section already calls `resetSection()`; the graders
+  want `already covered` with `resetSection` as evidence and no planned
+  `behaviour` issue that resets the sort on load.
+- *Rejected:* a generic reachability check in Reven. Reven traces only the path
+  the premise names; in DI- and template-wired code a generic check mostly
+  produces false positives, and it would have passed the motivating case.
 
-> **Key decision:** a premise is evidence with an ID that travels from Forge to
-> Reven, not a sentence in prose.
+> **Key decision:** a premise is evidence with an ID that travels from Forge
+> through Chisel to Cody and Reven, not a sentence in prose.
 
 **Open:** the `forge-already-covered` eval has not run live (5.13).
 
@@ -1684,27 +1704,38 @@ inherited the claim, and Cody built on it or duplicated what was there.
 
 ### Iteration 47: Reven checks for orphans and rejected approaches (#480)
 
-**Problem:** a PR could add a function, key or section nothing used, and could
-reintroduce an approach the issue had rejected. Reven's per-line review missed
-both because neither is visible in a hunk.
+**Problem:** on a PR of about 50 files Reven returned COMMENT twice, and the
+team's review bot then raised 17 valid findings on the same diff. Reven had
+seen two of them (an approach a loaded repo skill rejects, translation keys
+left with no reader) but filed them as non-blocking observations; the rest fell
+into classes it had no step for.
 
 **Change (#480):**
 
-- *Rejected approaches are blocking.* An approach the issue lists as rejected
-  and the diff takes anyway is a numbered blocking finding.
-- *Orphan check.* For each new symbol, key or file, Reven searches for a user
-  outside the diff and ranks what it finds. An orphan is a finding; "not
-  checked" never becomes INCOMPLETE on its own, so an unchecked orphan does not
-  fail a PR by omission. The check runs per batch of new names and prints under
-  its own heading.
-- *Second parser.* A new reader of data an existing parser already reads is
-  flagged, because two parsers of one format drift (the #485 incident below).
-- *Rejected:* a script that finds orphans. Whether a name has a user depends on
-  what counts as a use in that file type, and a grep that is wrong in both
-  directions is worse than Reven reading.
+- *Rejected approaches are blocking.* When the diff adds an approach that a
+  loaded repo skill, an active `[rule]` or `architecture.md` explicitly rejects
+  or replaces ("not X, use Y"), the finding is a blocking `B<n>`, never an
+  Observation, citing the line that rejects it.
+- *Orphan check.* Reven lists the identifiers the diff adds, renames or stops
+  using (inputs and outputs, exports, translation keys, test ids, config and
+  flag keys, switch branches), ranks them by blast radius and greps for a
+  reader in batches, one pattern per identifier kind. Both directions count:
+  added and never read, and a removed writer whose readers remain. An orphan the
+  diff creates is a blocking `B<n>` unless the issue or PR description declares
+  it left for later, with the key. Unchecked identifiers go under `## Not read`
+  and do not by themselves make the verdict INCOMPLETE. The result is one line
+  under its own `## Orphan check` heading.
+- *Second parser.* A new reader of a field or payload the codebase already
+  parses elsewhere is compared with the existing parser; input shapes the new
+  one drops are a correctness finding citing both `file:line`s.
+- *Weak tests.* A test that only asserts a styling class or markup detail, or
+  repeats a case another spec in the diff covers, is a non-blocking finding.
+- *Stack-agnostic.* Reven names no client's skills or stack; what counts as a
+  read comes from the reference patterns `architecture.md` or the loaded repo
+  skills give, else a grep of the name.
 
-> **Key decision:** orphans and rejected approaches are findings with IDs, so a
-> contest can rule on them like any other.
+> **Key decision:** a rejected approach and an orphan the diff creates are
+> blocking `B<n>` findings, so a contest can rule on them like any other.
 
 ---
 
@@ -1720,13 +1751,14 @@ a place a second provider would have to be patched.
   verbs; an adapter under `hooks/tracker/` or `hooks/vcs/` defines
   `tracker_<verb>` / `vcs_<verb>`. `chisel.tracker` and `chisel.vcs` select the
   adapter, default `github`; `fake` is the reference for tests.
-- *Skills and agents call the facades.* Lint bans `gh` outside the adapters, so
-  the boundary is enforced, not conventional.
-- *`tracker_set_state` hook.* A tracker without labels provides its own state
-  transitions, and `squad-labels.sh` delegates to it.
-- *Rejected:* a generic REST layer in the facade. The providers differ in
-  vocabulary (labels vs statuses, PR vs pull request), so the verbs carry
-  intent and the adapter maps it.
+- *Skills and agents call the facades.* Lint check 6 fails on a `gh` call in a
+  skill, agent or hook outside the github adapters unless the line carries
+  `<!-- lint:gh-ok -->` or is allowlisted, so the boundary is enforced, not
+  conventional.
+- *`tracker_set_state` hook.* A tracker whose states are not labels provides
+  its own state transitions, and `squad-tracker.sh` and `squad-labels.sh`
+  delegate to it. An adapter that does not load is a failure, never a fallback
+  to the GitHub label machine.
 
 > **Key decision:** the facade verbs describe what the squad wants done, not
 > what the provider calls it.
@@ -1738,8 +1770,9 @@ commit (Iteration 53).
 
 ### Iteration 49: Write policy in the facades (#400)
 
-**Problem:** nothing stopped a connected run from writing to a tracker or forge
-the user only wanted read access to, and a new adapter made that more likely.
+**Problem:** on a repository that belongs to someone else the squad must never
+post a comment. That held only because Reven's writes targeted the owner's own
+repositories; with Jira and Bitbucket adapters it had to hold by construction.
 
 **Change (#400):**
 
@@ -1747,15 +1780,19 @@ the user only wanted read access to, and a new adapter made that more likely.
   (`tracker`: create, create-child, set-state, claim, label, comment; `vcs`:
   branch, pr-create, description-set, comment, stack-init). The validator
   rejects unknown facades and verbs.
-- *Fails closed.* A denied verb returns a failure the caller can read; callers
+- *Fails closed.* A denied verb exits 20 with `REASON=policy: <verb> not
+  allowed on <project>`, and a list that cannot be read refuses too. Callers
   degrade (the PR description drift stays in the handoff file, as in detached
-  mode) rather than retry. No environment variable bypasses it.
+  mode) and Ralph records the refusal instead of retrying. No environment
+  variable bypasses it, and lint check 16 fails a skill or agent that names a
+  facade-internal write path.
 - *`squad-labels.sh` enforces it.* Every flow reaches the labels through that
   script, so claim needs `claim` and review, needs-review and escalate need
   `set-state`; the transition's own edits then pass through an in-process flag.
-- *Defaults.* Jira and Bitbucket start with `comment` off.
-- *Rejected:* a per-adapter allowlist. The policy is about what the user lets
-  the squad do, not about what a provider can do.
+- *Defaults.* Without a list, every write verb is allowed on GitHub; with
+  `tracker: jira` or `vcs: bitbucket`, every verb except `comment`.
+- *Rejected:* the rule as a sentence in a prompt. The skills only call the
+  facades; the facades enforce.
 
 > **Key decision:** the policy lives in the facade layer, once, and is checked
 > where every flow converges.
@@ -1769,14 +1806,17 @@ the user only wanted read access to, and a new adapter made that more likely.
 **Change (#398):** `hooks/tracker/jira.sh` (REST v3, `curl` and `jq`) with
 `jira_site`, `jira_email`, `jira_project`, `jira_states`, `jira_link_type`,
 `jira_issue_type`, `jira_subtask_type` and `jira_fields`, all validated.
-Squad states map to Jira statuses and moves go through transitions, since Jira
-has no labels to swap. The token comes from the keychain or `SQUAD_JIRA_TOKEN`
-and reaches `curl` through a descriptor, never argv. Keychain and `curl`
+Claim, review and escalate move the issue to the status `jira_states` maps,
+through a transition looked up by target name in the live transition list;
+needs-review and escalate add labels (`review_label`, `state_labels.blocked`).
+The token comes from `SQUAD_JIRA_TOKEN`, else the macOS keychain, and reaches
+`curl` through a config file descriptor, never argv. Keychain and `curl`
 plumbing moved to `squad-http.sh` so the next adapter shares it. Tests run over
 recorded responses and a `curl` shim.
 
-- *Rejected:* creating Jira statuses from the squad. Workflows are the team's;
-  an unmapped status is an error that names the key.
+- *Rejected:* guessing a transition. Workflows are the team's; a state with no
+  `jira_states` entry, or no live transition to it, exits 10 with a `REASON=`
+  naming it (escalate without a `blocked` entry keeps the status and says so).
 
 > **Key decision:** the adapter maps onto the project's workflow instead of
 > imposing one.
@@ -1791,17 +1831,19 @@ unverified (5.13).
 **Problem:** the forge side of the facade had only GitHub.
 
 **Change (#399):** `hooks/vcs/bitbucket.sh` (REST 2.0) for PR create, lookup,
-view, list, merged state, diff and description. `pr-data` is mapped to the
+view, list, merged state, diff, description and comment, plus default branch
+and branch lookup. `pr-data` is mapped to the
 GitHub PR vocabulary the stats, retro and atlas readers already use.
 `mergedAt` is the merge commit's date, with `updated_on` as a fallback that
 `mergedAtSource` marks, because `updated_on` moves on any later activity.
-`description-set` keeps reviewers and `close_source_branch`, since a PUT
-replaces what it does not repeat. `diff` uses the PR's own diff when it exists
-and says when it falls back to local git. `stack-init` is unsupported and
-exits 10 with a reason.
+`description-set` re-sends the title, reviewers and `close_source_branch`,
+since an update can clear what it does not repeat. `diff` uses the PR's own
+diff and, when the API cannot give it, falls back to local git with a first
+`# squad:` line saying so. `stack-init` is unsupported and exits 10 with a
+`REASON=`; Ralph logs it and continues.
 
-- *Rejected:* emulating stacked-branch retargeting. Bitbucket cannot retarget a
-  PR the way the squad relies on, so the verb says so and Ralph continues.
+- *Rejected:* emulating stacked branches. Bitbucket has none, so the branches
+  keep their PR bases and the verb says so.
 
 > **Key decision:** an unsupported verb is a stated exit, not a quiet no-op.
 
@@ -1811,16 +1853,21 @@ exits 10 with a reason.
 
 ### Iteration 52: Config validation, unmapped cwd and drift keys (#413, #395, #404)
 
-**Problem:** three small defects, each found in use. A config that was not an
-object, or a non-string `mode`, crashed the validator with a traceback;
-`squad-labels.sh` built a vault path from an empty project name in an unmapped
-directory; and the architecture-drift thresholds were fixed in code.
+**Problem:** two defects and one missing check. A config that was not an
+object, or a `mode` that was a list or object, crashed the validator with a
+traceback; `squad-labels.sh` built `projects//` from an empty project name in an
+unmapped directory and failed with a misleading missing-config incident; and
+nothing measured when `architecture.md` drifted from the code, the moment the
+JOURNAL set for adding Oak.
 
 **Change:** the validator guards types and reports violations instead of
 raising (#413); `squad-labels.sh` exits 10 with `no project mapped for <root>;
 run /seed or /lore start` right after path resolution, before any tracker call
-(#395); `chisel.architecture_drift.{days,commits}` is accepted, validated and
-documented, and the vault check prints an `ARCHITECTURE_DRIFT` line (#404).
+(#395); the vault check prints `ARCHITECTURE_DRIFT=<days>,<commits>` when
+`architecture.md` is older than N days and more than M structural commits
+(manifests, lockfiles, build config, files added or removed under a top-level
+directory) touched the repo since, with N and M from
+`chisel.architecture_drift.{days,commits}`, default 60 and 30, validated (#404).
 Merged with the providers lane, the order in `squad-labels.sh` is resolve,
 unmapped guard, then write policy and adapter logic.
 
@@ -1835,13 +1882,16 @@ unmapped guard, then write policy and adapter logic.
 branches so plugin versions can be tested side by side: `int/readiness` (#420
 plus #482-#486, #459, #480), `int/providers` (that plus #397, #400, #398,
 #399), `int/fixes` (#420 plus #413, #395, #404) and `int/all` (everything).
-Each is a plain merge of reviewed branches, so a regression can be bisected to
-one lane.
+`int/readiness` and `int/providers` are the tips of stacked chains (each issue
+branch on the previous one); `int/fixes` merges three independent branches onto
+#420, and `int/all` merges `int/fixes` into the providers tip, so a regression
+can be bisected to one lane.
 
 **Source of #482-#486.** Google's elephant-goldfish-model (EGM) was the
-reference: a fresh reader that judges the issue as Cody receives it (#482),
-zero-decision narrowed to interface-level decisions (#483), and typed
-responses between Cody and Reven (#485, #486).
+reference (container #481): a fresh reader that judges the issue as Cody
+receives it (#482), zero-decision narrowed to interface-level decisions (#483),
+and numbered findings with typed responses between Cody and Reven
+(#484-#486).
 
 **What the batch taught:**
 
@@ -1853,17 +1903,18 @@ responses between Cody and Reven (#485, #486).
   regression that each issue's targeted tests did not. Per-issue test scoping
   is a speed choice, and the full suite stays the integration gate.
 - *Wrong stacked branch.* Cody once pushed onto the wrong branch because the
-  worktree was left on the base branch. Ralph now tells Cody to create the
-  branch first and to push with an explicit refspec.
+  worktree was left on the base branch. Neither Ralph nor Cody guards against
+  it yet: Cody pushes with `git push origin HEAD`, so the push follows whatever
+  is checked out (5.13).
 - *Turn-limit stalls.* Two stalls on the large #397 left no checkpoint commit.
   The 4c checkpoint rule exists for this; the stall shows it must be followed on
   large issues, not only small ones.
 - *Vault checkout off main.* Switching the vault checkout away from `main`
   mid-batch redirected `squad-progress` writes onto that branch. That is a bug
   for #420's write path, which must not follow whatever branch the vault is on.
-- *Planned graph vs structure trail.* Ralph's planned graph uses scout unit
-  names, the structure trail uses directory units, so drift is reported where
-  there is none.
+- *Planned graph vs timeline.* The planned graph used scout unit names while
+  the timeline Ralph records with `squad-graph.py event` used folder units, so
+  drift was reported where there was none.
 
 > **Key decision:** keep the integration branches as the unit of release testing
 > until the live acceptances in 5.13 pass.
@@ -2094,11 +2145,12 @@ Ralph stacks each issue's branch on its latest blocker. That is lossless for a c
 Not yet verified live, or known and unfixed:
 
 - **Jira acceptance.** The direction of the `Blocks` link between issues (which side is "blocks") is unverified against a real site.
-- **Bitbucket acceptance.** Whether the PUT in `description-set` keeps reviewers, the length of the merge hash in the PR payload, and `pr-list` pagination are verified only over recorded responses.
+- **Bitbucket acceptance.** Whether the PUT in `description-set` keeps reviewers, the 12-character commit hashes in the PR payload, and the paged reads (`next` links) are verified only over recorded responses.
 - **`forge-already-covered` live eval** has not been run.
 - **`reader-blockers` live eval** has not been run since the graders were tightened.
 - **Vault branch switch.** `squad-progress` writes follow whatever branch the vault checkout is on; they must target `main`. Bug for #420's write path.
-- **Planned-graph unit naming.** Ralph's planned graph uses scout unit names and the structure trail uses directory units, so drift is reported falsely.
+- **Planned-graph unit naming.** The planned graph and the timeline Ralph records can use different unit sources (scout vs folder), so drift is reported falsely.
+- **Push follows the checkout.** Cody pushes `HEAD`; a worktree left on the base branch pushes onto the wrong branch.
 
 > **Action:** run each live check on a throwaway project, then close the point it belongs to. Fix the vault branch redirect and the unit naming before the next batch.
 
