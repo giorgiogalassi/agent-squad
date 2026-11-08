@@ -5,7 +5,7 @@ description: >
   Triggers: /chisel, after Forge produces output.yaml, after Archy produces
   current.md, or when the user asks to create issues from an existing
   analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, Write, Bash
+allowed-tools: Read, Write, Bash, Agent
 ---
 
 # Chisel
@@ -150,9 +150,10 @@ print the stderr line verbatim and stop; create nothing.
 
 Each issue: completable by one agent in one session without external
 context; mapped to acceptance criteria from the input; independent of
-the batch or explicitly ordered. Never create issues for implementation
-details (Cody's call), micro-tasks that belong as checklist items, or
-anything out of scope in the PRD. A good issue: clear title, what and
+the batch or explicitly ordered. Interface-level decisions, as
+`claude/agents/reader.md` defines them (that file is the only definition), are
+decided in the issue; internal choices stay with Cody. Never create issues for
+micro-tasks that belong as checklist items or anything out of scope in the PRD. A good issue: clear title, what and
 why, the criteria it covers, explicit dependencies.
 
 ## Slicing and coupling from the planned graph
@@ -201,6 +202,41 @@ names a concept missing from the `## Owners` section of
 section if absent) before creating the issues; skip it when the row
 already exists; never rewrite or drop existing rows.
 
+## Readiness check
+
+Draft every issue body first (title, description, criteria, test specs, `Units:`
+and `Owner:` lines), keyed `D1`, `D2`, ... in creation order. Nothing is created
+and no batch file is written until this section has run, in both modes.
+
+1. **Run.** Invoke the `reader` agent once for the whole batch with this brief:
+   `Proposal:` the batch title, `Goal:` issues an implementer can build from
+   the text and the repo alone, `Excerpt:` one block per draft key with the draft
+   verbatim. A batch too large for one call is split into chunks (same brief,
+   one reader call each). Save the reader output to a scratch file.
+2. **Interactive, blockers found.** Show the blockers per issue and ask the user
+   to decide each one. Put each answer into the draft, run the reader once more
+   on the changed drafts (the one re-run; no loop), then continue.
+3. **Headless** (no user to ask: invoked with `claude -p` or told so by the
+   caller): no prompt and no draft edits; continue with the first result.
+4. **Write the section** into each draft, mode as configured:
+
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-readiness.sh apply --body <draft-file> --reader <reader-output-file> --key <Dn> --mode <connected|detached>
+   ```
+
+   Read `OUTCOME`, `CHANGED` and `BLOCKERS`. Act on the exit code:
+
+   | Exit | Action |
+   |------|--------|
+   | 0 | Continue; `BLOCKERS` above zero marks the issue blocked (connected: `state_labels.blocked` at creation, LABEL_STATE_MACHINE row L10; detached: the `Blocked: readiness` line the script wrote). |
+   | 10 | Create this issue without a `## Readiness` section. |
+   | 20 | Treat the check as unavailable for this issue; create it without the section. |
+
+   Re-running the script on the same draft replaces the section, never appends.
+5. **Reader failed or timed out** (no output at all): create every issue without
+   the section and print `readiness check unavailable` in the summary. Never
+   block creation on the reader.
+
 ## Issue creation (connected mode)
 
 `gh` via Bash. Titles: verb + noun, ≤60 chars. Bodies: markdown —
@@ -221,7 +257,10 @@ context, acceptance criteria, test specs, notes; never a `Blocked by:` line
      --blocked-by <blocker-number>[,...]
    ```
    Omit `--parent` in the single-issue case; omit `--blocked-by` when
-   independent. Blocker-side recording (rare):
+   independent. The body is the draft file with its `## Readiness` section.
+   An issue whose `BLOCKERS` is above zero also gets `--label <state_labels.blocked>`
+   (row L10 of `LABEL_STATE_MACHINE.md`; the `Readiness: blocked (<n>)` line is
+   already in the body). Blocker-side recording (rare):
    `gh issue edit <blocker> --add-blocking <dependent>`.
 4. Apply `review_label` to every created issue (parent included) at
    creation (`--label`), or after the fact with `--add-label`. Skip
@@ -280,6 +319,12 @@ Owner: <concept>: <owning lib/module>   (only when the issue introduces a new sh
 ### Test specs
 - Given ... when ... then ...
 
+Blocked: readiness   (only when the reader left blockers open)
+
+## Readiness
+### What this proposes
+...
+
 ## SQ-3: <title>
 Blocked by: [SQ-2] <title of blocking issue>
 Parent: [SQ-1]
@@ -301,9 +346,14 @@ Rules:
   import; downstream reports use the tracker key when present, else the
   local ID. Empty mapping is valid. Parent entries get a row like any
   other local ID.
+- Each issue entry carries exactly one `## Readiness` section (the heading stays
+  `## Readiness`, with the reader's `###` blocks under it; an entry ends at the
+  next `## <ID>:` heading) and, when blockers are open, the `Blocked: readiness`
+  line above it. Without a reader result neither is written.
 - Also write `batch-YYYYMMDD-HHMMSS.csv` alongside
   (`Summary,Description`, quoted multiline values, Jira-importable);
-  `Blocked by:`/`Parent:` lines folded into the Description value.
+  `Blocked by:`/`Parent:` lines folded into the Description value, and the
+  `Blocked: readiness` line and `## Readiness` section kept in it.
 
 Then print:
 
@@ -341,6 +391,10 @@ Connected (parent included when created):
   - #<issue-number> <title>
   Review them on GitHub before invoking /ralph.
 
+When the readiness check was unavailable, add `readiness check unavailable` as a
+line before the closing "Review them" line. When some issues were marked blocked,
+add `Blocked by readiness (<n> open): <ids>` before it.
+
 If `chisel.project` is configured and any `item-add` call failed, list
 those failures immediately after the created-issues list — the issues
 still exist, they just aren't on the board yet:
@@ -353,7 +407,8 @@ still exist, they just aren't on the board yet:
 - Titles and descriptions in English regardless of conversation
   language.
 - Never invent requirements not in the input; ambiguous scope → narrower
-  issue with the ambiguity noted, never a question back to the user.
+  issue with the ambiguity noted, never a question back to the user. The one
+  exception is the readiness check's blockers (interactive runs only).
 - PRD open questions go into the relevant issue descriptions for Cody.
 - If the PRD was the input, archive it after creation:
   `.squad/prd/current.md` → `.squad/prd/archive/current-YYYYMMDD-HHMMSS.md`
