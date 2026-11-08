@@ -299,5 +299,33 @@ out="$(bash "$VC" check --vault "$V6" --all)"
 has "invalid tracked config is reported" "VAULT_CONFIG_INVALID=lore-config.json" "$out"
 lacks "invalid tracked config: no false unmapped" "VAULT_PROJECT_UNMAPPED=alpha" "$out"
 
+# ---- architecture.md drift (#404)
+V10="$TMPROOT/v10"; mkvault "$V10"
+R10="$TMPROOT/repo10"; mkdir -p "$R10"; git -C "$R10" init -q >/dev/null 2>&1
+mkdir -p "$V10/projects/clean/.squad"; ARCH10="$V10/projects/clean/.squad/architecture.md"
+printf '# arch\n' > "$ARCH10"; touch -t 202607010000 "$ARCH10"
+gc10() { # gc10 <date> <n>: a commit changing package.json
+  printf '{"n":%s}\n' "$2" > "$R10/package.json"; git -C "$R10" add package.json
+  GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git -C "$R10" -c user.name=t -c user.email=t@t commit -q -m "c$2"
+}
+printf 'a\n' > "$R10/readme"; git -C "$R10" add readme
+GIT_AUTHOR_DATE="2026-06-01T12:00:00" GIT_COMMITTER_DATE="2026-06-01T12:00:00" git -C "$R10" -c user.name=t -c user.email=t@t commit -q -m base
+gc10 2026-06-15T12:00:00 0
+out="$(bash "$VC" check --vault "$V10" --project clean --repo "$R10")"
+lacks "drift: package.json change before architecture.md is not counted" "ARCHITECTURE_DRIFT" "$out"
+for i in 1 2 3; do gc10 "2026-08-0${i}T12:00:00" "$i"; done
+out="$(bash "$VC" check --vault "$V10" --project clean --repo "$R10")"
+lacks "drift: 3 commits stay under the default of 30" "ARCHITECTURE_DRIFT" "$out"
+printf '{"chisel":{"mode":"detached","architecture_drift":{"days":60,"commits":2}}}\n' > "$V10/projects/clean/.squad/chisel-config.json"
+out="$(bash "$VC" check --vault "$V10" --project clean --repo "$R10")"
+has "drift: package.json changed after architecture.md" "ARCHITECTURE_DRIFT=117,3" "$out"
+check "drift: not computed without --repo" "" "$(bash "$VC" check --vault "$V10" --project clean)"
+has "drift: rendered" "architecture.md is 117 days old with 3 structural commits since; re-run /seed" "$(printf '%s\n' "VAULT_SCOPE=clean" "ARCHITECTURE_DRIFT=117,3" | bash "$VC" render)"
+printf '{"chisel":{"mode":"detached","architecture_drift":{"days":200,"commits":2}}}\n' > "$V10/projects/clean/.squad/chisel-config.json"
+lacks "drift: age under the configured days" "ARCHITECTURE_DRIFT" "$(bash "$VC" check --vault "$V10" --project clean --repo "$R10")"
+printf '{"chisel":{"mode":"detached","architecture_drift":{"days":60,"commits":2}}}\n' > "$V10/projects/clean/.squad/chisel-config.json"
+touch -t 202610250000 "$ARCH10"   # a fresh /seed rewrote it
+lacks "drift: gone after a fresh /seed" "ARCHITECTURE_DRIFT" "$(bash "$VC" check --vault "$V10" --project clean --repo "$R10")"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

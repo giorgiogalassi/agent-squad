@@ -8,7 +8,7 @@
 #
 # Usage:
 #   vault-check.sh check [--fix] [--all] [--vault-wide] [--vault <dir>]
-#                        [--project <name>] [--context repo]
+#                        [--project <name>] [--context repo] [--repo <dir>]
 #   vault-check.sh render                  (KEY=value on stdin -> text block)
 #
 # Without --vault/--project the current project is resolved with
@@ -32,6 +32,13 @@
 #   INDEX_ROW_BEHIND=<row date> < <status date>
 #   SESSION_UNCLOSED=<n> oldest <date> <tag>
 #   JOURNAL_POINTER_MISSING=<project>   context: repo only (#330)
+#   ARCHITECTURE_DRIFT=<days>,<commits>  architecture.md older than N days with more
+#                                      than M structural commits since (#404). Needs
+#                                      --repo <checkout>; skipped without it. Age is the
+#                                      file mtime (a stat, no git call in the vault); the
+#                                      commits are counted only once the file is old
+#                                      enough. N/M: chisel-config.json
+#                                      chisel.architecture_drift.{days,commits}, 60/30.
 # Vault scope (preceded by VAULT_SCOPE=vault):
 #   VAULT_STRAY_ROOT=<file>
 #   VAULT_PROJECT_NO_INDEX=<project>
@@ -210,6 +217,47 @@ vc_vault_file() {
   printf '%s' "$v/$rel"
 }
 
+# ---- architecture drift (#404) --------------------------------------------
+
+# epoch_of <YYYY-MM-DD HH:MM>: epoch seconds (BSD date, then GNU date).
+epoch_of() {
+  date -j -f '%Y-%m-%d %H:%M' "$1" '+%s' 2>/dev/null || date -d "$1" '+%s' 2>/dev/null
+}
+
+# arch_drift <architecture.md> <repo> <chisel-config.json>: prints
+# "<days>,<commits>" when the file is older than N days and more than M structural
+# commits touched the repo since its mtime; prints nothing otherwise. Structural =
+# a commit touching package.json, a lockfile, a build/tooling config (root or one
+# level down, for workspaces), or adding/removing a file directly under a top-level
+# directory. Commits are only counted when the age test passes, so a fresh
+# architecture.md costs one stat and one date.
+arch_drift() {
+  local arch="$1" repo="$2" cfg="$3" nd=60 nc=30 m now age commits v
+  [ -f "$arch" ] && [ -d "$repo" ] || return 0
+  if [ -f "$cfg" ] && [[ "$(<"$cfg")" == *architecture_drift* ]] && command -v jq >/dev/null 2>&1; then
+    v="$(jq -r '.chisel.architecture_drift.days // empty' "$cfg" 2>/dev/null)"
+    case "$v" in ''|*[!0-9]*) ;; *) nd="$v" ;; esac
+    v="$(jq -r '.chisel.architecture_drift.commits // empty' "$cfg" 2>/dev/null)"
+    case "$v" in ''|*[!0-9]*) ;; *) nc="$v" ;; esac
+  fi
+  m="$(stat -f %m "$arch" 2>/dev/null || stat -c %Y "$arch" 2>/dev/null)"
+  [ -n "$m" ] || return 0
+  now="$(epoch_of "$(now_ts)")"; [ -n "$now" ] || return 0
+  age=$(( (now - m) / 86400 ))
+  [ "$age" -gt "$nd" ] || return 0
+  commits="$( { 
+    git -C "$repo" log --since="$m" --format=%H -- \
+      package.json package-lock.json pnpm-lock.yaml yarn.lock bun.lockb \
+      pyproject.toml uv.lock poetry.lock Cargo.toml Cargo.lock go.mod go.sum Gemfile.lock composer.lock \
+      Makefile Dockerfile tsconfig.json angular.json next.config.js next.config.mjs next.config.ts \
+      vite.config.ts vite.config.js webpack.config.js \
+      ':(glob)*/package.json' ':(glob)*/tsconfig.json' 2>/dev/null
+    git -C "$repo" log --since="$m" --diff-filter=AD --format=%H -- ':(glob)*/*' 2>/dev/null
+  } | sort -u | grep -c . )"
+  [ "${commits:-0}" -gt "$nc" ] && echo "$age,$commits"
+  return 0
+}
+
 # check_project <vault> <name> <context> <fix:0|1>
 check_project() {
   local vault="$1" name="$2" ctx="$3" fix="$4"
@@ -308,6 +356,14 @@ check_project() {
     findings="${findings}JOURNAL_POINTER_MISSING=$name${NL}"
   fi
 
+  # architecture.md drift (#404): context repo keeps it in <repo>/.squad, else the vault.
+  if [ -n "$VC_REPO" ]; then
+    local asq="$proj/.squad" drift  # lint:state-dir-ok architecture.md lives in SQUAD_DIR
+    [ "$ctx" = repo ] && asq="$VC_REPO/.squad"  # lint:state-dir-ok
+    drift="$(arch_drift "$asq/architecture.md" "$VC_REPO" "$proj/$STATE_NAME/chisel-config.json")"
+    [ -n "$drift" ] && findings="${findings}ARCHITECTURE_DRIFT=$drift${NL}"
+  fi
+
   out="${fixed}${findings}"
   if [ -n "$out" ]; then emit VAULT_SCOPE "$name"; printf '%s' "$out"; fi
 }
@@ -381,6 +437,7 @@ render() {
       INDEX_NO_ROW) echo "INDEX.md: no row for $v" ;;
       INDEX_ROW_BEHIND) echo "INDEX.md: row says ${v%% < *}, status.md says ${v##* < }" ;;
       SESSION_UNCLOSED) echo "session.log: ${v%% oldest *} start(s) without end (oldest ${v##* oldest })" ;;
+      ARCHITECTURE_DRIFT) echo "architecture.md is ${v%%,*} days old with ${v##*,} structural commits since; re-run /seed" ;;
       JOURNAL_POINTER_MISSING) echo "decisions.md: context is repo and $v has no JOURNAL pointer (#330)" ;;
       VAULT_STRAY_ROOT) echo "vault root: stray file $v" ;;
       VAULT_PROJECT_UNMAPPED) echo "projects/$v exists but no lore-config.json or lore-config.local.json entry maps a checkout to it (run /seed, or map it in lore-config.local.json for a local-only project)" ;;
@@ -398,12 +455,13 @@ render() {
 
 NL=$'\n'
 FIXED_FILES=""
+VC_REPO=""
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
     render) render; return 0 ;;
     check) ;;
-    *) die "usage: vault-check.sh check [--fix] [--all] [--vault-wide] [--vault <dir>] [--project <name>] [--context repo] | render" ;;
+    *) die "usage: vault-check.sh check [--fix] [--all] [--vault-wide] [--vault <dir>] [--project <name>] [--context repo] [--repo <dir>] | render" ;;
   esac
   local fix=0 all=0 vwide=0 vault="" name="" ctx=""
   while [ $# -gt 0 ]; do
@@ -414,6 +472,7 @@ main() {
       --vault) vault="${2:-}"; shift ;;
       --project) name="${2:-}"; shift ;;
       --context) ctx="${2:-}"; shift ;;
+      --repo) VC_REPO="${2:-}"; shift ;;
       *) die "vault-check.sh: unknown option $1" ;;
     esac
     shift
