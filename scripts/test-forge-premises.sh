@@ -57,6 +57,10 @@ premises:
 Issues:
   Kind: behaviour - Reset the sort to default when attribute definitions load
 EOS
+cat > "$TMP/bad2.txt" <<'EOS'
+Issues:
+  Kind: behaviour - Fall back to the default when the sort attribute is deleted
+EOS
 grader_match() {
   python3 -I - "$E/graders/$1.md" "$TMP/$2.txt" <<'EOP'
 import re, sys
@@ -69,6 +73,10 @@ EOP
 }
 [ "$(grader_match already-covered-evidence good)" = 1 ] && [ "$(grader_match already-covered-evidence bad)" = 0 ] && ok "grader already-covered-evidence" || bad "grader already-covered-evidence"
 [ "$(grader_match no-behaviour-reset-on-load good)" = 1 ] && [ "$(grader_match no-behaviour-reset-on-load bad)" = 0 ] && ok "grader no-behaviour-reset-on-load" || bad "grader no-behaviour-reset-on-load"
+
+[ "$(grader_match no-behaviour-reset-on-load bad2)" = 0 ] && ok "grader: sort+attribute deleted (bad)" || bad "grader: sort+attribute deleted (bad)"
+has "$C/skills/chisel/SKILL.md" 'trigger. and .state_at_trigger. .file:line' "chisel: copies premise locations"
+has "$C/skills/chisel/SKILL.md" 'one marking path' "chisel: reader-failure marks via readiness"
 
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

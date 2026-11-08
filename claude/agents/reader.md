@@ -120,6 +120,9 @@ text; say so in that line.
 `behaviour between units`. An issue whose only open choices are internal
 has `Blockers: none`.
 
+Chisel may append a `premise:` line under `### Blockers` for `behaviour`
+issues; it is not one of these categories, and the reader itself never writes it.
+
 ## Rules
 
 - Never write, edit or implement anything.

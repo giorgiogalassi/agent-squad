@@ -36,6 +36,7 @@ run "unknown verb: exit 10" 10 "" $'B1: frobbed\n' --open B1
 run "unindented prose in section: exit 10" 10 "" $'B1: FIX\nSome prose here\n' --open B1
 run "star marker contested" 0 "CONTESTS=B2" $'B1: FIX\n* B2: contested src/a.sh:3\n' --open B1,B2
 run "FIXES alias" 0 "FIXES=B1" $'B1: FIXES\n' --open B1
+run "premise escalate (#459)" 0 "ESCALATIONS=B1" $'B1: ESCALATE premise P2 — claim no longer holds\n' --open B1
 run "escalated: colon text" 0 "ESCALATIONS=B1" $'B1: ESCALATED: needs human\n' --open B1
 run "contested without text: exit 10" 10 "" $'B1: CONTESTED.\n' --open B1
 run "fixing is not FIX" 10 "" $'B1: FIXING\n' --open B1

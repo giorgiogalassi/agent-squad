@@ -97,5 +97,28 @@ bash "$S" apply --body "$TMP/e.md" >/dev/null 2>&1; check "missing args: exit 2"
 bash "$S" apply --body "$TMP/none.md" --reader "$TMP/reader.md" --key D1 --mode connected >/dev/null 2>&1; check "unreadable body: exit 20" "20" "$?"
 bash "$S" bogus >/dev/null 2>&1; check "unknown verb: exit 2" "2" "$?"
 
+# premise line (#459): Chisel adds it, creating `### Blockers` when the block lacks it
+cat > "$TMP/reader-nob.md" <<'EOS'
+## Issue D1
+
+### What this proposes
+Reset the sort.
+
+### Guessed
+- none
+- premise: no confirmed gap (P1)
+EOS
+python3 -I - "$TMP/reader-nob.md" <<'EOP'
+import sys
+p = sys.argv[1]
+t = open(p).read().replace("- none\n- premise:", "- none\n\n### Blockers\n- premise:")
+open(p, "w").write(t)
+EOP
+mkbody f; OUT="$(bash "$S" apply --body "$TMP/f.md" --reader "$TMP/reader-nob.md" --key D1 --mode connected 2>/dev/null)"
+check "premise line under a created Blockers heading: BLOCKERS=1" "1" "$(key BLOCKERS)"
+printf '## Issue D1\n\n### Blockers\n- premise: no confirmed gap (none)\n' > "$TMP/reader-only.md"
+mkbody g; OUT="$(bash "$S" apply --body "$TMP/g.md" --reader "$TMP/reader-only.md" --key D1 --mode detached 2>/dev/null)"
+check "premise-only block (reader failed): BLOCKERS=1 and marker" "1/1" "$(key BLOCKERS)/$(grep -c '^Blocked: readiness$' "$TMP/g.md")"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
