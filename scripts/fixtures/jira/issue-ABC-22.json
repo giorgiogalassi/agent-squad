@@ -1,0 +1,57 @@
+{
+  "id": "16",
+  "key": "ABC-22",
+  "fields": {
+    "summary": "B",
+    "status": {
+      "name": "To Do",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "parent": {
+      "key": "ABC-10"
+    },
+    "labels": [],
+    "issuetype": {
+      "name": "Sub-task",
+      "hierarchyLevel": -1
+    },
+    "subtasks": [],
+    "issuelinks": [
+      {
+        "id": "1",
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "inwardIssue": {
+          "key": "ABC-21"
+        }
+      },
+      {
+        "id": "2",
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "outwardIssue": {
+          "key": "ABC-21"
+        }
+      },
+      {
+        "id": "3",
+        "type": {
+          "name": "Relates",
+          "inward": "relates to",
+          "outward": "relates to"
+        },
+        "inwardIssue": {
+          "key": "ABC-99"
+        }
+      }
+    ]
+  }
+}

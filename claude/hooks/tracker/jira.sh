@@ -181,7 +181,7 @@ tracker_batch() {
     _jr_call GET "/search/jql?jql=$q&fields=$_JR_FIELDS&maxResults=100${tok:+&nextPageToken=$tok}"; rc=$?
     [ "$rc" -eq 0 ] || return 20
     all="$(jq -n --argjson a "$all" --argjson p "$JR_BODY" '$a + ($p.issues // [])')" || return 20
-    tok="$(printf '%s' "$JR_BODY" | jq -r 'if (.isLast // true) then empty else (.nextPageToken // empty) end')"
+    tok="$(printf '%s' "$JR_BODY" | jq -r 'if .isLast == false then (.nextPageToken // empty) else empty end')"
     n=$((n + 1))
     [ -n "$tok" ] || break
     if [ "$n" -ge 20 ]; then echo "TRUNCATED=yes"; break; fi
