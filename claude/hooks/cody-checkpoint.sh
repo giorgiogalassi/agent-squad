@@ -40,6 +40,8 @@ while IFS='=' read -r _key _value; do
     PROJECT_ROOT) ROOT="$_value" ;;
     DISPLAY_NAME) DISPLAY="$_value" ;;
     TRACKER_MODE) TMODE="$_value" ;;
+    TRACKER_PROVIDER) export TRACKER_PROVIDER="$_value" ;;
+    VCS_PROVIDER) export VCS_PROVIDER="$_value" ;;
   esac
 done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -d "${VAULT:-}" ] && [ -n "${ROOT:-}" ] || exit 0

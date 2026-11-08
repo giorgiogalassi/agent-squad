@@ -303,6 +303,15 @@ check "cody.md: claim runs before review and again at PR time" 2 "$(grep -c 'squ
 check "cody.md: re-claim and review each handle exit 20" 2 "$(awk '/claim --issue <n>/{f=1} f&&/^ *\| 20 \|/{c++} END{print c+0}' "$CODY")"
 grep -q 'git commit -m "\[#<issue-number>\]' "$CODY" && ok "cody.md: commit subject uses [#N]" || bad "cody.md: commit subject uses [#N]"
 
+# 4i. B2 (#397): a non-github chisel.vcs reaches squad_adapter_load through path-resolve's
+#     VCS_PROVIDER; the fake vcs adapter reports a PR where the gh shim reports none.
+setup connected
+jq '.chisel.vcs = "fake"' "$F_VAULT/projects/fixture/.squad/chisel-config.json" > "$TMPROOT/cfg.json" \
+  && mv "$TMPROOT/cfg.json" "$F_VAULT/projects/fixture/.squad/chisel-config.json"
+commit_on 297-f "[#297] fake vcs"
+FAKE_PR="" SQUAD_FAKE_VCS_PR="9 main" run_hook
+grep -q 'PR #9 opened. Branch: 297-f @' "$STATUS" && ok "chisel.vcs=fake is honoured by cody-checkpoint" || bad "chisel.vcs=fake is honoured by cody-checkpoint"
+
 # 5. exits 0 on garbage input
 RC=0; printf 'not json' | bash "$SUT" >/dev/null 2>&1 || RC=$?
 check "garbage input exits 0" 0 "$RC"

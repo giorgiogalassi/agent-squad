@@ -100,3 +100,13 @@ tracker_comment() {
 }
 
 tracker_preflight() { echo "PROVIDER=fake"; }
+
+# tracker_set_state <id> <claim|review|needs-review|escalate> [args]: the hook
+# point squad-tracker.sh set-state/claim use instead of squad-labels.sh. The
+# fake records the transition as STATE_<verb> in the issue file.
+tracker_set_state() {
+  [ -n "${1:-}" ] && [ -n "${2:-}" ] || { echo "squad: usage: set-state <id> <state>" >&2; return 2; }
+  squad_write_guard || return 20
+  _fk_dir || return 20
+  _fk_set "$1" SET_STATE "$2"
+}

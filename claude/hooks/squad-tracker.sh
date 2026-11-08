@@ -19,8 +19,12 @@
 # Output: KEY=VALUE lines. Items: ID= TITLE= STATE= URL= PARENT= BLOCKED_BY=
 # (plus BLOCKING= LABELS= CONTAINER=), blocks separated by a blank line.
 # Provider: TRACKER_PROVIDER (chisel.tracker, default github).
-# set-state and claim are the squad state machine (squad-labels.sh), which in
-# turn uses the label verbs: one owner for the transitions.
+# set-state and claim are the squad state machine. Today they delegate to the
+# label state machine (squad-labels.sh), which uses the label verbs: one owner
+# for the transitions. A tracker without labels (#398) provides its own by
+# defining tracker_set_state <id> <claim|review|needs-review|escalate>
+# [--reason T] [--handoff P] in its adapter; when defined it is used instead
+# and squad-labels.sh is not called. The github adapter does not define it.
 # Detached mode: every write verb is refused (20), reads are not.
 # Exit: 0 ok, 2 usage, 10 precondition / unsupported verb, 20 failure.
 
@@ -30,11 +34,22 @@ VERB="${1:-}"
 [ -n "$VERB" ] || squad_fail 2 "usage: squad-tracker.sh <verb> [args]"
 shift
 
+# _state_transition <squad-labels verb> <id> [args]: the adapter's
+# tracker_set_state when it defines one, else the label state machine.
+_state_transition() {
+  local lv="$1" id="$2"; shift 2
+  if squad_resolve && squad_adapter_load tracker && declare -F tracker_set_state >/dev/null 2>&1; then
+    tracker_set_state "$id" "$lv" "$@"
+    exit $?
+  fi
+  exec bash "$SQUAD_COMMON_DIR/squad-labels.sh" "$lv" --issue "$id" "$@"
+}
+
 case "$VERB" in
   claim)
     [ -n "${1:-}" ] || squad_fail 2 "claim requires an id"
     id="$1"; shift
-    exec bash "$SQUAD_COMMON_DIR/squad-labels.sh" claim --issue "$id" "$@" ;;
+    _state_transition claim "$id" "$@" ;;
   set-state)
     [ -n "${1:-}" ] && [ -n "${2:-}" ] || squad_fail 2 "usage: set-state <id> <state> [--reason T] [--handoff P]"
     id="$1"; st="$2"; shift 2
@@ -45,7 +60,7 @@ case "$VERB" in
       blocked) lv=escalate ;;
       *) squad_fail 2 "unknown squad state '$st'" ;;
     esac
-    exec bash "$SQUAD_COMMON_DIR/squad-labels.sh" "$lv" --issue "$id" "$@" ;;
+    _state_transition "$lv" "$id" "$@" ;;
 esac
 
 squad_resolve || squad_fail_incident squad-tracker 20 "cannot resolve project paths"

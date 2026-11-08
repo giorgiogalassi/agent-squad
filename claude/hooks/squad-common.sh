@@ -163,14 +163,15 @@ squad_provider_write() {
 }
 
 # squad_adapter_load <tracker|vcs>: source the adapter file of the configured
-# provider (TRACKER_PROVIDER / VCS_PROVIDER, default github) from
+# provider (TRACKER_PROVIDER / VCS_PROVIDER, else the session export
+# SQUAD_TRACKER_PROVIDER / SQUAD_VCS_PROVIDER, else github) from
 # <hooks>/<kind>/<provider>.sh. Adding a provider = one adapter file plus one
 # chisel-config.json value. 2 on a bad name, 10 when no such adapter exists.
 squad_adapter_load() {
   local kind="$1" prov f
   case "$kind" in
-    tracker) prov="${TRACKER_PROVIDER:-github}" ;;
-    vcs) prov="${VCS_PROVIDER:-github}" ;;
+    tracker) prov="${TRACKER_PROVIDER:-${SQUAD_TRACKER_PROVIDER:-github}}" ;;
+    vcs) prov="${VCS_PROVIDER:-${SQUAD_VCS_PROVIDER:-github}}" ;;
     *) echo "squad: unknown adapter kind '$kind'" >&2; return 2 ;;
   esac
   case "$prov" in ''|*[!a-z0-9_-]*) echo "squad: invalid $kind provider '$prov'" >&2; return 2 ;; esac

@@ -132,6 +132,8 @@ elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       SQUAD_DIR) SQUAD_DIR="$_value" ;;
       TRACKER_MODE) TRACKER_MODE="$_value" ;;
       STATE_DIR) STATE_DIR="$_value" ;;
+      TRACKER_PROVIDER) export TRACKER_PROVIDER="$_value" ;;
+      VCS_PROVIDER) export VCS_PROVIDER="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else

@@ -88,5 +88,29 @@ run env PATH="$SHIM:$PATH" bash "$VCS" description-set 3 --body-file /dev/null >
 [ ! -s "$GH_SHIM_LOG" ] && ok "detached description-set made zero gh calls" || bad "gh called in detached mode"
 run bash "$VCS" bogus >/dev/null; check "vcs unknown verb: exit 10" 10 "$?"
 
+# --- set-state/claim: adapter hook point tracker_set_state (#398), else squad-labels.sh
+fixture connected fake
+run bash "$TRK" create --title "S" >/dev/null
+run bash "$TRK" claim 1; rc=$?
+check "claim uses the adapter's tracker_set_state: exit 0" 0 "$rc"
+check "claim recorded by the adapter" claim "$(sed -n 's/^SET_STATE=//p' "$TMPROOT/fake/1.issue")"
+run bash "$TRK" set-state 1 blocked --reason r; rc=$?
+check "set-state blocked maps to escalate in the adapter" "0 escalate" "$rc $(sed -n 's/^SET_STATE=//p' "$TMPROOT/fake/1.issue")"
+
+# --- read-only vcs verbs work without a resolvable project; writes stay guarded
+mkdir -p "$TMPROOT/nores" "$TMPROOT/unmapped" "$TMPROOT/ghbin"
+cp -R "$REPO_ROOT"/claude/hooks/. "$TMPROOT/nores/"
+printf '#!/bin/sh\nexit 1\n' > "$TMPROOT/nores/path-resolve.sh"; chmod +x "$TMPROOT/nores/path-resolve.sh"
+printf '#!/bin/sh\necho "{\\"title\\":\\"t\\"}"\n' > "$TMPROOT/ghbin/gh"; chmod +x "$TMPROOT/ghbin/gh"
+unm() { (cd "$TMPROOT/unmapped" && env -u SQUAD_PROJECT_ROOT -u SQUAD_VAULT_PATH PATH="$TMPROOT/ghbin:$PATH" "$@" 2>"$TMPROOT/err"); }
+out="$(unm bash "$TMPROOT/nores/squad-vcs.sh" cli-name)"; rc=$?
+check "unresolved project: cli-name works" "0 CLI_NAME=gh" "$rc $out"
+out="$(unm bash "$TMPROOT/nores/squad-vcs.sh" pr-data 5 --fields title)"; rc=$?
+check "unresolved project: pr-data works" "0 {\"title\":\"t\"}" "$rc $out"
+unm bash "$TMPROOT/nores/squad-vcs.sh" comment 5 --body x >/dev/null; rc=$?
+check "unresolved project: write verb refused" 20 "$rc"
+unm bash "$REPO_ROOT/claude/hooks/squad-vcs.sh" cli-name >/dev/null; rc=$?
+check "unmapped cwd with the real resolver: cli-name works" 0 "$rc"
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
