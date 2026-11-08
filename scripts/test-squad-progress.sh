@@ -123,6 +123,14 @@ check "direct: run-row updates only the row" "| #5 | 5-a | main | 1 | 0 | - | - 
 check "direct: other row untouched" "| #6 | 6-b | 5-a | 0 | 0 | - | - | pending |" "$(grep '^| #6 ' "$R")"
 sp "$V" run-row --issue '#9' --set State=x; check "run-row unknown issue: exit 10" 10 "$RC"
 sp "$V" run-row --issue '#5' --set Nope=x; check "run-row unknown column: exit 10" 10 "$RC"
+# Contests column (#486): an old 8-column table gains it on first write; a new one takes it as is.
+sp "$V" run-row --issue '#5' --set 'Contests=1/B2'; check "run-row Contests on an old table: applied" 0 "$RC"
+check "run-row Contests: old table upgraded, row set" "| #5 | 5-a | main | 1 | 0 | - | - | running | 1/B2 |" "$(grep '^| #5 ' "$R")"
+check "run-row Contests: other row defaults to 0/-" "| #6 | 6-b | 5-a | 0 | 0 | - | - | pending | 0/- |" "$(grep '^| #6 ' "$R")"
+check "run-row Contests: header and separator widened" "2" "$(grep -cE '^\| Issue .*Contests \||^\|-+.*-\|$' "$R" | head -1)"
+sp "$V" run-row --issue '#5' --set 'Contests=1/-' --set Verdict=X
+check "run-row Contests: second write by name, other column kept" "| #5 | 5-a | main | 1 | 0 | - | X | running | 1/- |" "$(grep '^| #5 ' "$R")"
+sp "$V" run-row --issue '#5' --set 'Contests=1/-'; check "run-row Contests: repeat unchanged" unchanged "$(printf '%s\n' "$OUT" | sed -n 's/^OUTCOME=//p')"
 sp "$V" run-status --value complete; check "direct: run-status" 1 "$(cnt "$R" '^Status: complete$')"
 check "direct: resume reads the counters before any fold" 1 "$(cnt "$R" '^\| #5 .*\| 1 \| 0 \|')"
 fold "$V"
