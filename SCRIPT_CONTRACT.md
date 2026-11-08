@@ -169,6 +169,13 @@ object), `description-get` (the PR body verbatim), `diff` (a unified diff) and
 `pr-list` (display lines). Adapters live in `hooks/tracker/<provider>.sh` and
 `hooks/vcs/<provider>.sh`; see the README, "Tracker and VCS facades".
 
+An adapter that does not load (no such provider file) is a failure (20) for
+`squad-tracker.sh` and `squad-labels.sh` state transitions, never a fallback to
+the GitHub label machine. An adapter defining `tracker_set_state` (Jira) owns
+`claim`, `set-state` and the `squad-labels.sh` verbs; a transition it cannot make
+exits 10 with `REASON=` on stdout (no mapping, or no live transition to the
+status).
+
 Write policy (#400): a write verb that the project's `chisel.writes.<facade>`
 list does not name (or, without the key, that the provider default excludes) is
 refused by the facade before any adapter runs: stdout `REASON=policy: <verb> not

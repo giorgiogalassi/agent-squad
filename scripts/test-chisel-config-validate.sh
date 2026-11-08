@@ -60,5 +60,17 @@ check "writes list of non-strings rejected" \
 check "writes not an object rejected" \
   "{\"chisel\":{$C,\"writes\":[]}}" "chisel.writes: expected an object"
 
+J='"jira_site":"acme.atlassian.net","jira_email":"me@example.com","jira_project":"ABC"'
+check "jira keys with states are clean" \
+  "{\"chisel\":{$C,\"tracker\":\"jira\",$J,\"jira_states\":{\"in-progress\":\"In Progress\",\"done\":\"Done\"},\"jira_link_type\":\"Blocks\",\"jira_fields\":{\"customfield_1\":0}}}" CLEAN
+check "jira_site must be a string" \
+  "{\"chisel\":{$C,\"jira_site\":3}}" "chisel.jira_site: expected a non-empty string"
+check "jira_states unknown squad state rejected" \
+  "{\"chisel\":{$C,\"jira_states\":{\"wip\":\"x\"}}}" "chisel.jira_states.wip: unknown key"
+check "jira_states value must be a status name" \
+  "{\"chisel\":{$C,\"jira_states\":{\"done\":7}}}" "chisel.jira_states.done: expected a Jira status name"
+check "jira_fields must be an object" \
+  "{\"chisel\":{$C,\"jira_fields\":[]}}" "chisel.jira_fields: expected an object"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
