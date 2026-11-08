@@ -8,10 +8,14 @@
 #   --input   Cody's fix-round summary (a file, or - for stdin). Only the
 #             "## Fix responses" section is parsed (heading to the next "## "
 #             heading or EOF); prose outside it is ignored. Inside it blank lines
-#             are ignored and every other line must be one of
-#               B<n>: FIX
+#             are ignored and every other non-indented line must be one of
+#               B<n>: FIX [note]
 #               B<n>: CONTEST <evidence>
 #               B<n>: ESCALATE <reason>
+#             with an optional "- " or "* " list marker, case-insensitive verbs
+#             (FIX/FIXED/FIXES, CONTEST/CONTESTED, ESCALATE/ESCALATED) and optional
+#             punctuation (. : - em dash) before the text. Indented lines continue
+#             the previous entry and are ignored; other lines are malformed.
 #   --open    comma list of the finding IDs still open (ID format: claude/agents/reven.md)
 #   --upheld  comma list of IDs already ruled FINDING_UPHELD; these allow FIX or ESCALATE only
 #
@@ -70,25 +74,47 @@ else
   TEXT=""
 fi
 SEEN=" "; FIXES=""; CONTESTS=""; ESCS=""
-LINE_RE='^(B[0-9]+): (FIX|CONTEST [^[:space:]].*|ESCALATE [^[:space:]].*)$'
+ENTRY_RE='^([-*][[:space:]]+)?(B[0-9]+)([[:space:]]*:[[:space:]]*(.*))?$'
+VERB_RE='^([A-Za-z]+)(.*)$'
+PREV=0
+strip_lead() { # drop leading whitespace, one optional . : - or em dash, then whitespace
+  local t="$1"
+  t="${t#"${t%%[![:space:]]*}"}"
+  case "$t" in "."*|":"*|"-"*) t="${t#?}" ;; "—"*) t="${t#—}" ;; esac
+  t="${t#"${t%%[![:space:]]*}"}"
+  printf '%s' "$t"
+}
 while IFS= read -r line || [ -n "$line" ]; do
   line="${line%"${line##*[![:space:]]}"}"
   [ -n "$line" ] || continue
-  if ! [[ "$line" =~ $LINE_RE ]]; then
+  case "$line" in
+    [[:space:]]*)
+      # Indented prose continues the previous entry; ignored for routing.
+      [ "$PREV" -eq 1 ] || problem "malformed line: $line"
+      continue ;;
+  esac
+  if ! [[ "$line" =~ $ENTRY_RE ]] || [ -z "${BASH_REMATCH[3]}" ]; then
     problem "malformed line: $line"; continue
   fi
-  id="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"
+  id="${BASH_REMATCH[2]}"; rest="${BASH_REMATCH[4]}"
+  if ! [[ "$rest" =~ $VERB_RE ]]; then problem "malformed line: $line"; continue; fi
+  verb="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')"; tail="$(strip_lead "${BASH_REMATCH[2]}")"
+  case "$verb" in
+    FIX|FIXED|FIXES) kind=FIX ;;
+    CONTEST|CONTESTED) kind=CONTEST ;;
+    ESCALATE|ESCALATED) kind=ESCALATE ;;
+    *) problem "malformed line (unknown verb): $line"; continue ;;
+  esac
+  if [ "$kind" != FIX ] && [ -z "$tail" ]; then problem "malformed line (needs text): $line"; continue; fi
+  PREV=1
   if in_list "$id" "$SEEN"; then problem "duplicate ID $id"; continue; fi
   SEEN="$SEEN$id "
-  case "$rest" in
-    CONTEST*)
-      if in_list "$id" "$UPHELD_N"; then problem "$id already FINDING_UPHELD: only FIX or ESCALATE"; continue; fi ;;
-  esac
+  if [ "$kind" = CONTEST ] && in_list "$id" "$UPHELD_N"; then problem "$id already FINDING_UPHELD: only FIX or ESCALATE"; continue; fi
   if ! in_list "$id" "$OPEN_N"; then problem "unknown ID $id (not open)"; continue; fi
-  case "$rest" in
+  case "$kind" in
     FIX) FIXES="$FIXES $id" ;;
-    CONTEST*) CONTESTS="$CONTESTS $id" ;;
-    ESCALATE*) ESCS="$ESCS $id" ;;
+    CONTEST) CONTESTS="$CONTESTS $id" ;;
+    ESCALATE) ESCS="$ESCS $id" ;;
   esac
 done <<EOT
 $TEXT

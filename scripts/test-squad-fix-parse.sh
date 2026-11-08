@@ -31,7 +31,16 @@ run "duplicate ID: exit 10" 10 "" $'B1: FIX\nB1: FIX\n' --open B1
 run "contest on upheld: exit 10" 10 "" $'B2: CONTEST src/a.sh:1\n' --open B2 --upheld B2
 run "no colon: exit 10" 10 "" $'B1 fix\n' --open B1
 run "contest without evidence: exit 10" 10 "" $'B1: CONTEST\n' --open B1
-run "lowercase verb: exit 10" 10 "" $'B1: fix\n' --open B1
+run "lowercase verb accepted" 0 "FIXES=B1" $'B1: fix\n' --open B1
+run "unknown verb: exit 10" 10 "" $'B1: frobbed\n' --open B1
+run "unindented prose in section: exit 10" 10 "" $'B1: FIX\nSome prose here\n' --open B1
+run "star marker contested" 0 "CONTESTS=B2" $'B1: FIX\n* B2: contested src/a.sh:3\n' --open B1,B2
+run "FIXES alias" 0 "FIXES=B1" $'B1: FIXES\n' --open B1
+run "escalated: colon text" 0 "ESCALATIONS=B1" $'B1: ESCALATED: needs human\n' --open B1
+run "contested without text: exit 10" 10 "" $'B1: CONTESTED.\n' --open B1
+run "fixing is not FIX" 10 "" $'B1: FIXING\n' --open B1
+REPLY=$'- B1: FIXED. Step 3 reads `last` from the row first...\n  Step 4 wording is gone...\n- B2: FIXED. `open` and `upheld` are persisted...\n- B3: FIXED. Dropped the clause...\n'
+run "natural reply parses" 0 "FIXES=B1,B2,B3" "$REPLY" --open B1,B2,B3
 run "prose line: exit 10" 10 "" $'Done.\nB1: FIX\n' --open B1
 run "OUTCOME/CHANGED on exit 0" 0 "OUTCOME=unchanged" $'B1: FIX\n' --open B1
 run "CHANGED=no on exit 0" 0 "CHANGED=no" $'B1: FIX\n' --open B1
