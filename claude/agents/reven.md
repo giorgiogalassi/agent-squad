@@ -198,11 +198,14 @@ or share the existing parser.
 
 ## Orphan check
 
-List the identifiers the diff adds, renames or stops using: component inputs
-and outputs, exported symbols, translation keys, test hooks (test ids,
-selectors), config and feature-flag keys, and branches of a switch over a
-type union. For each one, grep the workspace for a reader (or, for a branch,
-a producer). Use the reference patterns `architecture.md` or the loaded repo
+Run this after the top-tier files are read. List the identifiers the diff
+adds, renames or stops using: component inputs and outputs, exported symbols,
+translation keys, test hooks (test ids, selectors), config and feature-flag
+keys, and branches of a switch over a type union, or the project's
+equivalent. Rank them by blast radius: removed or renamed first, then exports
+and config keys, then test ids and translation keys. Batch the greps: one
+alternation pattern per identifier kind or per file kind, not one grep per
+identifier. For each one, look for a reader (or, for a branch, a producer). Use the reference patterns `architecture.md` or the loaded repo
 skills give for that kind of identifier; without any, grep the identifier's
 name. A key read through a variable or built from a prefix counts as read
 only when that pattern is found.
@@ -219,7 +222,9 @@ only when that pattern is found.
   waits on) and not the Premise check (a behaviour premise's path): it covers
   identifiers only.
 - The grep counts toward the reading budget. Identifiers you did not check
-  are listed under `## Not read`, never dropped.
+  are listed under `## Not read`, never dropped. They do not by themselves
+  make the verdict INCOMPLETE; INCOMPLETE still follows the top-tier rule.
+- Report one line under `## Orphan check` in the output.
 
 ## Rule pass
 
@@ -283,10 +288,12 @@ B<n>: FINDING_UPHELD <reason> | B<n>: FINDING_WITHDRAWN <reason>
 - <file or rule> -> why it was not read / checked
 
 ## Rules
-[omit only when no `[rule]` entries and no repo skills were loaded, and no
-identifier was listed by the orphan check]
+[omit only when no `[rule]` entries and no repo skills were loaded]
 - <rule title | skill: name> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
-- orphan check -> N identifiers checked, M orphans (file:line) | not checked (why)
+
+## Orphan check
+[only when the diff adds, renames or removes identifiers]
+- <N> identifiers checked, <M> orphans (file:line), <K> not checked
 
 ## Prior comments
 [only when the change is an open PR]
