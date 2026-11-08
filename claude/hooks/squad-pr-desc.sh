@@ -3,7 +3,7 @@
 # description. Contract: SCRIPT_CONTRACT.md. Bash 3.2 compatible; no jq.
 #
 # Usage:
-#   squad-pr-desc.sh apply --block <file> --pr <n>                 (connected)
+#   squad-pr-desc.sh apply --block <file> --pr <n> [--issue <id> --handoff <p>]  (connected)
 #   squad-pr-desc.sh apply --block <file> --issue <id> --handoff <p> (detached)
 #
 # <file> holds Reven's review (or just its "## Description drift" section).
@@ -21,6 +21,9 @@
 # exact whole-line match, first occurrence; unmatched `line:` items are
 # counted in MISSED and left for the caller to report, never guessed.
 # Detached: zero tracker calls; appends one checklist line per item to --handoff.
+# Write policy (#400): when chisel.writes.vcs lacks description-set, connected
+# mode does not touch the PR: with --issue and --handoff the items are recorded
+# there as in detached mode, then OUTCOME=refused, REASON=policy: ..., exit 20.
 # Emits: OUTCOME, CHANGED, REPLACED, ADDED, MISSED (connected) or ITEMS
 # (detached). Exit: 0 ok, 2 usage, 10 block missing/invalid, 20 provider/io failure.
 
@@ -75,10 +78,8 @@ fi
 
 squad_resolve || squad_fail_incident squad-pr-desc 20 "cannot resolve project paths"
 
-# --- detached: record only, no provider calls of any kind --------------------------
-if [ "$TRACKER_MODE" != connected ]; then
-  [ -n "$HANDOFF" ] || squad_fail 2 "--handoff is required in detached mode"
-  [ -n "$ISSUE" ] || squad_fail 2 "--issue is required in detached mode"
+# record_handoff: one checklist line per item in $HANDOFF; sets CH (yes|no).
+record_handoff() {
   CH=no; i=0
   while [ "$i" -lt "$NL" ]; do
     squad_record_local "$HANDOFF" "- [ ] PR description of $ISSUE: replace \"${OLD[$i]}\" with \"${NEW[$i]}\""; rc=$?
@@ -91,6 +92,13 @@ if [ "$TRACKER_MODE" != connected ]; then
     case "$rc" in 0) CH=yes ;; 1) ;; *) squad_fail 20 "cannot write handoff $HANDOFF" ;; esac
     i=$((i+1))
   done
+}
+
+# --- detached: record only, no provider calls of any kind --------------------------
+if [ "$TRACKER_MODE" != connected ]; then
+  [ -n "$HANDOFF" ] || squad_fail 2 "--handoff is required in detached mode"
+  [ -n "$ISSUE" ] || squad_fail 2 "--issue is required in detached mode"
+  record_handoff
   if [ "$CH" = yes ]; then OUT=recorded-local; else OUT=unchanged; fi
   squad_emit OUTCOME "$OUT"; squad_emit CHANGED "$CH"; squad_emit ITEMS "$((NL+NA))"
   exit 0
@@ -102,6 +110,13 @@ if [ "$NL" -eq 0 ] && [ "$NA" -eq 0 ]; then
   squad_emit OUTCOME unchanged; squad_emit CHANGED no
   squad_emit REPLACED 0; squad_emit ADDED 0; squad_emit MISSED 0
   exit 0
+fi
+# Write policy (#400): without description-set the PR is never touched. The items
+# go to the handoff file (when --handoff/--issue are given) and the call exits 20.
+if ! squad_policy_allows vcs description-set; then
+  if [ -n "$HANDOFF" ] && [ -n "$ISSUE" ]; then record_handoff; else CH=no; fi
+  squad_emit OUTCOME refused; squad_emit CHANGED "$CH"; squad_emit ITEMS "$((NL+NA))"
+  squad_policy_check vcs description-set || exit 20
 fi
 BODY="$(squad_vcs description-get "$PR")" || squad_fail_incident squad-pr-desc 20 "reading the description of PR $PR failed"
 

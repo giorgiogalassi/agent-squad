@@ -177,8 +177,15 @@ case "$VERB" in
   escalate)
     [ "$has_ip" = 0 ] && [ "$has_bl" = 1 ] && finish unchanged no "$FROM" "$FROM"
     [ "$has_ip" = 0 ] && squad_fail 10 "cannot escalate $ISSUE: $L_IP not present"
-    squad_tracker comment "$ISSUE" --body "$REASON" \
-      || squad_fail_incident squad-labels 20 "tracker comment failed"
+    # Write policy (#400): without `comment` the reason stays out of the tracker;
+    # the transition still happens and the caller records the reason (COMMENT=skipped).
+    if squad_policy_allows tracker comment; then
+      squad_tracker comment "$ISSUE" --body "$REASON" \
+        || squad_fail_incident squad-labels 20 "tracker comment failed"
+    else
+      squad_emit COMMENT skipped
+      squad_emit REASON "policy: comment not allowed on ${DISPLAY_NAME:-project}"
+    fi
     squad_tracker label "$ISSUE" --remove "$L_IP" --add "$L_BL" \
       || squad_fail_incident squad-labels 20 "tracker label edit failed after comment posted; a retry may duplicate the comment"
     squad_incident squad-labels 0 "escalated $ISSUE: $REASON" escalation

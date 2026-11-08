@@ -57,6 +57,12 @@ from pathlib import Path
 MODE_VALUES = {"detached", "connected"}
 PROJECT_KEYS = {"owner", "number"}
 RALPH_KEYS = {"review_rounds"}
+# Write policy (#400): the verbs each list may name; mirrors SQUAD_WRITE_VERBS_*
+# in squad-common.sh.
+WRITES_VERBS = {
+    "tracker": {"create", "create-child", "set-state", "claim", "label", "comment"},
+    "vcs": {"branch", "pr-create", "description-set", "comment", "stack-init"},
+}
 
 SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
 
@@ -366,6 +372,55 @@ def validate_config(data, schema):
                             "path": None,
                         }
                     )
+        if key == "writes":
+            writes = chisel[key]
+            if not isinstance(writes, dict):
+                violations.append(
+                    {
+                        "message": (
+                            f"chisel.writes: expected an object, got "
+                            f"{type(writes).__name__}"
+                        ),
+                        "path": None,
+                    }
+                )
+            else:
+                for inner_key, verbs in writes.items():
+                    if inner_key not in WRITES_VERBS:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.writes.{inner_key}: unknown key "
+                                    f"(expected one of {sorted(WRITES_VERBS)})"
+                                ),
+                                "path": ("chisel", "writes", inner_key),
+                            }
+                        )
+                    elif not isinstance(verbs, list) or not all(
+                        isinstance(v, str) for v in verbs
+                    ):
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.writes.{inner_key}: expected a "
+                                    "list of verb names"
+                                ),
+                                "path": None,
+                            }
+                        )
+                    else:
+                        for v in verbs:
+                            if v not in WRITES_VERBS[inner_key]:
+                                violations.append(
+                                    {
+                                        "message": (
+                                            f"chisel.writes.{inner_key}: unknown "
+                                            f"verb {v!r} (expected "
+                                            f"{sorted(WRITES_VERBS[inner_key])})"
+                                        ),
+                                        "path": None,
+                                    }
+                                )
         if key == "project":
             project = chisel[key]
             if not isinstance(project, dict):

@@ -12,8 +12,8 @@
 #   pr-create --head H --base B --title T --body B
 #   diff --base B --head H                  unified diff on stdout
 #   description-get <pr>                    PR body on stdout, verbatim
-#   description-set <pr> --body-file F      (write; write policy: #400)
-#   comment <pr> --body T                   (write; write policy: #400)
+#   description-set <pr> --body-file F      (write)
+#   comment <pr> --body T                   (write)
 #   merged <pr>
 #   stack-init <branch>...                  adopt a stacked chain (10 when unsupported)
 #   pr-data <pr> --fields a,b,c             one JSON object (the only JSON verb)
@@ -24,8 +24,9 @@
 # Read-only verbs (available auth-status cli-name default-branch branch-exists
 # pr-for-branch pr-list pr-view pr-data description-get diff merged) run even
 # when the project paths do not resolve (provider github); writes do not.
-# pr-create and stack-init are UNGUARDED writes by design: they do not check
-# the tracker mode; whether they should is left to #400 (write policy).
+# pr-create and stack-init do not check the tracker mode (Cody's `open pr`, the
+# vault's own repo decide) but are under the write policy (#400): a verb that
+# chisel.writes.vcs does not list is refused (20, REASON=policy: ...).
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 

@@ -105,6 +105,10 @@ and write:
     },
     "ralph": {
       "review_rounds": 2
+    },
+    "writes": {
+      "tracker": ["create", "create-child", "set-state", "claim", "label", "comment"],
+      "vcs": ["branch", "pr-create", "description-set", "comment", "stack-init"]
     }
   }
 }
@@ -120,6 +124,19 @@ both default to `github` when absent, are hand-editable and never prompted
 for. Adding a provider is one adapter file plus one of these values (README,
 "Adding a provider"). A config without `mode` is
 connected (backward compatibility).
+
+`writes` (connected mode, optional, hand-editable, never prompted for) is the
+write policy: the verbs the squad may use on the project, per facade. Tracker
+verbs: `create` (also link-blocking and project-add), `create-child`,
+`set-state`, `claim`, `label` (also label-create), `comment`. VCS verbs:
+`branch`, `pr-create`, `description-set`, `comment`, `stack-init`. The facades
+(`squad-tracker.sh`, `squad-vcs.sh`) refuse any write verb not listed with exit
+20 and `REASON=policy: <verb> not allowed on <project>`; the caller records the
+refusal and continues. A list that is absent means the provider default: all
+verbs, except `comment` when `tracker` is `jira` or `vcs` is `bitbucket`. An
+empty list refuses every write of that facade. `branch` is local git and is
+never refused. JSON has no comments, so the verbs are described here, not in the
+file.
 
 `ralph.review_rounds` (integer >= 0, both modes) is the cap on Ralph's
 review-and-fix rounds per issue; hand-editable, never prompted for, and

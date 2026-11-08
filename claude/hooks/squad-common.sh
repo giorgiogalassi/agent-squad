@@ -136,6 +136,63 @@ EOF_PATTERNS
   return 0
 }
 
+# --- write policy (#400): the one owner of "which verbs may this project write" ---
+# chisel-config.json `chisel.writes` = {"tracker": [...], "vcs": [...]} lists the
+# write verbs the squad may use on the project. Enforced here, in the facade
+# dispatch (_squad_facade, and squad-tracker.sh for the state transitions), never
+# in skills. A listed-only rule: a write verb not on the list is refused with 20
+# and `REASON=policy: <verb> not allowed on <project>`. A missing key means the
+# provider default: everything for the owner's own repositories (github), and for
+# tracker jira / vcs bitbucket everything except `comment`. Read verbs are never
+# governed. Detached mode is refused separately by squad_write_guard.
+SQUAD_WRITE_VERBS_TRACKER="create create-child set-state claim label comment"
+SQUAD_WRITE_VERBS_VCS="branch pr-create description-set comment stack-init"
+
+# _squad_policy_class <tracker|vcs> <facade verb>: the policy verb a facade verb
+# falls under; empty for verbs the policy does not govern (reads, local git).
+# link-blocking and project-add are part of `create`; label-create of `label`.
+_squad_policy_class() {
+  case "$1:$2" in
+    tracker:create|tracker:link-blocking|tracker:project-add) echo create ;;
+    tracker:create-child|tracker:set-state|tracker:claim|tracker:label|tracker:comment) echo "$2" ;;
+    tracker:label-create) echo label ;;
+    vcs:pr-create|vcs:description-set|vcs:comment|vcs:stack-init) echo "$2" ;;
+  esac
+}
+
+# squad_policy_allows <tracker|vcs> <facade verb>: 0 when the project may use the
+# verb (or the verb is not governed), 1 when the policy refuses it. Silent.
+squad_policy_allows() {
+  local kind="$1" cls cfg list="" prov
+  cls="$(_squad_policy_class "$kind" "$2")"
+  [ -n "$cls" ] || return 0
+  cfg="${STATE_DIR:-}/chisel-config.json"
+  if [ -n "${STATE_DIR:-}" ] && [ -f "$cfg" ] && command -v jq >/dev/null 2>&1 \
+     && jq -e ".chisel.writes.$kind | arrays" "$cfg" >/dev/null 2>&1; then
+    list="$(jq -r ".chisel.writes.$kind[]" "$cfg" 2>/dev/null)"
+  else
+    if [ "$kind" = tracker ]; then list="$SQUAD_WRITE_VERBS_TRACKER"; prov="${TRACKER_PROVIDER:-github}"
+    else list="$SQUAD_WRITE_VERBS_VCS"; prov="${VCS_PROVIDER:-github}"; fi
+    case "$prov" in jira|bitbucket) list="$(printf '%s\n' $list | grep -vx comment)" ;; esac
+  fi
+  printf '%s\n' $list | grep -qxF -- "$cls"
+}
+
+# squad_policy_check <tracker|vcs> <facade verb>: squad_policy_allows, but a
+# refusal prints `REASON=policy: <verb> not allowed on <project>` on stdout (and
+# a stderr line) and returns 20. SQUAD_POLICY_VIA=label (set by squad-tracker.sh
+# around an already-authorised claim / set-state) lets that transition's own
+# label edits through; nothing else is ever bypassed.
+squad_policy_check() {
+  local name
+  if [ "${SQUAD_POLICY_VIA:-}" = label ] && [ "$1:$2" = tracker:label ]; then return 0; fi
+  squad_policy_allows "$1" "$2" && return 0
+  name="${DISPLAY_NAME:-}"; [ -n "$name" ] || name="$(basename "${PROJECT_ROOT:-project}")"
+  echo "REASON=policy: $2 not allowed on $name"
+  echo "squad: refused by write policy: $2 not allowed on $name" >&2
+  return 20
+}
+
 # squad_write_guard: the one detached-mode refusal. 0 in connected mode; in
 # detached (or unresolved) mode it prints one stderr line and returns 20 so
 # the caller executes nothing.
@@ -194,6 +251,7 @@ _squad_facade() {
   squad_adapter_load "$kind" || return $?
   fn="$pre$(printf '%s' "$verb" | tr - _)"
   case "$verb" in *[!a-z-]*) echo "squad: invalid $kind verb '$verb'" >&2; return 2 ;; esac
+  squad_policy_check "$kind" "$verb" || return 20
   if ! declare -F "$fn" >/dev/null 2>&1; then
     echo "squad: $kind verb '$verb' is not supported by this provider" >&2
     return 10
