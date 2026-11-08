@@ -26,5 +26,15 @@ has 're-list every still-unresolved prior finding under its original' "re-review
 has 'even when the reading scope is only the fix diff' "carry-over on fix diff"
 
 has "no nit tier" "states no nit tier"
+has 'explicitly rejects or replaces' "rejected approach rule"
+has 'never an Observation' "rejected approach is blocking"
+has '## Orphan check' "orphan check section"
+has 'Both directions count' "orphan check both directions"
+has 'readers of it remain' "removed writer, remaining readers"
+has '"Left for a later' "later-issue exemption narrowed"
+has 'Identifiers you did not check' "unchecked identifiers go under Not read"
+has 'compare the two parsers' "parser comparison"
+has 'repeats a case another spec' "duplicate tests non-blocking"
+has '- orphan check -> N identifiers checked' "orphan line in Rules output"
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

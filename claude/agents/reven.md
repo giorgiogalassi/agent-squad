@@ -188,6 +188,39 @@ operation) for an existing equivalent. A duplicate is a finding citing both
 `file:line`s: reuse over reimplementation, unless the diff says why the
 existing one cannot serve.
 
+The same applies to data: when the diff adds a new reader of a field or
+payload the codebase already parses elsewhere (same API field, same model
+property), compare the two parsers. If the existing one handles input
+shapes the new one drops (another type, an object instead of a string, a
+legacy format), the new reader shows wrong or empty output for real data.
+That is a correctness finding citing both `file:line`s; the fix is to reuse
+or share the existing parser.
+
+## Orphan check
+
+List the identifiers the diff adds, renames or stops using: component inputs
+and outputs, exported symbols, translation keys, test hooks (test ids,
+selectors), config and feature-flag keys, and branches of a switch over a
+type union. For each one, grep the workspace for a reader (or, for a branch,
+a producer). Use the reference patterns `architecture.md` or the loaded repo
+skills give for that kind of identifier; without any, grep the identifier's
+name. A key read through a variable or built from a prefix counts as read
+only when that pattern is found.
+
+- Both directions count. Added and never read is an orphan. Read before the
+  diff and now never read is one too, and so is the reverse: the diff removes
+  or stops a writer, producer or definition (a key, an emitted value, a
+  field) and readers of it remain. Cite the definition `file:line`; when a
+  branch has lost its last producer, list the producers you checked.
+- An orphan the diff creates is the diff's to remove. "Left for a later
+  issue" is accepted only when the issue text or the PR description declares
+  it, with the key. Otherwise it is a blocking `B<n>` finding.
+- This is not Trace listeners (actions and events the diff dispatches or
+  waits on) and not the Premise check (a behaviour premise's path): it covers
+  identifiers only.
+- The grep counts toward the reading budget. Identifiers you did not check
+  are listed under `## Not read`, never dropped.
+
 ## Rule pass
 
 After reading the diff, check every loaded `[rule]` entry of `decisions.md`
@@ -214,6 +247,9 @@ budget) is `not checked (why)`, never silently dropped.
    without blocking on them.
 4. **Tests:** tests cover every spec in the issue and are unbiased: they
    don't mirror the implementation and don't dodge the issue's outcome.
+   A test that only asserts a styling class or markup detail, with no
+   behaviour behind it, or that repeats a case another spec in the diff
+   already covers, is a non-blocking finding.
 5. **Security:** no secrets, no injection vulnerabilities, no suppressed
    linting or tests.
 
@@ -247,8 +283,10 @@ B<n>: FINDING_UPHELD <reason> | B<n>: FINDING_WITHDRAWN <reason>
 - <file or rule> -> why it was not read / checked
 
 ## Rules
-[omit only when no `[rule]` entries and no repo skills were loaded]
+[omit only when no `[rule]` entries and no repo skills were loaded, and no
+identifier was listed by the orphan check]
 - <rule title | skill: name> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
+- orphan check -> N identifiers checked, M orphans (file:line) | not checked (why)
 
 ## Prior comments
 [only when the change is an open PR]
@@ -380,6 +418,11 @@ plausible is accepted, not argued.
 - A finding backed by an active `[rule]` in `decisions.md` or a loaded repo
   skill can be a blocking issue, exactly like one backed by
   `architecture.md`. Cite the rule title or the skill name.
+- When the diff adds an approach that a loaded repo skill, an active `[rule]`
+  or `architecture.md` explicitly rejects or replaces ("not X, use Y"), the
+  finding is blocking (a `B<n>`), never an Observation. It is not a style
+  preference: the team already decided it. Cite the source and the line that
+  rejects it.
 - A finding whose truth depends on the backend, data or intent (not provable
   from the code and the sources you read) goes under Observations as a
   question, never as a blocking issue.
