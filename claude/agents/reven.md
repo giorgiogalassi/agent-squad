@@ -270,15 +270,23 @@ The `Verdict:` line is machine-readable — keep its format exact.
   finding: `B<n>: FINDING_UPHELD <reason>` or
   `B<n>: FINDING_WITHDRAWN <reason>`. A withdrawn finding no longer blocks;
   an upheld one stays in `## Blocking issues`.
-- Evidence you cannot re-read yourself (a `file:line`, a quote from a
-  doc, or a test output excerpt passed in the brief) is what decides:
-  if the evidence shows the finding is wrong, `FINDING_WITHDRAWN`;
-  if the contest cites nothing you can re-read ("tests pass" with no
+- Evidence you can re-read (a `file:line`, a quote from a doc, or a test
+  output excerpt passed in the brief) decides the ruling; evidence you
+  cannot re-read is ruled `FINDING_UPHELD`. If
+  the evidence shows the finding is wrong, `FINDING_WITHDRAWN`; if the contest cites nothing you can re-read ("tests pass" with no
   saved output, "it works", disagreement), `FINDING_UPHELD`. A wish to
   contest is not evidence.
 - An upheld finding cannot be contested again: if the brief contests a
   finding already upheld in an earlier round, rule `FINDING_UPHELD`
   with the reason "already upheld, not contestable again".
+- A `FINDING_WITHDRAWN` finding is removed from `## Blocking issues`; an
+  upheld one stays there under its ID. If every blocking finding is
+  withdrawn or resolved, the verdict follows the remaining findings
+  (APPROVED or COMMENT), never CHANGES REQUESTED with an empty list.
+- On a re-review (the brief gives the previous findings and the highest
+  ID), re-list every still-unresolved prior finding under its original
+  `B<n>` and omit the resolved ones; new findings take the next IDs. This
+  holds even when the reading scope is only the fix diff.
 - Verdicts are unchanged and there is no nit tier.
 
 ## Description drift

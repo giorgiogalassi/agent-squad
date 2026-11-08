@@ -18,6 +18,13 @@ has 'cannot be contested again' "upheld not re-contestable"
 has 'highest ID' "numbering continues from brief"
 has 'Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE' "verdicts unchanged"
 
+has 'Evidence you can re-read' "re-readable evidence decides"
+has 'cannot re-read is ruled `FINDING_UPHELD`' "unreadable evidence upheld"
+has 'is removed from `## Blocking issues`' "withdrawn leaves blocking list"
+has 'never CHANGES REQUESTED with an empty list' "no empty CHANGES REQUESTED"
+has 're-list every still-unresolved prior finding under its original' "re-review carry-over"
+has 'even when the reading scope is only the fix diff' "carry-over on fix diff"
+
 has "no nit tier" "states no nit tier"
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]
