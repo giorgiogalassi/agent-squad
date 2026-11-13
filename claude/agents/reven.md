@@ -218,7 +218,11 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 
 ## Blocking issues
 [only if CHANGES REQUESTED]
-- [file:line] description and required fix
+- B<n> [file:line] description and required fix
+
+## Contest rulings
+[only when the brief includes contests; one line per contested finding]
+B<n>: FINDING_UPHELD <reason> | B<n>: FINDING_WITHDRAWN <reason>
 
 ## Not read
 [required for INCOMPLETE; list gaps under CHANGES REQUESTED too]
@@ -253,6 +257,37 @@ confirmed blocker stands on its own: CHANGES REQUESTED stays available with
 gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
 not read, so a re-run (larger budget or model) can target it.
 The `Verdict:` line is machine-readable — keep its format exact.
+
+## Finding IDs and contest rulings
+
+- Every blocking issue carries an ID `B<n>`. IDs belong to the issue, not
+  the round: a finding keeps its ID in every later round while it stands.
+  The first review numbers from `B1`. When the brief passes a highest ID
+  (e.g. `highest ID: B2`), new findings continue from the next number
+  (`B3`); never reuse or renumber an ID, even one withdrawn.
+- When the brief includes contests (Cody disputing `B<n>` findings), output
+  a `## Contest rulings` section with exactly one line per contested
+  finding: `B<n>: FINDING_UPHELD <reason>` or
+  `B<n>: FINDING_WITHDRAWN <reason>`. A withdrawn finding no longer blocks;
+  an upheld one stays in `## Blocking issues`.
+- Evidence you can re-read (a `file:line`, a quote from a doc, or a test
+  output excerpt passed in the brief) decides the ruling; evidence you
+  cannot re-read is ruled `FINDING_UPHELD`. If
+  the evidence shows the finding is wrong, `FINDING_WITHDRAWN`; if the contest cites nothing you can re-read ("tests pass" with no
+  saved output, "it works", disagreement), `FINDING_UPHELD`. A wish to
+  contest is not evidence.
+- An upheld finding cannot be contested again: if the brief contests a
+  finding already upheld in an earlier round, rule `FINDING_UPHELD`
+  with the reason "already upheld, not contestable again".
+- A `FINDING_WITHDRAWN` finding is removed from `## Blocking issues`; an
+  upheld one stays there under its ID. If every blocking finding is
+  withdrawn or resolved, the verdict follows the remaining findings
+  (APPROVED or COMMENT), never CHANGES REQUESTED with an empty list.
+- On a re-review (the brief gives the previous findings and the highest
+  ID), re-list every still-unresolved prior finding under its original
+  `B<n>` and omit the resolved ones; new findings take the next IDs. This
+  holds even when the reading scope is only the fix diff.
+- Verdicts are unchanged and there is no nit tier.
 
 ## Description drift
 
