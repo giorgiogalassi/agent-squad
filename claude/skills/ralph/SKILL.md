@@ -193,25 +193,32 @@ state is persisted in the vault `.squad/`, next to `progress.txt`:
   Started: 2026-04-08 10:30
   Status: running
 
-  | Issue | Branch | Base | Attempts | Rounds | Reviewed | Verdict | State |
-  |-------|--------|------|----------|--------|----------|---------|-------|
-  | #12 | 12-reservations | main | 1 | 1 | a1b2c3d | APPROVED | resolved |
-  | #14 | 14-api | 12-reservations | 2 | 2 | e4f5a6b | CHANGES REQUESTED | needs-review |
-  | #15 | 15-ui | 14-api | 0 | 0 | - | - | pending |
+  | Issue | Branch | Base | Attempts | Rounds | Reviewed | Verdict | State | Contests |
+  |-------|--------|------|----------|--------|----------|---------|-------|----------|
+  | #12 | 12-reservations | main | 1 | 1 | a1b2c3d | APPROVED | resolved | 0/- |
+  | #14 | 14-api | 12-reservations | 2 | 2 | e4f5a6b | CHANGES REQUESTED | needs-review | 1/B2/B2,B3/contest |
+  | #15 | 15-ui | 14-api | 0 | 0 | - | - | pending | 0/- |
 
 Rows are in execution order. State:
 `pending|running|resolved|escalated|skipped|needs-review`. `Rounds` is
 the number of Reven reviews that counted as a round (Phase 2e);
 `Reviewed` is the HEAD SHA of the last reviewed state (`-` before the
 first review); `Verdict` is the last Reven verdict (`-` before the
-first), kept so a resume at the cap can fill `<X>`. All three are separate
-from `Attempts`.
+first), kept so a resume at the cap can fill `<X>`. `Contests` is
+`<used>/<upheld>/<open>/<last>`: `used` counts the contest-only rounds
+spent (cap 1 per issue); `upheld` are the open findings Reven ruled
+`FINDING_UPHELD`; `open` are the `B<n>` IDs still blocking after the last
+review (both comma-separated, `-` for none); `last` is the kind of the
+last fix round: `fix` (it had fixes), `contest` (contest-only, so
+uncounted) or `-` (no fix round since the last review). Missing trailing
+fields read as `-`. All of it is separate from `Attempts`. Columns are
+read by header name; an older file without `Contests` reads as `0/-`.
 Detached mode uses the same file (branch = chain branch).
 
 - **Write** it at the end of Phase 1b, once order and branches are
   known; **update** the affected row after every 2b classification
   (attempt counter, state) and after every Phase 2e review (Rounds,
-  Reviewed, Verdict, state). Set `Status: complete` at Phase 3. All of it
+  Reviewed, Verdict, Contests, state). Set `Status: complete` at Phase 3. All of it
   through `squad-progress.sh` (section Vault writes below), never by
   editing the file.
 - **On start,** before computing the order: if `ralph-run.md` (read from
@@ -221,7 +228,7 @@ Detached mode uses the same file (branch = chain branch).
   identical sorted issue-ID set. Same: ask the user whether to resume.
   Yes: reuse order, branches, bases, and counters; start at the first
   unfinished issue (a `running` row resumes with its stored counters, `Rounds`,
-  `Reviewed` and `Verdict` included).
+  `Reviewed`, `Verdict` and `Contests` included).
   No: recompute and overwrite. Different batch: ignore it with a one-line
   notice (`Ignoring ralph-run.md for batch [#..] — different batch.`) and
   overwrite it at the end of Phase 1b.
@@ -479,13 +486,23 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
    user-supplied context. From the second review of an issue on, add the
    previous verdict and `git -C <wd> diff <Reviewed>..HEAD` as the scope
    and tell Reven to check that the previous blocking issues are
-   resolved and to review only that diff, not the whole PR. Detached:
+   resolved and to review only that diff, not the whole PR. Add
+   `highest ID: B<n>` (the highest finding ID any earlier review of this
+   issue used, withdrawn ones included) and, when the last fix round had
+   contests, each one as `B<n>: <evidence>`, the evidence read from the
+   issue's `B<n> contest:` lines after its last `review:` line in `progress.txt` (path from `where --file
+   progress`), never from memory. Detached:
    also pass Cody's paste-ready PR description as the current description.
    Set
    `Reviewed` to HEAD and `Verdict` to the verdict after the review.
 2. **Print the verdict** line (`Verdict: ...`) and the blocking issues
-   in the conversation, verbatim, one review per issue. `/stats` and any
-   `/goal` on top read the conversation.
+   and, when the brief had contests, Reven's `## Contest rulings`, in the
+   conversation, verbatim, one review per issue. Then record each ruling:
+   `B<n>: FINDING_WITHDRAWN <reason>` becomes `squad-progress.sh append`
+   `[ID] review: B<n> withdrawn: <reason>` and the finding leaves the open
+   list; `B<n>: FINDING_UPHELD` adds `B<n>` to the upheld ids. Step 3
+   writes both to the row. `/stats` and any `/goal` on top read the
+   conversation.
    **Apply the description drift** (every review, whatever the verdict,
    before step 3 acts on it; never edits code, and the review's `Verdict:`
    is not affected by it). Save Reven's `## Description drift` section
@@ -519,24 +536,70 @@ means skip to step 5 with `<X>` = the stored `Verdict`.
      `model: opus` and the same inputs. A second `INCOMPLETE` ends the loop: no Cody dispatch,
      `squad-progress.sh append` `[ID] review: incomplete`, then the label call of step 5
      (state `needs-review` is recorded after it returns).
-   - `CHANGES REQUESTED`: counts as a round (`Rounds` + 1). Under the
-     cap: step 4. At the cap: step 5.
+   - `CHANGES REQUESTED`: read `last` from the row's `Contests` first.
+     `Rounds` + 1, except when `last` is `contest` (the review that ruled
+     on a contest-only round continues the round counted at the review
+     before it). Then, in one `run-row` write, set `Rounds` and
+     `Contests=<used>/<upheld>/<open>/-`, with `open` the review's
+     `## Blocking issues` IDs (withdrawn ones gone) and `upheld` the
+     earlier and new upheld IDs that are still open, and
+     `squad-progress.sh append` `[ID] review: CHANGES REQUESTED r<N>`
+     (the marker after which this round's `B<n> contest:` lines are
+     read). Under the cap: step 4. At the cap: step 5.
+   - Every contest withdrawn and nothing else blocking leaves the verdict
+     `APPROVED`/`COMMENT`: handled by the first bullet.
    - Any other or missing `Verdict:` line: treat as `INCOMPLETE`.
 4. **Fix round.** Re-dispatch Cody as `cody resume` with
    `branch action: continue`, `open pr: no`, the same `branch`/`base`/
    `mode`, and the review's blocking issues as the task. Before
    dispatching, capture a fresh baseline in `<wd>` (HEAD and
-   `status --porcelain`). Verify with the three git checks of 2b only
-   (no success side effects: no `[ID] resolved` progress line, no
-   detached handoff or label re-run), with the commit check requiring
-   HEAD to differ from `Reviewed` and that baseline, not only an
-   ID-bearing subject. A stall, including one that commits nothing,
-   counts against `Attempts` and may escalate through 2c; a review round
-   itself never does. Connected: after a green 2b, push
-   the branch with `git -C <wd> push origin <branch>` (Cody does not
-   push when `open pr: no`). Detached: no push. Then back to step 1.
-5. **Out of rounds** without approval: `squad-progress.sh append`
-   `[ID] review: N rounds, last verdict <X>`, then apply the label (also
+   `status --porcelain`). Pass Cody the open IDs (the row's `open`) and,
+   for the upheld ones (the row's `upheld`), that they accept `FIX` or
+   `ESCALATE` only. Afterwards run the parser first on Cody's summary
+   (the `## Fix responses` section):
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-fix-parse.sh --input <summary file> --open <open ids> [--upheld <upheld ids>]
+   ```
+   `--open` is the row's `open`. Read `FIXES`, `CONTESTS`, `ESCALATIONS`
+   and `MISSING`. Act on the exit code:
+
+   | Exit | Action |
+   |------|--------|
+   | 0 | Verify, then route by keys, below. |
+   | 2 | Bad call: fix the call and retry once, else treat as exit 10. |
+   | 10 | A stall (2b rules): counts against `Attempts`, may escalate through 2c; no push, no review. |
+
+   Verify with the git checks of 2b (no success side effects: no
+   `[ID] resolved` progress line, no detached handoff or label re-run);
+   its commit check, requiring HEAD to differ from `Reviewed` and from the
+   baseline, applies only when `FIXES` is not empty. A stall, including
+   one that commits nothing when it should, counts against `Attempts` and
+   may escalate through 2c; a review round itself never does. When
+   `CONTESTS` is not empty, each contested ID needs a `B<n> contest:` line
+   in `progress.txt` after the issue's last `review:` line; one missing is
+   a stall (exit 10 path), so a contest-only round is never free.
+
+   Route by keys (first match):
+   - `ESCALATIONS` not empty: connected, push the branch first (the
+     round's fixes must survive), then apply `squad-labels.sh needs-review`
+     as in step 5 and `squad-progress.sh append`
+     `[ID] review: escalated B<n>: <reason>` for each (the reason is the
+     text on the Cody line). No further review; record `needs-review`
+     after the label call. Detached: no push.
+   - `FIXES` not empty (with or without contests): set `last` to `fix`
+     in `Contests`, push, back to step 1 with the contests in the brief.
+     `Rounds` was settled at step 3 and is not touched here.
+   - Only `CONTESTS`: the contest-only round, which does not touch
+     `Rounds`. Under the per-issue cap of 1 (`used` is 0): set
+     `Contests=1/<upheld>/<open>/contest`, push if Cody committed
+     anything, back to step 1. `used` already 1: step 5 with the open
+     contests listed.
+   Connected pushes use `git -C <wd> push origin <branch>` (Cody does not
+   push when `open pr: no`). Detached: no push.
+5. **Out of rounds** without approval (or the contest cap reached): `squad-progress.sh append`
+   `[ID] review: N rounds, last verdict <X>`, adding
+   `, unruled contests: B<n>, ...` when contests no Reven review ruled are
+   still open, then apply the label (also
    after a second `INCOMPLETE`), connected:
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-labels.sh needs-review --issue <n>

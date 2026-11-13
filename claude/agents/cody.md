@@ -315,18 +315,22 @@ When your prompt lists Reven's open blocking findings (`B<n>`; the ID
 format and the `FINDING_UPHELD` / `FINDING_WITHDRAWN` rulings are defined
 in `reven.md`), your final summary (see `## Output`) also carries a
 `## Fix responses` section, placed after the normal summary and last in
-the output. The section is the heading plus exactly one line per open
-finding, and nothing else. Ralph parses only that section, from the
+the output. The section is the heading plus one entry line per open
+finding; indented continuation lines under an entry are ignored, any other
+line is rejected. Ralph parses only that section, from the
 heading to the next `## ` heading or the end; the summary outside it is
 free prose. A missing section, or inside it a missing, duplicate or
 unknown ID or any other line shape, sends the round back.
 
 ```
 ## Fix responses
-B<n>: FIX
-B<n>: CONTEST <evidence>
-B<n>: ESCALATE <reason>
+B1: FIX
+B2: CONTEST <evidence>
+B3: ESCALATE <reason>
 ```
+
+A short note may follow `FIX` (`B1: FIX. Step 3 now reads...`); `CONTEST` and
+`ESCALATE` require their text. A leading `- ` or `* ` is accepted.
 
 - `FIX`: you changed the code to resolve it.
 - `CONTEST`: you dispute the finding. The evidence is a `file:line`, a doc

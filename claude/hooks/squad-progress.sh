@@ -161,6 +161,15 @@ case "$VERB" in
       case "$VAL" in *"
 "*) rm -f "$T"; squad_fail 2 "--set value cannot contain a newline" ;; esac
       case "$VAL" in *'|'*) rm -f "$T"; squad_fail 2 "--set value cannot contain '|'" ;; esac
+      # An older table has no Contests column (#486): add it (default 0/-) so a run
+      # started before the column existed can still be resumed and updated.
+      if [ "$COL" = Contests ] && ! grep -Eq '^\|.*\| *Contests *\|' "$T"; then
+        awk '
+          /^\|/ && !h { sub(/[ \t]*$/, ""); print $0 " Contests |"; h = 1; next }
+          /^\|[-| ]+\|[ \t]*$/ { sub(/[ \t]*$/, ""); print $0 "----------|"; next }
+          /^\|/ { sub(/[ \t]*$/, ""); print $0 " 0/- |"; next }
+          { print }' "$T" > "$T.o" && mv "$T.o" "$T" || { rm -f "$T" "$T.o"; squad_fail 20 "cannot write $REL"; }
+      fi
       # ENVIRON, not -v: -v interprets backslash escapes in the value.
       SQUAD_COL="$COL" SQUAD_VAL="$VAL" SQUAD_ID="#$ID" awk '
         BEGIN { col = ENVIRON["SQUAD_COL"]; val = ENVIRON["SQUAD_VAL"]; id = ENVIRON["SQUAD_ID"] }

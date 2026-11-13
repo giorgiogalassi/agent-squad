@@ -1629,6 +1629,31 @@ shape) surfaced mid-implementation as guesses.
 
 ---
 
+### Iteration 45: Ralph routes contests and escalations in fix rounds (#486)
+
+**Problem:** Cody could only fix or give up; a finding it believed wrong either
+cost a wasted fix round or an unrecorded refusal, and nothing bounded disputes.
+
+**Change (#486, on the #485 typed responses):**
+
+- *Parse, then route.* After each fix round Ralph runs `squad-fix-parse.sh`.
+  Exit 10 is a stall (2b); any `FIX` keeps the round on the `review_rounds`
+  budget; a round of only `CONTEST`s is outside it and spends the per-issue
+  contest cap of 1 instead, so disputes cannot eat the fix budget.
+- *Reven rules.* Ralph passes the highest finding ID so far and each contest
+  with the evidence Cody saved in `progress.txt`, prints the `## Contest
+  rulings`, and appends each `FINDING_WITHDRAWN`. Any `ESCALATE` pushes the
+  round's fixes, then L9 and the reason; either cap with contests unruled ends
+  at needs-review listing them.
+- *`Contests` column.* `<used>/<upheld ids>` in `ralph-run.md`, written through
+  `squad-progress.sh run-row`, which adds the column to an older 8-column table
+  on first write; readers use header names, so resume of an old run still works.
+
+> **Key decision:** a contest never counts as a fix round; its budget is separate
+> and fixed at one.
+
+---
+
 ## 3. Final Architecture
 
 This section describes the repository as it stands after Iteration 34.
