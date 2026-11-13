@@ -44,5 +44,11 @@ check "unknown ralph key rejected" \
 check "ralph not an object rejected" \
   '{"chisel":{"mode":"detached","ralph":3}}' "chisel.ralph: expected an object"
 
+check "mode list rejected" '{"chisel":{"mode":[]}}' "mode: invalid value"
+check "mode object rejected" '{"chisel":{"mode":{}}}' "mode: invalid value"
+check "mode number rejected" '{"chisel":{"mode":3}}' "mode: invalid value"
+check "top-level array rejected" '[]' "config is not an object"
+check "top-level string rejected" '"x"' "config is not an object"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

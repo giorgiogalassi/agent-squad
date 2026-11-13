@@ -237,6 +237,10 @@ def validate_config(data, schema):
     """
     violations = []
 
+    if not isinstance(data, dict):
+        violations.append({"message": "config is not an object", "path": None})
+        return violations, "connected"
+
     chisel = data.get("chisel")
     if chisel is None:
         # Empty {} or missing 'chisel' wrapper key: Chisel's own
@@ -261,7 +265,7 @@ def validate_config(data, schema):
     mode = chisel.get("mode")
     if mode is None:
         mode = "connected"  # no mode field => connected (backward compat)
-    elif mode not in MODE_VALUES:
+    elif not isinstance(mode, str) or mode not in MODE_VALUES:
         violations.append(
             {
                 "message": (
