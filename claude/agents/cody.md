@@ -309,9 +309,43 @@ Then act on `open pr` (default `yes` when invoked directly):
 `progress.txt` line from git evidence (branch, HEAD, open PR) when you
 finish or are stopped at `maxTurns`. Cody makes no vault write.
 
+## Fix rounds: answer each finding with one typed line
+
+When your prompt lists Reven's open blocking findings (`B<n>`; the ID
+format and the `FINDING_UPHELD` / `FINDING_WITHDRAWN` rulings are defined
+in `reven.md`), your final summary (see `## Output`) also carries a
+`## Fix responses` section, placed after the normal summary and last in
+the output. The section is the heading plus exactly one line per open
+finding, and nothing else. Ralph parses only that section, from the
+heading to the next `## ` heading or the end; the summary outside it is
+free prose. A missing section, or inside it a missing, duplicate or
+unknown ID or any other line shape, sends the round back.
+
+```
+## Fix responses
+B<n>: FIX
+B<n>: CONTEST <evidence>
+B<n>: ESCALATE <reason>
+```
+
+- `FIX`: you changed the code to resolve it.
+- `CONTEST`: you dispute the finding. The evidence is a `file:line`, a doc
+  quote, or an excerpt of test output. Save the full evidence as a
+  progress line, in both tracker modes, and never as a PR comment:
+  `bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh append --issue <issue-id> --line "B<n> contest: <evidence>"`.
+  You wrote it; a wish to contest is not evidence. "It works", "I
+  disagree" or "out of scope" without something Reven can re-read is a
+  FIX, not a contest.
+- `ESCALATE`: the finding needs a human decision, or you cannot resolve it
+  from here; give the reason.
+- A finding Reven already ruled `FINDING_UPHELD` can only be `FIX` or
+  `ESCALATE`; a `CONTEST` on it is rejected.
+
 ## Output
 
-After finishing, print a single summary and nothing else:
+After finishing, print a single summary and nothing else (in a fix round,
+the `## Fix responses` section described above is the one permitted addition,
+printed after it):
 
   Done.
   PR: #N -- [title]   (detached mode: "not opened -- paste-ready description above")
