@@ -57,6 +57,7 @@ from pathlib import Path
 MODE_VALUES = {"detached", "connected"}
 PROJECT_KEYS = {"owner", "number"}
 RALPH_KEYS = {"review_rounds"}
+DRIFT_KEYS = {"days", "commits"}
 
 SKILL_MD_RELATIVE = "claude/skills/chisel/SKILL.md"
 
@@ -370,6 +371,40 @@ def validate_config(data, schema):
                             "path": None,
                         }
                     )
+        if key == "architecture_drift":
+            drift = chisel[key]
+            if not isinstance(drift, dict):
+                violations.append(
+                    {
+                        "message": (
+                            f"chisel.architecture_drift: expected an object, "
+                            f"got {type(drift).__name__}"
+                        ),
+                        "path": None,
+                    }
+                )
+            else:
+                for inner_key, val in drift.items():
+                    if inner_key not in DRIFT_KEYS:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.architecture_drift.{inner_key}: "
+                                    f"unknown key under mode={mode}"
+                                ),
+                                "path": ("chisel", "architecture_drift", inner_key),
+                            }
+                        )
+                    elif isinstance(val, bool) or not isinstance(val, int) or val < 0:
+                        violations.append(
+                            {
+                                "message": (
+                                    f"chisel.architecture_drift.{inner_key}: "
+                                    "expected an integer >= 0"
+                                ),
+                                "path": None,
+                            }
+                        )
         if key == "project":
             project = chisel[key]
             if not isinstance(project, dict):
