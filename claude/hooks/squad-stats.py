@@ -66,7 +66,7 @@ SQUAD_SKILLS = {
     "forge", "archy", "chisel", "ralph", "reven", "lore", "seed",
     "sidecar", "challenge", "stats",
 }
-SQUAD_AGENTS = {"cody", "reven", "lore", "challenge"}
+SQUAD_AGENTS = {"cody", "reven", "lore", "challenge", "reader"}
 SQUAD_PLUGIN = "agent-squad"
 
 # Built-in slash commands. RESET ones spend no tokens and end the active
