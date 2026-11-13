@@ -2,7 +2,7 @@
 # squad-lint.sh — parity and contract lint for the claude/ and codex/ trees.
 #
 # Turns the exhortation in CLAUDE.md ("grep both trees before declaring
-# done") into a gate. Twelve checks, each independent and each able to fail
+# done") into a gate. Fifteen checks, each independent and each able to fail
 # the run on its own:
 #
 #   1. path-resolution protocol presence in every skill and agent
@@ -19,7 +19,9 @@
 #   7. label-doc/test tie: every LABEL_STATE_MACHINE.md row whose "Performed
 #      by" cell names squad-labels.sh has a test in scripts/test-squad-labels.sh
 #      whose name starts with its id (L<n> , or D- for the id "D"), and every
-#      such test id has a script-performed row
+#      such test id has a script-performed row; a row that is not script-performed
+#      may name its test file with `tested in scripts/<file>` and then needs a
+#      `check "<id> ..."` line there (L10)
 #   8. hook refs exist: every ${CLAUDE_PLUGIN_ROOT}/hooks/<x>.sh referenced in
 #      claude/skills/** or claude/agents/*.md must exist as claude/hooks/<x>.sh,
 #      and no copy-install ~/.claude/hooks/ reference may remain
@@ -48,6 +50,10 @@
 #      `lint:committer-ok` on the same line.
 #  14. first contact through lore map (#429): claude/skills/seed/SKILL.md must
 #      not call `lore-map.sh set` (it calls `lore map`).
+#  15. one definition of the interface-level categories (#483): they live in
+#      claude/agents/reader.md; claude/skills/chisel/SKILL.md refers to it and
+#      must not name two or more of their distinctive labels (`public API shape`,
+#      `new dependency`, `behaviour between units`).
 #
 # Exit code is non-zero if any check reports a violation. No external
 # dependency beyond bash, grep, find, and diff — all already required by
@@ -462,6 +468,16 @@ check_label_doc_tests() {
     printf '%s\n' "$rows" | grep -qx "$t" \
       || fail "$tf: test id $t has no script-performed row in $doc"
   done
+  # Rows that are not script-performed but name their test file: `tested in scripts/<file>`.
+  while read -r id t; do
+    [ -n "$id" ] || continue
+    if [ ! -f "$t" ] || ! grep -q "check \"$id " "$t"; then
+      fail "$doc: row $id names $t but it has no test named \"$id ...\""
+    fi
+  done < <(awk -F'|' '/^\| *L[0-9]+ *\|/ {
+    id=$2; by=$5; gsub(/^ +| +$/, "", id)
+    if (match(by, /tested in `scripts\/[A-Za-z0-9_.-]+`/)) {
+      f=substr(by, RSTART+11, RLENGTH-12); print id, f } }' "$doc")
   [ "$VIOLATIONS" -eq "$before" ] && ok "every script-performed label row has tests and vice versa"
 }
 
@@ -613,6 +629,18 @@ check_seed_uses_lore_map() {
   [ "$VIOLATIONS" -eq "$before" ] && ok "seed has no lore-map.sh set call"
 }
 
+check_chisel_categories() {
+  local before="$VIOLATIONS" f=claude/skills/chisel/SKILL.md n=0 p
+  section "15. interface-level categories defined once"
+  if [ -f "$f" ]; then
+    for p in 'public API shape' 'new dependency' 'behaviour between units'; do
+      grep -qi "$p" "$f" && n=$((n+1))
+    done
+    [ "$n" -ge 2 ] && fail "$f restates the interface-level categories; refer to claude/agents/reader.md instead"
+  fi
+  [ "$VIOLATIONS" -eq "$before" ] && ok "chisel refers to reader.md for the categories"
+}
+
 check_path_resolution_protocol
 check_parity
 check_config_field_cross_references
@@ -627,6 +655,7 @@ check_safe_test_tmproot
 check_state_dir_literal
 check_single_committer
 check_seed_uses_lore_map
+check_chisel_categories
 
 printf '\n== summary ==\n'
 if [ "$VIOLATIONS" -gt 0 ]; then

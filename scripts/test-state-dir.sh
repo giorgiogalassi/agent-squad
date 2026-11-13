@@ -66,7 +66,7 @@ grep -q "^export SQUAD_STATE_DIR='$V2/projects/demo/.lore'" "$EF" && grep -q "^e
   && ok "squad-env exports SQUAD_STATE_DIR and LORE_STATE_DIR" || bad "env export: $(cat "$EF")"
 
 # 8. lint check 12
-fixture() { mkdir -p "$1/scripts"; cp -R "$REPO_ROOT/claude" "$1/claude"; cp "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$REPO_ROOT/scripts/test-squad-labels.sh" "$1/scripts/"; cp -R "$REPO_ROOT/scripts/lib" "$1/scripts/lib"; cp "$REPO_ROOT"/*.md "$1/" 2>/dev/null; return 0; }
+fixture() { mkdir -p "$1/scripts"; cp -R "$REPO_ROOT/claude" "$1/claude"; cp "$REPO_ROOT/scripts/lint-allowlist-1b.txt" "$REPO_ROOT/scripts/test-squad-labels.sh" "$REPO_ROOT/scripts/test-squad-readiness.sh" "$1/scripts/"; cp -R "$REPO_ROOT/scripts/lib" "$1/scripts/lib"; cp "$REPO_ROOT"/*.md "$1/" 2>/dev/null; return 0; }
 c12() { bash "$REPO_ROOT/scripts/squad-lint.sh" --repo-root "$1" 2>&1 | sed -n '/== 12/,/== summary/p'; }
 fixture "$TMP/a"
 c12 "$TMP/a" | grep -q '\[FAIL\]' && bad "pristine tree passes check 12" || ok "pristine tree passes check 12"

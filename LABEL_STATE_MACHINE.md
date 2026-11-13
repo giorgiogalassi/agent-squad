@@ -46,10 +46,20 @@ config shape):
 | L7 | PR closed without merging | `.github/workflows/issue-lifecycle.yml` | not script-performed | connected | untouched | untouched | **− remove** | untouched |
 | L8 | Issue closed manually, no PR | — (human action) | not script-performed | connected | untouched | untouched | untouched | untouched |
 | L9 | Out of review rounds, or second `INCOMPLETE` (PR open) | Ralph | `squad-labels.sh needs-review` | connected | **+ add** (exit 10 if not configured) | — | untouched (must be present unless `review_label` is already present, else exit 10) | — |
+| L10 | Create (unresolved readiness blocker) | Chisel | not script-performed (Chisel `gh issue create --label`, like L5); tested in `scripts/test-squad-readiness.sh` | connected | untouched | — | — | **+ add** |
 | D | Every step | Ralph / Cody | `squad-labels.sh` with `--handoff` (tests prefixed `D-`) | detached | n/a — `review_label` is a connected-only config field | simulated via handoff checklist line | simulated via handoff checklist line | simulated via handoff checklist line |
 
 L1 ensures the label definitions exist in the repo; L5 is the separate act of
 attaching `review_label` to a new issue, which Chisel still does itself.
+
+L10 is the same kind of act for `blocked`: when the reader (run on the drafts,
+before anything is created) leaves a blocker open after Chisel's one round with the
+user, or when the run is headless, Chisel creates that issue with `blocked` and a
+`Readiness: blocked (<n>)` line. Ralph Phase 1 already skips `blocked` issues, so a
+human clears the label after deciding the open items. `squad-readiness.sh` reports the
+count (`BLOCKERS`), and the label goes on exactly when it is above zero; the
+`L10 ...` tests in `scripts/test-squad-readiness.sh` pin that, and lint check 7
+fails if the row names a test file that has no `L10` test.
 
 Detached mode never calls `gh`, so nothing in this table applies beyond
 "n/a" / "simulated": Ralph appends checklist lines
@@ -126,6 +136,7 @@ deliberately avoided:
 ## Files carrying this state machine
 
 - `claude/hooks/squad-labels.sh` — performs rows L1-L4, L9 and D.
+- `claude/hooks/squad-readiness.sh` — computes the blocker count behind row L10 and writes the `## Readiness` section.
 - `scripts/test-squad-labels.sh` — one named test group per script-performed row.
 - `claude/skills/chisel/SKILL.md`, `claude/agents/cody.md`,
   `claude/skills/ralph/SKILL.md` — invoke the script for their steps.

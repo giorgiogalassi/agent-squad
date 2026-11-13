@@ -1594,6 +1594,39 @@ a live headless run, a headless client must treat the shim as possibly absent
 > **Key decision:** a client writes through `event` alone and treats a
 > missing shim as success; the example is a test fixture, never shipped.
 
+### Iteration 44: Chisel runs the reader on drafts before creating issues (#483)
+
+**Problem:** Cody receives one issue and the repo, but Chisel's granularity rule
+("implementation details are Cody's call") said nothing about which decisions
+must be made before the issue exists. Interface-level gaps (a schema, an API
+shape) surfaced mid-implementation as guesses.
+
+**Change (#483, on the #482 `reader` agent):**
+
+- *Rule.* Interface-level decisions are decided in the issue; internal choices
+  stay with Cody. The categories are defined once, in `reader.md`; Chisel refers
+  to them, and lint check 15 fails when Chisel names two of their labels.
+- *Draft, read, then create.* Chisel drafts all issues, runs `reader` once per
+  batch (once per chunk when oversized) before any `gh issue create` or batch-file
+  write, asks the user to decide the blockers once, re-runs the reader once, and
+  creates the issues. Headless runs skip the prompt and the edits. A reader
+  failure creates the issues without the section and prints
+  `readiness check unavailable`.
+- *`## Readiness` is written by a script.* `squad-readiness.sh apply` cuts one
+  issue's block out of the reader output, replaces any earlier `## Readiness`
+  section and marker line (so a re-run never appends), counts open blockers and
+  emits `BLOCKERS`. That is text surgery with edge cases, so it is a tested script,
+  not prose.
+- *Open blockers reuse `blocked`.* Row L10 of `LABEL_STATE_MACHINE.md`: Chisel
+  creates the issue with `state_labels.blocked` plus `Readiness: blocked (<n>)`
+  (connected) or `Blocked: readiness` (detached). Ralph Phase 1 already skips
+  `blocked`, so no new label or gate exists. L10 is applied by Chisel like L5, so
+  check 7 gained a `tested in scripts/<file>` form: the row names its test file
+  and lint fails when that file has no `L10` test.
+
+> **Key decision:** readiness is a draft-time check with one human round, and an
+> unresolved blocker is marked with the existing `blocked` state, not a new one.
+
 ---
 
 ## 3. Final Architecture
