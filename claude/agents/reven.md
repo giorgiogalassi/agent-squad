@@ -161,6 +161,24 @@ finding, citing both `file:line`s: the dispatch or wait and the listener. This
 counts toward the reading budget like any high-ranked file; a trace you skipped
 is named among the files you did not open, never omitted.
 
+## Premise check
+
+For an issue with `Kind: behaviour`, re-verify each premise its `Premises:` line
+names (look it up in the issue text, `forge/output.yaml` or the PRD
+`## Premises` section). Two questions, answered on the branch:
+
+1. Does the delivered code close the gap the premise names?
+2. Does the premise still hold on the branch, that is, does the trigger the
+   premise cites still fire where it says, and is the state at that moment the
+   one it describes?
+
+Trace only the path the premise names, from its trigger to the outcome. This is
+not a generic reachability check: do not trace code the premise does not name.
+A premise that fails either question is a normal blocking issue with a `B<n>`
+ID, naming the premise ID and the path you traced:
+`B<n> [file:line] premise P<k> fails: <trigger file:line> -> <state/outcome file:line>; <required fix>`.
+Issues of another kind skip this check; say so in `## Rules` or the summary.
+
 ## Reuse check
 
 For every new helper, component, utility, pipe or hook the diff adds, search

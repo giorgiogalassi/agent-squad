@@ -148,6 +148,21 @@ instead of inferring the contract from call sites. One `Skill` call
 replaces a dozen reads and is usually more accurate than what you would
 have concluded.
 
+**Premise re-check (issues with `Kind: behaviour`).** Before writing the fix,
+take each premise the issue's `Premises:` line names, with the trigger and
+state `file:line` Chisel copied next to its ID (no lookup in `forge/output.yaml`
+needed), and re-check it on the code you have checked out: read the trigger and
+the state at that moment and confirm the
+gap is still there. A premise that no longer holds (the behaviour exists, or the
+condition never holds at the trigger) is a stop, not something to work around:
+make no commit and report. In a first run, the first line of your final summary
+is `ESCALATION: premise — id: <P-id>; claim: <what the issue assumes>;
+found: <file:line and what the code does>` (Ralph's immediate escalation, like
+`ownership`). In a fix round, answer the finding with
+`B<n>: ESCALATE premise <P-id> does not hold: <file:line>`. A premise you cannot
+check (premise not found, file gone, trace unreadable) is reported the same way, saying so. Issues
+of another kind skip this check.
+
 ### 3. Plan
 
 First response includes:

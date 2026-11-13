@@ -202,10 +202,39 @@ names a concept missing from the `## Owners` section of
 section if absent) before creating the issues; skip it when the row
 already exists; never rewrite or drop existing rows.
 
+## Kind and premises
+
+Every code issue carries two lines under the description:
+`Kind: behaviour | enabler | refactor | hardening` and
+`Premises: P1[, P2]`, the IDs from the input's `premises` (Forge YAML, or the
+PRD's `## Premises` section). Reference the IDs; never copy the evidence prose.
+Next to each ID copy the premise's `trigger` and `state_at_trigger` `file:line`
+(one line per premise, locations only), so the implementer's re-check does not
+depend on `forge/output.yaml` still existing:
+`Premises: P1 (trigger src/a.ts:30; state src/a.ts:26)`.
+
+- `behaviour`: changes what the system does. It needs at least one listed
+  premise with status `gap confirmed`.
+- `enabler`, `refactor`, `hardening`: no premise needed; add one line,
+  `Reason: <why this work is needed>`.
+- Docs-only issues carry neither line. Input without `premises` (older YAML):
+  `Kind` is still set; a `behaviour` issue then has no confirmed gap.
+
+A `behaviour` issue with no `gap confirmed` premise is not ready. Interactive:
+ask the user, with the premise status and evidence, whether to confirm the gap
+(Forge re-run or a stated reason), re-kind the issue, or drop it. Still
+unconfirmed at creation (or headless): use the readiness path below, not a
+second exclusion. Add the line `- premise: no confirmed gap (<premise IDs or
+none>)` under `### Blockers` of that draft's block in the reader output, after the
+step-2 reader re-run and just before step 4 (create the `### Blockers` heading
+when the block lacks it), so the same `squad-readiness.sh apply` call marks it
+blocked (connected: `state_labels.blocked`, row L10; detached:
+`Blocked: readiness`).
+
 ## Readiness check
 
-Draft every issue body first (title, description, criteria, test specs, `Units:`
-and `Owner:` lines), keyed `D1`, `D2`, ... in creation order. Nothing is created
+Draft every issue body first (title, description, criteria, test specs, `Units:`,
+`Owner:`, `Kind:` and `Premises:` lines), keyed `D1`, `D2`, ... in creation order. Nothing is created
 and no batch file is written until this section has run, in both modes.
 
 1. **Run.** Invoke the `reader` agent once for the whole batch with this brief:
@@ -233,9 +262,12 @@ and no batch file is written until this section has run, in both modes.
    | 20 | Treat the check as unavailable for this issue; create it without the section. |
 
    Re-running the script on the same draft replaces the section, never appends.
-5. **Reader failed or timed out** (no output at all): create every issue without
-   the section and print `readiness check unavailable` in the summary. Never
-   block creation on the reader.
+5. **Reader failed or timed out** (no output at all, or exit 10/20): create
+   every issue without the section and print `readiness check unavailable` in
+   the summary. Never block creation on the reader. An unconfirmed `behaviour`
+   issue is still marked blocked: write a reader file holding only
+   `## Issue <Dn>` and `### Blockers` with the premise line, and run step 4 on
+   it, so there is one marking path.
 
 ## Issue creation (connected mode)
 
@@ -312,6 +344,8 @@ Parent: [SQ-1]
 
 <description: context, what and why>
 Owner: <concept>: <owning lib/module>   (only when the issue introduces a new shared concept)
+Kind: behaviour | enabler | refactor | hardening
+Premises: P1   (IDs from the input; `Reason: <why>` instead for non-behaviour kinds)
 
 ### Acceptance criteria
 - ...
