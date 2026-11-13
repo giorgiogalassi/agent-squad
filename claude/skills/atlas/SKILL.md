@@ -45,10 +45,13 @@ branch; `--base <ref>` overrides it for any target and is passed on to
 `gather`. `BASE` prints the ref actually used.
 `--no-render` stops after the brief (no HTML).
 
-**Reads only.** Atlas never commits, never pushes, never comments on
-the tracker or the VCS. The script writes only under
+**Reads only.** Atlas never pushes and never comments on the tracker or
+the VCS. The script writes only under
 `<vault>/projects/<name>/.squad/atlas/<id>/` (`atlas.json`, `brief.md`,
-`index.html`); the one other write is the session-log line below, made
+`index.html`), at the write root: in a PR-mode vault the project's session
+worktree (`lore root`), where the script commits that folder itself through
+`lore commit`, so the vault checkout stays clean; the `HTML` and `BRIEF`
+keys name the files there; the one other write is the session-log line below, made
 through the progress script, and the incremental `graph-cache.json`
 (unit edges per git tree id) beside the run state. It reads
 `scout-cache.md` and `forge/output.yaml` from `$SQUAD_DIR` (the repo's
@@ -190,7 +193,7 @@ else: the author opens the page.
 ## Session log
 
 Append to `.squad/session.log` through the progress script
-(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --skill atlas --line "<text>"`):
+(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source atlas --line "<text>"`):
 
   start — target: <target>
   end — <ID>: <FILES> files, brief <words> words

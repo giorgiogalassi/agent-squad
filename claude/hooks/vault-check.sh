@@ -43,7 +43,8 @@
 #   FIXED_SESSION_CLOSED=<n> <tag>, DECISIONS_APPLIED_INVERSE.
 set -u
 # shellcheck source=squad-common.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/squad-common.sh"
+VC_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$VC_HOOK_DIR/squad-common.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 KNOWN_ROOT_FILES=" CLAUDE.md INDEX.md lore-config.json lore-config.local.json squad-incidents.tsv "
@@ -196,11 +197,26 @@ close_session_starts() {
 
 emit() { printf '%s=%s\n' "$1" "$2"; }
 
+# vc_vault_file <vault> <name> <relpath>: where a vault-level file (INDEX.md,
+# lore-config*.json) is read (#460). The checkout may be behind origin in a PR-mode
+# vault, so the read owners come first: the vault-level session worktree, then the
+# project's, then the checkout. Prints the first that has the file; the checkout path
+# (maybe absent) when none does.
+vc_vault_file() {
+  local v="$1" n="$2" rel="$3" r
+  for r in "$(squad_vault_rroot "$v" "$SQUAD_VAULT_LEVEL")" "$(squad_vault_rroot "$v" "$n")" "$v"; do
+    [ -f "$r/$rel" ] && { printf '%s' "$r/$rel"; return 0; }
+  done
+  printf '%s' "$v/$rel"
+}
+
 # check_project <vault> <name> <context> <fix:0|1>
 check_project() {
   local vault="$1" name="$2" ctx="$3" fix="$4"
-  local proj="$vault/projects/$name" idx="$vault/INDEX.md"
-  local status="$proj/status.md" log="$proj/.squad/session.log" today out="" r line
+  # Project files are read where a PR-mode vault holds them (#453): the session worktree.
+  local rr; rr="$(squad_vault_rroot "$vault" "$name")"
+  local proj="$rr/projects/$name" idx="$(vc_vault_file "$vault" "$name" INDEX.md)"
+  local status="$proj/status.md" log="$proj/$STATE_NAME/session.log" today out="" r line
   today="$(now_ts)"; today="${today%% *}"
   local fixed="" findings=""
 
@@ -231,7 +247,7 @@ check_project() {
       r="$(close_orphans "$log" "$today")"
       if [ "${r:-0}" -gt 0 ]; then
         fixed="${fixed}FIXED_SESSION_CLOSED=$r $name${NL}"
-        FIXED_FILES="${FIXED_FILES}projects/$name/.squad/session.log${NL}"
+        FIXED_FILES="${FIXED_FILES}projects/$name/$STATE_NAME/session.log${NL}"
       fi
     fi
     if [ -s "$proj/decisions.md" ]; then
@@ -299,7 +315,8 @@ check_project() {
 # check_vault <vault>: stray root files and projects with no INDEX row.
 check_vault() {
   local vault="$1" out="" f b idx="" p n
-  [ -f "$vault/INDEX.md" ] && idx="$(cat "$vault/INDEX.md")"
+  local ivf; ivf="$(vc_vault_file "$vault" "" INDEX.md)"
+  [ -f "$ivf" ] && idx="$(cat "$ivf")"
   for f in "$vault"/*; do
     [ -f "$f" ] || continue
     b="${f##*/}"
@@ -320,13 +337,22 @@ EOF
   fi
   if command -v jq >/dev/null 2>&1; then
     local mapped="" d f m bad=""
+    # Mappings are read through the read owners too (#460): the checkout may be behind.
+    # Every session worktree is a candidate root: one directory listing, no git calls.
+    local roots="$vault" w
+    for w in "$vault"/.claude/worktrees/lore-*; do [ -d "$w" ] && roots="$roots"$'\n'"$w"; done
     for f in lore-config.json lore-config.local.json; do
-      [ -f "$vault/$f" ] || continue
-      if m="$(jq -r '.projects[]? // empty' "$vault/$f" 2>/dev/null)"; then
-        mapped="${mapped}${m}${NL}"
-      else
-        bad=1; out="${out}VAULT_CONFIG_INVALID=$f${NL}"
-      fi
+      while IFS= read -r rt; do
+        [ -n "$rt" ] && [ -f "$rt/$f" ] || continue
+        if m="$(jq -r '.projects[]? // empty' "$rt/$f" 2>/dev/null)"; then
+          mapped="${mapped}${m}${NL}"
+        else
+          printf '%s' "$out" | grep -qxF "VAULT_CONFIG_INVALID=$f" || out="${out}VAULT_CONFIG_INVALID=$f${NL}"
+          bad=1
+        fi
+      done <<EOF2
+$(printf '%s\n' "$roots" | sort -u)
+EOF2
     done
     # An unreadable config hides its mappings: report it, not every folder.
     if [ -z "$bad" ]; then
@@ -397,9 +423,10 @@ main() {
     while IFS='=' read -r k v; do
       case "$k" in VAULT_PATH) vault="$v" ;; DISPLAY_NAME) [ -z "$name" ] && name="$v" ;; SQUAD_DIR) sq="$v" ;; esac
     done < <("$HERE/path-resolve.sh" 2>/dev/null)
-    [ -n "$sq" ] && [ -n "$name" ] && [ "$sq" != "$vault/projects/$name/.squad" ] && ctx=repo
+    squad_dir_is_repo "$vault" "$name" "$sq" && ctx=repo
   fi
   [ -d "$vault" ] || die "vault-check.sh: no vault at $vault" 2
+  STATE_NAME="$(squad_state_name "$vault")"
   if [ "$all" = 1 ]; then
     local d
     for d in "$vault"/projects/*/; do
@@ -422,7 +449,9 @@ main() {
       case " ${paths[*]:-} " in *" $f "*) continue ;; esac
       paths+=("$f")
     done <<< "$FIXED_FILES"
-    [ "${#paths[@]}" -gt 0 ] && squad_vault_commit "$vault" "${name:-vault}" "[lore] check --fix $(now_ts)" "${paths[@]}"
+    # --all (no project name): the fixes span projects, so they are vault-level (#444).
+    local who=(--vault-level); [ -n "$name" ] && who=(--project "$name")
+    [ "${#paths[@]}" -gt 0 ] && { bash "$VC_HOOK_DIR/lore" commit --vault "$vault" "${who[@]}" --message "[lore] check --fix $(now_ts)" --paths "${paths[@]}" >/dev/null || squad_commit_fail $?; }
   fi
   return 0
 }

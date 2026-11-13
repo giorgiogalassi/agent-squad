@@ -5,7 +5,7 @@ description: >
   Triggers: /chisel, after Forge produces output.yaml, after Archy produces
   current.md, or when the user asks to create issues from an existing
   analysis. Do NOT trigger on direct requests to write code or plan features.
-allowed-tools: Read, Write, Bash
+allowed-tools: Read, Write, Bash, Agent
 ---
 
 # Chisel
@@ -17,7 +17,7 @@ about the feature: read, decompose, create.
 ## On start
 
 **Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix).
-All `.squad/` paths below mean `<SQUAD_VAULT_PATH>/projects/<display-name>/.squad/`,
+All `.squad/` paths below mean `$SQUAD_STATE_DIR` (`<SQUAD_VAULT_PATH>/projects/<display-name>/<state_dir>/`; `STATE_DIR` from path-resolve.sh),
 except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
 under `SQUAD_DIR` (vault by default, `<SQUAD_PROJECT_ROOT>/.squad` when the
 project is `context: repo`). If `SQUAD_DIR` does not exist, print
@@ -25,6 +25,17 @@ project is `context: repo`). If `SQUAD_DIR` does not exist, print
 to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files and git use CWD.
+
+**Write root.** The session's `SQUAD_DIR` predates any session worktree made since
+(by Seed or an earlier skill), so take `SQUAD_DIR` for the existence check and every
+read from `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --read` (never creates anything).
+Files this skill writes under `SQUAD_DIR` go through the write root, never into the
+vault checkout: before the first one run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root`
+and read `OUTCOME`, `ROOT`, `SQUAD_DIR`; write under that `SQUAD_DIR`. When `ROOT` is
+not `SQUAD_VAULT_PATH` (a PR-mode vault) commit what you wrote, once the step that
+wrote it is done, with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[chisel] <what>" --paths <path relative to ROOT>...`
+(`projects/<display-name>/.squad/...`; read `OUTCOME`). Exit 10: print the stderr
+reason and stop; nothing is written. A `context: repo` project keeps its `SQUAD_DIR`.
 
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
@@ -139,9 +150,10 @@ print the stderr line verbatim and stop; create nothing.
 
 Each issue: completable by one agent in one session without external
 context; mapped to acceptance criteria from the input; independent of
-the batch or explicitly ordered. Never create issues for implementation
-details (Cody's call), micro-tasks that belong as checklist items, or
-anything out of scope in the PRD. A good issue: clear title, what and
+the batch or explicitly ordered. Interface-level decisions, as
+`claude/agents/reader.md` defines them (that file is the only definition), are
+decided in the issue; internal choices stay with Cody. Never create issues for
+micro-tasks that belong as checklist items or anything out of scope in the PRD. A good issue: clear title, what and
 why, the criteria it covers, explicit dependencies.
 
 ## Slicing and coupling from the planned graph
@@ -190,6 +202,73 @@ names a concept missing from the `## Owners` section of
 section if absent) before creating the issues; skip it when the row
 already exists; never rewrite or drop existing rows.
 
+## Kind and premises
+
+Every code issue carries two lines under the description:
+`Kind: behaviour | enabler | refactor | hardening` and
+`Premises: P1[, P2]`, the IDs from the input's `premises` (Forge YAML, or the
+PRD's `## Premises` section). Reference the IDs; never copy the evidence prose.
+Next to each ID copy the premise's `trigger` and `state_at_trigger` `file:line`
+(one line per premise, locations only), so the implementer's re-check does not
+depend on `forge/output.yaml` still existing:
+`Premises: P1 (trigger src/a.ts:30; state src/a.ts:26)`.
+
+- `behaviour`: changes what the system does. It needs at least one listed
+  premise with status `gap confirmed`.
+- `enabler`, `refactor`, `hardening`: no premise needed; add one line,
+  `Reason: <why this work is needed>`.
+- Docs-only issues carry neither line. Input without `premises` (older YAML):
+  `Kind` is still set; a `behaviour` issue then has no confirmed gap.
+
+A `behaviour` issue with no `gap confirmed` premise is not ready. Interactive:
+ask the user, with the premise status and evidence, whether to confirm the gap
+(Forge re-run or a stated reason), re-kind the issue, or drop it. Still
+unconfirmed at creation (or headless): use the readiness path below, not a
+second exclusion. Add the line `- premise: no confirmed gap (<premise IDs or
+none>)` under `### Blockers` of that draft's block in the reader output, after the
+step-2 reader re-run and just before step 4 (create the `### Blockers` heading
+when the block lacks it), so the same `squad-readiness.sh apply` call marks it
+blocked (connected: `state_labels.blocked`, row L10; detached:
+`Blocked: readiness`).
+
+## Readiness check
+
+Draft every issue body first (title, description, criteria, test specs, `Units:`,
+`Owner:`, `Kind:` and `Premises:` lines), keyed `D1`, `D2`, ... in creation order. Nothing is created
+and no batch file is written until this section has run, in both modes.
+
+1. **Run.** Invoke the `reader` agent once for the whole batch with this brief:
+   `Proposal:` the batch title, `Goal:` issues an implementer can build from
+   the text and the repo alone, `Excerpt:` one block per draft key with the draft
+   verbatim. A batch too large for one call is split into chunks (same brief,
+   one reader call each). Save the reader output to a scratch file.
+2. **Interactive, blockers found.** Show the blockers per issue and ask the user
+   to decide each one. Put each answer into the draft, run the reader once more
+   on the changed drafts (the one re-run; no loop), then continue.
+3. **Headless** (no user to ask: invoked with `claude -p` or told so by the
+   caller): no prompt and no draft edits; continue with the first result.
+4. **Write the section** into each draft, mode as configured:
+
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-readiness.sh apply --body <draft-file> --reader <reader-output-file> --key <Dn> --mode <connected|detached>
+   ```
+
+   Read `OUTCOME`, `CHANGED` and `BLOCKERS`. Act on the exit code:
+
+   | Exit | Action |
+   |------|--------|
+   | 0 | Continue; `BLOCKERS` above zero marks the issue blocked (connected: `state_labels.blocked` at creation, LABEL_STATE_MACHINE row L10; detached: the `Blocked: readiness` line the script wrote). |
+   | 10 | Create this issue without a `## Readiness` section. |
+   | 20 | Treat the check as unavailable for this issue; create it without the section. |
+
+   Re-running the script on the same draft replaces the section, never appends.
+5. **Reader failed or timed out** (no output at all, or exit 10/20): create
+   every issue without the section and print `readiness check unavailable` in
+   the summary. Never block creation on the reader. An unconfirmed `behaviour`
+   issue is still marked blocked: write a reader file holding only
+   `## Issue <Dn>` and `### Blockers` with the premise line, and run step 4 on
+   it, so there is one marking path.
+
 ## Issue creation (connected mode)
 
 `gh` via Bash. Titles: verb + noun, ≤60 chars. Bodies: markdown —
@@ -210,7 +289,10 @@ context, acceptance criteria, test specs, notes; never a `Blocked by:` line
      --blocked-by <blocker-number>[,...]
    ```
    Omit `--parent` in the single-issue case; omit `--blocked-by` when
-   independent. Blocker-side recording (rare):
+   independent. The body is the draft file with its `## Readiness` section.
+   An issue whose `BLOCKERS` is above zero also gets `--label <state_labels.blocked>`
+   (row L10 of `LABEL_STATE_MACHINE.md`; the `Readiness: blocked (<n>)` line is
+   already in the body). Blocker-side recording (rare):
    `gh issue edit <blocker> --add-blocking <dependent>`.
 4. Apply `review_label` to every created issue (parent included) at
    creation (`--label`), or after the fact with `--add-label`. Skip
@@ -262,12 +344,20 @@ Parent: [SQ-1]
 
 <description: context, what and why>
 Owner: <concept>: <owning lib/module>   (only when the issue introduces a new shared concept)
+Kind: behaviour | enabler | refactor | hardening
+Premises: P1   (IDs from the input; `Reason: <why>` instead for non-behaviour kinds)
 
 ### Acceptance criteria
 - ...
 
 ### Test specs
 - Given ... when ... then ...
+
+Blocked: readiness   (only when the reader left blockers open)
+
+## Readiness
+### What this proposes
+...
 
 ## SQ-3: <title>
 Blocked by: [SQ-2] <title of blocking issue>
@@ -290,9 +380,14 @@ Rules:
   import; downstream reports use the tracker key when present, else the
   local ID. Empty mapping is valid. Parent entries get a row like any
   other local ID.
+- Each issue entry carries exactly one `## Readiness` section (the heading stays
+  `## Readiness`, with the reader's `###` blocks under it; an entry ends at the
+  next `## <ID>:` heading) and, when blockers are open, the `Blocked: readiness`
+  line above it. Without a reader result neither is written.
 - Also write `batch-YYYYMMDD-HHMMSS.csv` alongside
   (`Summary,Description`, quoted multiline values, Jira-importable);
-  `Blocked by:`/`Parent:` lines folded into the Description value.
+  `Blocked by:`/`Parent:` lines folded into the Description value, and the
+  `Blocked: readiness` line and `## Readiness` section kept in it.
 
 Then print:
 
@@ -330,6 +425,10 @@ Connected (parent included when created):
   - #<issue-number> <title>
   Review them on GitHub before invoking /ralph.
 
+When the readiness check was unavailable, add `readiness check unavailable` as a
+line before the closing "Review them" line. When some issues were marked blocked,
+add `Blocked by readiness (<n> open): <ids>` before it.
+
 If `chisel.project` is configured and any `item-add` call failed, list
 those failures immediately after the created-issues list — the issues
 still exist, they just aren't on the board yet:
@@ -342,7 +441,8 @@ still exist, they just aren't on the board yet:
 - Titles and descriptions in English regardless of conversation
   language.
 - Never invent requirements not in the input; ambiguous scope → narrower
-  issue with the ambiguity noted, never a question back to the user.
+  issue with the ambiguity noted, never a question back to the user. The one
+  exception is the readiness check's blockers (interactive runs only).
 - PRD open questions go into the relevant issue descriptions for Cody.
 - If the PRD was the input, archive it after creation:
   `.squad/prd/current.md` → `.squad/prd/archive/current-YYYYMMDD-HHMMSS.md`
@@ -356,12 +456,13 @@ still exist, they just aren't on the board yet:
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source chisel --line "<text>"`;
+the script adds the timestamp and `[chisel]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [chisel] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [chisel] end — created N issues: [ISSUE-IDs]
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.

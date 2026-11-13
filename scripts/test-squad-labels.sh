@@ -47,7 +47,7 @@ cat > "$TMPROOT/hooks-conn/path-resolve.sh" <<'EOP'
 #!/usr/bin/env bash
 echo "VAULT_PATH=$SECOND_BRAIN_PATH"; echo "PROJECT_ROOT=$PWD"
 echo "DISPLAY_NAME=fixture"; echo "SQUAD_DIR=$SECOND_BRAIN_PATH/projects/fixture/.squad"
-echo "TRACKER_MODE=connected"
+echo "TRACKER_MODE=connected"; echo "STATE_DIR=$SECOND_BRAIN_PATH/projects/fixture/.squad"
 EOP
 # nojq: every tool on the system PATH dirs except jq.
 for d in /bin /usr/bin; do
@@ -269,6 +269,17 @@ check "D- shim log empty (zero gh calls)" "" "$(cat "$GH_SHIM_LOG")"
 fixture detached --labels-custom
 lab "$TMPROOT/shimbin" claim --issue 9 --handoff "$TMPROOT/h2.md"
 check "D-custom fixture still records" "0/recorded-local" "$RC/$(key OUTCOME)"
+
+# ---- #395: unmapped cwd fails fast with the "no project mapped" reason (exit 10), no gh call
+U395="$TMPROOT/unmapped395"; mkdir -p "$U395"
+for v in "claim --issue 7" "ensure"; do
+  # shellcheck disable=SC2086
+  (cd "$U395" && SECOND_BRAIN_PATH="$F_VAULT" PATH="$TMPROOT/stubbin:$PATH" bash "$TMPROOT/hooks/$SUT_NAME" $v >"$TMPROOT/out" 2>"$TMPROOT/err"); RC=$?
+  check "#395 unmapped ${v%% *}: exit 10" 10 "$RC"
+  grep -q 'no project mapped' "$TMPROOT/err" && ok "#395 unmapped ${v%% *}: names the reason" || bad "#395 reason: $(cat "$TMPROOT/err")"
+  grep -q 'projects//' "$TMPROOT/err" && bad "#395 unmapped ${v%% *}: projects// in output" || ok "#395 unmapped ${v%% *}: no projects// path"
+done
+check "#395 unmapped: no gh call" "" "$(cat "$GH_SHIM_LOG" "$GH_READ_LOG")"
 
 echo "pass=$PASS fail=$FAIL"
 [ "$FAIL" = 0 ]

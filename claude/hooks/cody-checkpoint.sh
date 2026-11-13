@@ -15,11 +15,11 @@
 #
 # STATE: pr (open PR) | committed (connected, commit but no PR) |
 #        detached (detached mode, commit ready for manual push).
-# Writes: one `lore-checkpoint.sh --note` line; for STATE=pr also one
+# Writes: one `checkpoint` event (lore event, folded later; no commit); for STATE=pr also one
 # progress.txt line `[#N] YYYY-MM-DD resolved. PR: #N (base: B). Notes: <subject>`
 # (the `(base: ...)` token is what Reven reads). Both idempotent per sha / PR.
-# Summary for Ralph 2b: <vault>/projects/<name>/.squad/cody-checkpoint.env
-# (KEY=value, overwritten each run, never committed). Log: .cody-checkpoint.log in the project dir.
+# Summary for Ralph 2b: <vault>/projects/<name>/<state_dir>/cody-checkpoint.env
+# (KEY=value, overwritten each run, written directly, snapshot-committed by the fold). Log: .cody-checkpoint.log in the project dir.
 
 [ -n "${SQUAD_LORE_HOOK:-}" ] && exit 0
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -44,10 +44,23 @@ while IFS='=' read -r _key _value; do
 done < <("$HOOK_DIR/path-resolve.sh" 2>/dev/null)
 [ -d "${VAULT:-}" ] && [ -n "${ROOT:-}" ] || exit 0
 [ -z "${DISPLAY:-}" ] && DISPLAY="$(basename "$ROOT")"
+# No project (#441): a hook never fails the session, so note it and stop.
+[ -n "$DISPLAY" ] || { echo "cody-checkpoint: no project mapped for $ROOT; run /seed or /lore start" >&2; exit 0; }
 PROJ="$VAULT/projects/$DISPLAY"
+STATE_NAME="$(squad_state_name "$VAULT")"
 LOG="$PROJ/.cody-checkpoint.log"
-ENVF="$PROJ/.squad/cody-checkpoint.env"
-skip() { rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
+# The log must not show in `git status` (#455); the installer never fails.
+squad_vault_excludes "$VAULT" "$STATE_NAME"
+# The summary is working state: a PR-mode vault holds it in the session worktree
+# (squad_vault_wroot), never in the vault checkout; Ralph reads it with
+# `squad-progress.sh where --file env`. Refused (rc 10): direct-mode vault off its default branch.
+ENVF="$PROJ/$STATE_NAME/cody-checkpoint.env"
+if [ -d "$PROJ" ]; then
+  _wr="$(squad_vault_wroot "$VAULT" "$DISPLAY" 2>/dev/null)"; _wrc=$?
+  if [ "$_wrc" = 0 ] && [ -n "$_wr" ]; then ENVF="$_wr/projects/$DISPLAY/$STATE_NAME/cody-checkpoint.env"
+  else ENVF=/dev/null; fi
+fi
+skip() { [ "$ENVF" = /dev/null ] || rm -f "$ENVF"; printf '[%s] %s\n' "$(date "+%Y-%m-%d %H:%M")" "$1" > "$LOG" 2>/dev/null; exit 0; }
 [ -d "$PROJ" ] || exit 0
 
 BRANCH="$(git branch --show-current 2>/dev/null)"
@@ -97,33 +110,26 @@ case "$STATE" in
   *) LINE="[$NOW] [claude-code] Branch $BRANCH committed @ $SHA, no PR yet. $SUBJECT" ;;
 esac
 
+# Durable history is an event (folded into status.md later); nothing is committed here.
+# A pending event for the same branch @ sha is not repeated either.
 STATUS="$PROJ/status.md"
-if [ -f "$STATUS" ] && ! grep -qF "$BRANCH @ $SHA" "$STATUS"; then
-  bash "$HOOK_DIR/lore-checkpoint.sh" --note "$LINE" >/dev/null 2>&1
+_evline="${LINE#\[$NOW\] \[claude-code\] }"
+if ! grep -qF "$BRANCH @ $SHA" "$STATUS" 2>/dev/null \
+   && ! grep -qF "$BRANCH @ $SHA" "$PROJ/$STATE_NAME/inbox"/*.ev 2>/dev/null; then
+  SECOND_BRAIN_PATH="$VAULT" LORE_LOCK_WAIT=5 bash "$HOOK_DIR/lore" event --vault "$VAULT" --project "$DISPLAY" \
+    --source claude-code --kind checkpoint --line "$_evline" >/dev/null 2>&1
 fi
 
-PROGRESS="$PROJ/.squad/progress.txt"
-# PR-mode vault: the current progress.txt may be a session worktree's copy (vault main is
-# reset after each scripted commit), so the dedupe also reads any already existing worktree
-# copy, read-only (squad_vault_wt_existing never creates one). A line in either copy counts.
-_seen() {  # _seen <file>: is this issue's PR line in the file
-  grep -E "^\[(${ISSUE}|${ISSUE_BARE})\] " "$1" 2>/dev/null | grep -qE "PR: #$PR( |$)"
-}
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ]; then
-  _present=0
-  _seen "$PROGRESS" && _present=1
-  if [ "$_present" = 0 ] && ! squad_local_only "$VAULT" "$DISPLAY" && squad_vault_pr_mode "$VAULT"; then
-    while IFS= read -r _wt; do
-      [ -n "$_wt" ] && _seen "$_wt/projects/$DISPLAY/.squad/progress.txt" && _present=1
-    done < <(squad_vault_wt_existing "$VAULT" "$DISPLAY" 2>/dev/null)
-  fi
-fi
-if [ "$STATE" = pr ] && [ -d "$PROJ/.squad" ] && [ "$_present" = 0 ]; then
-  printf '[%s] %s resolved. PR: #%s (base: %s). Notes: %s\n' "$ISSUE" "$(date +%Y-%m-%d)" "$PR" "$BASE" "$SUBJECT" >> "$PROGRESS"
-  squad_vault_commit "$VAULT" "$DISPLAY" "lore: progress $(squad_public_name "$VAULT" "$DISPLAY")" "projects/$DISPLAY/.squad/progress.txt"
+# Working state: the progress.txt line is written directly through squad-progress.sh
+# (current copy, idempotent per issue and PR, off-default-branch rules); the fold commits it.
+if [ "$STATE" = pr ] && [ -d "$PROJ/$STATE_NAME" ]; then
+  bash "$HOOK_DIR/squad-progress.sh" append --issue "$ISSUE" \
+    --line "$(date +%Y-%m-%d) resolved. PR: #$PR (base: $BASE). Notes: $SUBJECT" >/dev/null 2>&1 \
+    || echo "cody-checkpoint: progress line not written" >&2
 fi
 
-if [ -d "$PROJ/.squad" ]; then
+if [ -d "$PROJ/$STATE_NAME" ] && [ "$ENVF" != /dev/null ]; then
+  mkdir -p "$(dirname "$ENVF")"
   printf 'STATE=%s\nISSUE=%s\nBRANCH=%s\nSHA=%s\nTREE=%s\nPR=%s\nBASE=%s\nAT=%s\n' \
     "$STATE" "$ISSUE" "$BRANCH" "$SHA" "$TREE" "$PR" "$BASE" "$NOW" > "$ENVF"
 fi

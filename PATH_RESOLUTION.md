@@ -97,7 +97,7 @@ not attempt to resolve.
 ## The script
 
 `claude/hooks/path-resolve.sh` implements the algorithm above plus the
-`lore-config.json` lookup, and prints five lines to stdout:
+`lore-config.json` lookup, and prints six lines to stdout:
 
 ```
 VAULT_PATH=<resolved vault path>
@@ -105,12 +105,39 @@ PROJECT_ROOT=<resolved project root, correct even inside a linked worktree>
 DISPLAY_NAME=<mapped display name, or empty if none exists yet>
 SQUAD_DIR=<where project knowledge lives>
 TRACKER_MODE=<connected|detached>
+STATE_DIR=<vault>/projects/<name>/<state_dir>
 ```
 
 `DISPLAY_NAME` and the `context` map are read from `<vault>/lore-config.local.json`
 first, then `<vault>/lore-config.json` (#355). The local file is optional, untracked
 and has the same schema; it maps projects whose name must stay out of the vault
 remote. An entry there wins per key, and an unreadable local file is ignored.
+
+When neither file maps the root, the script also reads the `lore-config.json` of
+the vault's open session worktrees (`<vault>/.claude/worktrees/lore-*`), newest
+commit first (#440). In a PR-mode vault `lore map` commits the mapping only on the
+session branch until the vault PR merges, so without this lookup `DISPLAY_NAME` stays
+empty for the rest of the session and every later one. If two session branches map
+the root to different names, the newest wins and one stderr line names the conflict.
+After the PR merges and the worktree is cleaned up, the checkout's config answers
+and the lookup is a no-op. It is read-only; direct and local-only vaults reach it too, but it matches nothing there.
+A session that just ran `lore map` re-runs `path-resolve.sh` (or `squad-env.sh`) to
+pick the mapping up; a new session gets it from SessionStart.
+
+`graph.json` is knowledge, not state (#454): it lives in `SQUAD_DIR` beside
+`architecture.md`, `scout-cache.md` and `graph.html`, and Seed commits it with them.
+`squad-graph.py` therefore resolves it through `lore root` rather than trusting a
+`SQUAD_DIR` from the environment, which predates a session worktree created later:
+`extract` (no `--out`) writes under the write root, and `render` (no `--graph`)
+reads the session worktree's copy. Only the run-state files (`graph-cache.json`,
+`graph-timeline.jsonl`) follow `STATE_DIR`. The vault checkout never holds an
+untracked `graph.json`.
+
+The root is the physical path (`pwd -P`), and `lore map --root` stores the physical
+path too, so `/var` vs `/private/var` and symlinks match. A directory that is not a git
+repository has no git root: its physical cwd is a candidate and becomes `PROJECT_ROOT`
+only when a config (local, tracked or session worktree) maps it. An unmapped non-git
+directory keeps `PROJECT_ROOT` and `DISPLAY_NAME` empty.
 
 `TRACKER_MODE` is resolved by the script, never passed by the model:
 detached mode is a safety property (privacy, user-owned tickets). It is
@@ -131,7 +158,26 @@ those from the `## Issue tracker and PR host` section of `architecture.md`
 (read-only), whatever `TRACKER_MODE` is; without the section it falls back
 to the prompt, local files and, when connected, `gh`.
 
-`SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default, or
+`STATE_DIR` is the per-project vault state directory. Its name comes only
+from the top-level `state_dir` key of `lore-config.local.json` /
+`lore-config.json` (a single path segment; the local file wins). Key absent:
+`.squad` when any `<vault>/projects/*/.squad/` already holds a state file
+(`session.log`, `progress.txt`, `ralph-run.md`, `chisel-config.json`, `inbox/`,
+`issues/`; existing vaults keep working, nothing moves), else `.lore`.
+Project knowledge in `SQUAD_DIR` (`architecture.md`, `scout-cache.md`, `forge/`,
+`prd/`) does not count: `SQUAD_DIR` stays `.squad` by design, and if it counted,
+Seed's first write would flip the name for the whole vault (#442). This keeps
+`path-resolve.sh` read-only; pinning the value into `lore-config.json` on first
+write was not taken because it would turn a read path into a commit (and, in a
+PR-mode vault, a session-branch commit). No env var or client flag changes
+the name, so two clients resolving the same project agree. `STATE_DIR` is always
+in the vault, also for `context: repo` projects, and `squad-env.sh` exports it as
+`SQUAD_STATE_DIR` and `LORE_STATE_DIR`. `path-resolve.sh --state-name` prints
+just the name (for scripts that hold a vault and a project name but no
+project root). Vault-side scripts build state paths from `STATE_DIR`;
+`squad-lint.sh` check 12 fails on a literal `.squad` in `claude/hooks`.
+
+`SQUAD_DIR` is `<vault>/projects/<name>/.squad` by default (unchanged by `state_dir`), or
 `<PROJECT_ROOT>/.squad` when `lore-config.json` has
 `"context": {"<project root>": "repo"}` (a top-level map keyed by project
 root, like `projects`; absent or any other value means `vault`). Only
@@ -158,7 +204,7 @@ protocol block: use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`,
 `squad-env.sh`); if `$SQUAD_PROJECT_ROOT` is unset (headless `claude -p`,
 evals), run `${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and read its
 `KEY=value` lines (`VAULT_PATH`, `PROJECT_ROOT`, `DISPLAY_NAME`,
-`SQUAD_DIR`, `TRACKER_MODE`; parse by key, not position). `squad-lint.sh`
+`SQUAD_DIR`, `TRACKER_MODE`, `STATE_DIR`; parse by key, not position). `squad-lint.sh`
 forbids the full block and requires the fallback.
 
 ## What does NOT change
@@ -209,3 +255,30 @@ Grep for `path-resolve.sh` to verify:
 - `claude/hooks/lore-orient.sh`
 - `claude/hooks/path-resolve.sh` — the actual implementation; everything
   else calls it.
+
+## No project (#441)
+
+When there is no project (no git root and no config mapping the directory),
+`path-resolve.sh` emits `PROJECT_ROOT=`, `DISPLAY_NAME=`, `SQUAD_DIR=` and
+`STATE_DIR=` empty and stays silent about `chisel-config.json`; it never builds
+a path with an empty `projects//` segment. Writers (`squad-progress.sh`,
+`lore event`) exit 10 with `no project mapped for <root>; run /seed or /lore
+start`; `cody-checkpoint.sh` (a hook) notes it on stderr and exits 0.
+
+## Local-only vault state (#455)
+
+Some files Lore writes are never committed. `squad_vault_excludes` (squad-common.sh,
+the only list, `SQUAD_LOCAL_ONLY_PATTERNS`) idempotently adds them to `.git/info/exclude`;
+`lore event`/`fold`, SessionStart (before the start-HEAD record) and SessionEnd call it.
+That file lives in the common git dir, so one rule covers the vault checkout and every
+session worktree, and a landed worktree's non-forced `git worktree remove` is not
+refused by them. No `.gitignore` is needed or touched.
+
+- Local-only (excluded), relative to `projects/<name>/`: `.lore-checkpoint.log`,
+  `.decisions-lint`, `<state>/inbox/` (incl. `.claimed-*`), `<state>/sessions/`,
+  `<state>/graph-cache.json`.
+- Committed working state (stays trackable): `progress.txt`, `ralph-run.md`,
+  `session.log`, `status.md`, `decisions.md`, `<state>/graph-timeline.jsonl` and the
+  knowledge files (`graph.json`, `architecture.md`, ...).
+- `<state>/atlas/<id>/` (squad-atlas.py output) is committed: the atlas script commits it
+  itself (`[atlas] gather`/`render`), so it is not excluded.

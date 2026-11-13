@@ -59,11 +59,14 @@ import statistics
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import squad_pylib as lib  # noqa: E402  (state directory name)
+
 SQUAD_SKILLS = {
     "forge", "archy", "chisel", "ralph", "reven", "lore", "seed",
     "sidecar", "challenge", "stats",
 }
-SQUAD_AGENTS = {"cody", "reven", "lore", "challenge"}
+SQUAD_AGENTS = {"cody", "reven", "lore", "challenge", "reader"}
 SQUAD_PLUGIN = "agent-squad"
 
 # Built-in slash commands. RESET ones spend no tokens and end the active
@@ -186,6 +189,24 @@ def vault_dir():
     return os.environ.get("SECOND_BRAIN_PATH") or os.path.expanduser("~/second-brain")
 
 
+def read_state_dir(name):
+    """<root>/projects/<name>/<state> where a reader finds the project's state files
+    (#453): `lore root --read`, the one owner of that choice (a PR-mode vault holds them
+    in the session worktree until its PR merges). Falls back to the vault checkout."""
+    vault = vault_dir()
+    fallback = os.path.join(vault, "projects", name, lib.state_name(vault))
+    try:
+        out = subprocess.run(["bash", os.path.join(os.path.dirname(os.path.abspath(__file__)), "lore"),
+                              "root", "--read", "--vault", vault, "--project", name],
+                             capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return fallback
+    for line in out.splitlines():
+        if line.startswith("STATE_DIR=") and line[10:]:
+            return line[10:]
+    return fallback
+
+
 def projects_dir():
     if os.environ.get("CLAUDE_PROJECTS_DIR"):
         return os.environ["CLAUDE_PROJECTS_DIR"]
@@ -238,7 +259,29 @@ def load_project_map():
         return []
 
 
+_LOCAL_ONLY = {}
+
+
+def local_only(name):
+    """True when the vault git-ignores projects/<name>/ (a local-only project,
+    #351): its name must not reach the pushed store (#401, #425)."""
+    if name not in _LOCAL_ONLY:
+        try:
+            r = subprocess.run(["git", "-C", vault_dir(), "check-ignore", "-q",
+                                "projects/%s/status.md" % name],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _LOCAL_ONLY[name] = r.returncode == 0
+        except OSError:
+            _LOCAL_ONLY[name] = False
+    return _LOCAL_ONLY[name]
+
+
 def project_name(cwd, pmap):
+    name = _project_name(cwd, pmap)
+    return "local" if name != "unknown" and local_only(name) else name
+
+
+def _project_name(cwd, pmap):
     if not cwd:
         return "unknown"
     cwd = cwd.rstrip("/")
@@ -706,7 +749,8 @@ def cmd_branch(args):
     wall = 0
     unclosed = 0
     fmt = "%Y-%m-%d %H:%M"
-    for log in sorted(glob.glob(os.path.join(vault_dir(), "projects", "*", ".squad", "session.log"))):
+    names = sorted(os.path.basename(d.rstrip("/")) for d in glob.glob(os.path.join(vault_dir(), "projects", "*/")))
+    for log in [os.path.join(read_state_dir(n), "session.log") for n in names]:
         for start, end, _tag, branch, closure in log_pairs(log):
             if branch != name:
                 continue
@@ -869,7 +913,7 @@ def pr_outcomes(since, paths):
     if paths.get("TRACKER_MODE") != "connected":
         return "skipped-detached", None
     name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    progress = os.path.join(paths.get("VAULT_PATH") or "", "projects", name, ".squad", "progress.txt")
+    progress = os.path.join(read_state_dir(name) if name else lib.state_dir(paths), "progress.txt")
     prs = {}
     try:
         with open(progress, encoding="utf-8") as f:

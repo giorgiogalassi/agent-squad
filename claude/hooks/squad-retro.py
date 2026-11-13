@@ -5,8 +5,8 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
 
   collect --days N | --batch [<ralph-run.md>] [--min M]
                       Build the trail for the window or the batch and
-                      cache it under .squad/retro/.trail.json.
-  report              Render the cached trail to .squad/retro/<date>.md
+                      cache it under <STATE_DIR>/retro/.trail.json.
+  report              Render the cached trail to <STATE_DIR>/retro/<date>.md
                       and emit the summary keys.
 
 Sources, all read-only:
@@ -38,7 +38,7 @@ blocking part of CHANGES_REQUESTED observations only: COMMENT rounds
 and `non-blocking:` text never count. KINDS is unvalidated until #403
 tunes it, so rule candidates are labelled so. A kind seen in >= --min
 PRs (default 3) becomes one `/lore decide` line; the script never
-writes to the vault beyond .squad/retro/.
+writes to the vault beyond <STATE_DIR>/retro/.
 
 Follow-ups, human comments and reopened state are unknown (None, "?")
 in git-only mode, never zero: they stay out of HELD_PCT and the
@@ -98,7 +98,7 @@ def fail(code, reason):
 
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
-           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "TRACKER_MODE")}
+           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "TRACKER_MODE", "STATE_DIR")}
     if env["VAULT_PATH"] and env["PROJECT_ROOT"]:
         return env
     try:
@@ -114,8 +114,12 @@ def resolve_paths():
 
 
 def squad_dir(paths):
-    name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths.get("VAULT_PATH") or "", "projects", name, ".squad")
+    # The write root (#443): in a PR-mode vault the project's session worktree, so
+    # nothing lands in the vault checkout and progress.txt is read where it is kept.
+    d = lib.write_state_dir(paths)
+    if not d:
+        fail(10, "no write root for %s: no project mapped (run /seed or /lore start), or the vault checkout is off its default branch in direct mode" % (paths.get("PROJECT_ROOT") or os.getcwd()))
+    return d
 
 
 def read_lines(path):
@@ -559,8 +563,10 @@ def main():
     verb, rest = sys.argv[1], sys.argv[2:]
     if verb == "collect":
         cmd_collect(rest)
+        lib.commit_state("retro", "[retro] collect")
     elif verb == "report":
         cmd_report(rest)
+        lib.commit_state("retro", "[retro] report")
     else:
         fail(2, "unknown verb '%s'" % verb)
 

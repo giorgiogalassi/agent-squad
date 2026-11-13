@@ -33,14 +33,56 @@ if [ -n "$HOOK_INPUT" ]; then
 fi
 # The session's own directory (a worktree session starts inside the worktree).
 [ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null
+# state_name <vault>: the vault's state directory name (path-resolve.sh decides).
+state_name() {
+  local n
+  n="$(SECOND_BRAIN_PATH="$1" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/path-resolve.sh" --state-name 2>/dev/null)"
+  printf '%s' "${n:-.lore}"
+}
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# squad-common.sh is sourced once, here (each source costs ~13 ms; SessionStart
+# used it a dozen times), before the resume path, which needs it too. Every use
+# checks SQUAD_COMMON_OK: without the file the hook still orients, with less.
+SQUAD_COMMON_OK=""
+[ -f "$HOOK_DIR/squad-common.sh" ] && . "$HOOK_DIR/squad-common.sh" >/dev/null 2>&1 && SQUAD_COMMON_OK=1
+
 # record_start_head <proj-dir>: first write wins, so a compact or clear in the
 # same session (same session_id) never moves the starting HEAD that SessionEnd
 # counts commits from. Consumed by lore-checkpoint.sh at SessionEnd.
 record_start_head() {
   [ -n "$HOOK_SESSION" ] || return 0
-  [ -f "$1/.squad/sessions/$HOOK_SESSION" ] && return 0
-  mkdir -p "$1/.squad/sessions" 2>/dev/null \
-    && git rev-parse HEAD > "$1/.squad/sessions/$HOOK_SESSION" 2>/dev/null
+  local _sd; _sd="$1/$(state_name "${1%/projects/*}")"
+  [ -f "$_sd/sessions/$HOOK_SESSION" ] && return 0
+  [ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_excludes "$1" "${_sd##*/}" ) 2>/dev/null
+  mkdir -p "$_sd/sessions" 2>/dev/null \
+    && git rev-parse HEAD > "$_sd/sessions/$HOOK_SESSION" 2>/dev/null
+}
+# record_vault_head <vault> <display> <rroot> <state-name>: vault HEAD at session start
+# (one rev-parse, no network), first write wins. SessionEnd tells a session that
+# committed vault writes (lore commit) from a no-op one (#464). A PR-mode vault with
+# no session worktree yet records the checkout's HEAD; a worktree created later then
+# counts as moved. The local-only exclude goes in first so the file never shows in
+# `git status` (a fresh vault has no entries yet).
+record_vault_head() {
+  [ -n "$HOOK_SESSION" ] && [ -n "$2" ] || return 0
+  # A session that started unmapped (#473) keeps its oldest HEAD in the vault-level record;
+  # a project record written later (compact/clear after mapping) would be newer, so skip it.
+  [ -n "$SQUAD_COMMON_OK" ] && [ -f "$(squad_vault_level_rec "$1" "$HOOK_SESSION")" ] && return 0
+  local _f="$1/projects/$2/$4/sessions/$HOOK_SESSION.vault" _h
+  [ -f "$_f" ] && return 0
+  _h="$(git -C "$3" rev-parse HEAD 2>/dev/null)"; [ -n "$_h" ] || return 0
+  [ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_excludes "$1" "$4" ) 2>/dev/null
+  mkdir -p "${_f%/*}" 2>/dev/null && printf '%s\n' "$_h" > "$_f" 2>/dev/null
+}
+# record_vault_level_head <vault>: the vault HEAD at the start of a session with no mapped
+# project (#473), first write wins, in the git common dir (never under projects/, so no
+# vault scan sees it). A vault that is not a git repository has nothing to compare.
+record_vault_level_head() {
+  [ -n "$HOOK_SESSION" ] || return 0
+  local _f _h; _f="$(squad_vault_level_rec "$1" "$HOOK_SESSION")"; [ -n "$_f" ] || return 0
+  [ -f "$_f" ] && return 0
+  _h="$(git -C "$1" rev-parse HEAD 2>/dev/null)"; [ -n "$_h" ] || return 0
+  mkdir -p "${_f%/*}" 2>/dev/null && printf '%s\n' "$_h" > "$_f" 2>/dev/null
 }
 if [ "$HOOK_SOURCE" = "resume" ]; then
   # No orientation, but a resumed worktree session (`claude -w <b> --resume`)
@@ -57,6 +99,14 @@ if [ "$HOOK_SOURCE" = "resume" ]; then
   if [ -n "$_rd" ] && [ -n "$_rr" ] && [ -n "$_rt" ] && [ "$_rt" != "$_rr" ] && [ -f "$_rt/.git" ]; then
     record_start_head "$_rv/projects/$_rd"
   fi
+  if [ -z "$_rd" ] && [ -n "$SQUAD_COMMON_OK" ]; then
+    record_vault_level_head "$_rv"
+  fi
+  if [ -n "$_rd" ]; then
+    _rw="$_rv"
+    [ -n "$SQUAD_COMMON_OK" ] && _rw="$(squad_vault_rroot "$_rv" "$_rd")"
+    record_vault_head "$_rv" "$_rd" "${_rw:-$_rv}" "$(state_name "$_rv")"
+  fi
   echo "{}"
   exit 0
 fi
@@ -68,12 +118,11 @@ fi
 # Parsed line-by-line (not `eval`'d): path-resolve.sh's output is not
 # shell-quoted, so eval-ing it would break on a path containing a space
 # and execute anything shaped like $(...) or `...` in a directory name.
-HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 if [ -n "${SQUAD_PROJECT_ROOT:-}" ] && [ -n "${SQUAD_VAULT_PATH:-}" ]; then
   # Values already exported by squad-env.sh earlier in this session (clear,
   # compact): reuse them instead of resolving a second time.
   VAULT="$SQUAD_VAULT_PATH"; ROOT="$SQUAD_PROJECT_ROOT"; DISPLAY="${SQUAD_DISPLAY_NAME:-}"
-  SQUAD_DIR="${SQUAD_DIR:-}"; TRACKER_MODE="${SQUAD_TRACKER_MODE:-}"
+  SQUAD_DIR="${SQUAD_DIR:-}"; TRACKER_MODE="${SQUAD_TRACKER_MODE:-}"; STATE_DIR="${SQUAD_STATE_DIR:-}"
 elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
   while IFS='=' read -r _key _value; do
     case "$_key" in
@@ -82,6 +131,7 @@ elif [ -x "$HOOK_DIR/path-resolve.sh" ]; then
       DISPLAY_NAME) DISPLAY="$_value" ;;
       SQUAD_DIR) SQUAD_DIR="$_value" ;;
       TRACKER_MODE) TRACKER_MODE="$_value" ;;
+      STATE_DIR) STATE_DIR="$_value" ;;
     esac
   done < <("$HOOK_DIR/path-resolve.sh")
 else
@@ -137,14 +187,67 @@ emit_json() {
   fi
 }
 
+# Vault-level signals (#422 checkout off its default branch, #427 push status and
+# retry): they depend on the vault only, so they also run with no project (#445).
+# Appends to SIGNALS.
+SIGNALS=""
+NL=$'\n'
+vault_signals() {
+# Vault checkout on another session's branch (#422): say so; nothing is changed here.
+if [ -n "$SQUAD_COMMON_OK" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vdef="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_offdefault "$VAULT" && squad_vault_default_branch "$VAULT" )"
+  if [ -n "$_vdef" ]; then
+    _vcur="$(git -C "$VAULT" symbolic-ref -q --short HEAD 2>/dev/null)"
+    SIGNALS="${SIGNALS}Vault checkout is on ${_vcur:-a detached HEAD}, not $_vdef: vault writes are refused until it is back on $_vdef${NL}"
+  fi
+fi
+# Vault push (#427): show a failed last push, and retry in the background when the
+# last push failed or a lore/* session branch is ahead of its remote tip (a push killed
+# at SessionEnd). Detached: orientation never waits on the network.
+if [ -n "$SQUAD_COMMON_OK" ] && git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  _vgd="$(git -C "$VAULT" rev-parse --git-common-dir 2>/dev/null)"; case "$_vgd" in /*) ;; *) _vgd="$VAULT/$_vgd" ;; esac
+  if [ "$(sed -n 's/^OUTCOME=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)" = failed ]; then
+    _vreason="$(sed -n 's/^REASON=//p' "$_vgd/lore-push-status" 2>/dev/null | head -n 1)"
+    _vfail="Last vault push failed${_vreason:+: $_vreason}"
+  else _vfail=""
+  fi
+  if ( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_push_pending "$VAULT" && squad_vault_push_detached "$VAULT" ) >/dev/null 2>&1; then
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}; retrying in the background (lore push)${NL}"
+  else
+    [ -n "$_vfail" ] && SIGNALS="${SIGNALS}${_vfail}${NL}"
+  fi
+fi
+}
+
+# First-contact command: /seed when the squad skills ship beside these hooks,
+# else /lore start (a Lore-only install has no Seed).
+FIRST_CONTACT="/lore start"
+[ -d "$HOOK_DIR/../skills/seed" ] && FIRST_CONTACT="/seed"
 if [ ! -d "$VAULT" ]; then
-  emit_json "Lore: no vault at $VAULT. Run /seed to initialize." msg-only
+  emit_json "Lore: no vault at $VAULT. Run $FIRST_CONTACT to initialize." msg-only
   exit 0
 fi
-if [ -z "$ROOT" ]; then
-  echo "{}"
+# PR-mode vault: bring the checkout level with origin (ff-only, clean default branch
+# only) so its INDEX.md, mapping and Obsidian view match what merged (#460).
+[ -n "$SQUAD_COMMON_OK" ] && ( squad_vault_ff "$VAULT" </dev/null ) >/dev/null || true
+# No project (no root, or an unmapped one) but a vault: skip the per-project work,
+# still flush pending vault branches and print the vault-level signals, if any.
+# $1: message for an unmapped project (printed even without signals), empty for no root.
+vault_only() {
+  vault_signals
+  # First contact (#473): /seed maps the project during the session, so this start has no
+  # project to key the vault HEAD record on (a non-git directory has no root either); key
+  # it on the vault level instead. SessionEnd removes it, mapped or not.
+  [ -n "$SQUAD_COMMON_OK" ] && record_vault_level_head "$VAULT"
+  local body="$1"
+  [ -n "$SIGNALS" ] && body="${body}${body:+$NL}### Signals${NL}${SIGNALS}"
+  if [ -z "$body" ]; then echo "{}"
+  elif [ -n "$1" ]; then emit_json "$body" msg-only
+  else emit_json "Lore: vault signals (no project for this directory).${NL}${body}"
+  fi
   exit 0
-fi
+}
+if [ -z "$ROOT" ]; then vault_only ""; fi
 UNMAPPED_HINT=""
 NAME_OWNED=""
 if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
@@ -160,23 +263,32 @@ if [ -z "$DISPLAY" ] && [ -d "$VAULT/projects/${ROOT##*/}" ]; then
   fi
   if [ -z "$NAME_OWNED" ]; then
     DISPLAY="${ROOT##*/}"
-    UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run /seed."
+    UNMAPPED_HINT="No lore-config entry maps this checkout; using projects/$DISPLAY. Add it to lore-config.local.json (local-only) or run $FIRST_CONTACT."
   fi
 fi
 if [ -z "$DISPLAY" ]; then
   if [ -n "$NAME_OWNED" ]; then
-    emit_json "Lore: No vault mapping for this project — run /seed. projects/${ROOT##*/} belongs to another checkout." msg-only
+    vault_only "Lore: No vault mapping for this project — run $FIRST_CONTACT. projects/${ROOT##*/} belongs to another checkout."
   else
-    emit_json "Lore: No vault mapping for this project — run /seed." msg-only
+    vault_only "Lore: No vault mapping for this project — run $FIRST_CONTACT."
   fi
-  exit 0
 fi
 
 PROJ="$VAULT/projects/$DISPLAY"
+# Fold pending inbox events first so the orientation reads current state (#423).
+# Short lock wait: a busy vault must not delay session start.
+LORE_LOCK_WAIT=3 SECOND_BRAIN_PATH="$VAULT" bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lore" fold --project "$DISPLAY" >/dev/null 2>&1 </dev/null || true
+# Project files (status.md, progress.txt, session.log, context refs) are read where a
+# PR-mode vault holds them until its PR merges: the session worktree (#453, squad_vault_rroot).
+RROOT="$( [ -n "$SQUAD_COMMON_OK" ] && squad_vault_rroot "$VAULT" "$DISPLAY" )"
+[ -n "$RROOT" ] || RROOT="$VAULT"
+RPROJ="$RROOT/projects/$DISPLAY"
+STATE="$RPROJ/$(state_name "$VAULT")"
+record_vault_head "$VAULT" "$DISPLAY" "$RROOT" "${STATE##*/}"
 # Project knowledge location (vault or repo); progress.txt and session.log
-# stay under the vault .squad/ regardless.
-[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$PROJ/.squad"
-STATUS="$PROJ/status.md"
+# stay under the vault state directory regardless.
+[ -z "${SQUAD_DIR:-}" ] && SQUAD_DIR="$STATE"
+STATUS="$RPROJ/status.md"
 
 NL=$'\n'
 
@@ -186,7 +298,8 @@ OUTPUT="## Lore orientation — $DISPLAY (read-only, auto-injected)${NL}${NL}"
 [ -n "$UNMAPPED_HINT" ] && OUTPUT="${OUTPUT}${UNMAPPED_HINT}${NL}${NL}"
 
 if [ -f "$STATUS" ]; then
-  OUTPUT="${OUTPUT}### Last recorded status${NL}$(cat "$STATUS")${NL}"
+  # Third-party lines (notes, checkpoints from other plugins) come out as one fenced data block (#426).
+  OUTPUT="${OUTPUT}### Last recorded status${NL}$( [ -n "$SQUAD_COMMON_OK" ] && squad_fence_render status "$STATUS" || echo "(status withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
   # Older versions live in the vault's git history (the checkpoints commit them).
   OUTPUT="${OUTPUT}Previous versions: git -C $VAULT log --oneline -- projects/$DISPLAY/status.md${NL}"
 else
@@ -212,8 +325,9 @@ if [ -f "$STATUS" ]; then
     case "$_ref" in ''|'—'|'-'|/*|*..*) continue ;; esac
     REFS_N=$((REFS_N + 1))
     [ "$REFS_N" -gt "$REFS_MAX" ] && break
-    _file="$VAULT/$_ref"
-    [ -f "$_file" ] || _file="$VAULT/$_ref.md"
+    _file="$RROOT/$_ref"
+    [ -f "$_file" ] || _file="$RROOT/$_ref.md"
+    [ -f "$_file" ] || { _file="$VAULT/$_ref"; [ -f "$_file" ] || _file="$VAULT/$_ref.md"; }
     if [ ! -f "$_file" ]; then
       REFS_OUT="${REFS_OUT}⚠ Context ref not found: ${_ref} — skipping.${NL}"
       continue
@@ -236,7 +350,7 @@ fi
 # JOURNAL tail (#330): a `context: repo` project keeps its decisions in the
 # repository's JOURNAL.md, so show the last 40 lines (at most 2400 chars, the
 # same budget as the context refs). Silent when the file is absent.
-if [ "$SQUAD_DIR" != "$PROJ/.squad" ] && [ -f "$ROOT/JOURNAL.md" ]; then
+if ( [ -n "$SQUAD_COMMON_OK" ] && squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && [ -f "$ROOT/JOURNAL.md" ]; then
   _jt="$(tail -n 40 "$ROOT/JOURNAL.md" | tail -c 2400)"
   [ -n "$_jt" ] && OUTPUT="${OUTPUT}${NL}### JOURNAL.md (tail, context: repo)${NL}${_jt}${NL}"
 fi
@@ -264,8 +378,8 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
       WT_BASE="$(head -n 1 "$_bf" 2>/dev/null)"; rm -f "$_bf"
       [ -n "$WT_BASE" ] && WT_BASE_SRC="open PR"
     fi
-    if [ -z "$WT_BASE" ] && [ -f "$PROJ/.squad/progress.txt" ]; then
-      WT_BASE="$(grep -F "[$WT_BRANCH]" "$PROJ/.squad/progress.txt" 2>/dev/null | tail -n 1 | sed -n 's/.*[Bb]ase[: ]*\([A-Za-z0-9._\/-][A-Za-z0-9._\/-]*\).*/\1/p')"
+    if [ -z "$WT_BASE" ] && [ -f "$STATE/progress.txt" ]; then
+      WT_BASE="$(grep -F "[$WT_BRANCH]" "$STATE/progress.txt" 2>/dev/null | tail -n 1 | sed -n 's/.*[Bb]ase[: ]*\([A-Za-z0-9._\/-][A-Za-z0-9._\/-]*\).*/\1/p')"
       [ -n "$WT_BASE" ] && WT_BASE_SRC="progress.txt"
     fi
     if [ -z "$WT_BASE" ]; then WT_BASE="main"; WT_BASE_SRC="default, no PR or progress.txt entry names one"; fi
@@ -352,7 +466,7 @@ if [ -n "$WT_TOP" ] && [ "$WT_TOP" != "$ROOT" ] && [ -f "$WT_TOP/.git" ]; then
     # Starting HEAD for SessionEnd (commits in THIS session, not the branch).
     if [ -n "$HOOK_SESSION" ]; then
       record_start_head "$PROJ"
-      find "$PROJ/.squad/sessions" -type f -mtime +14 -delete 2>/dev/null
+      find "$STATE/sessions" -type f -mtime +14 -delete 2>/dev/null
     fi
   else
     OUTPUT="${OUTPUT}Detached HEAD in $WT_TOP; no branch name to show.${NL}"
@@ -365,8 +479,11 @@ fi
 # reflect wherever this session actually is — the main checkout, or a
 # linked worktree on a different branch entirely.
 OUTPUT="${OUTPUT}${NL}### Evidence (reconcile against the status above; it may be stale)${NL}"
-OUTPUT="${OUTPUT}Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)${NL}"
-OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
+# Not a git repository: no Branch / Recent commits lines (they would print empty).
+if _ev_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && [ -n "$_ev_branch" ]; then
+  OUTPUT="${OUTPUT}Branch: ${_ev_branch}${NL}"
+  OUTPUT="${OUTPUT}Recent commits:${NL}$(git log --oneline -5 2>/dev/null)${NL}"
+fi
 
 # Open PRs (#328): connected mode only; detached prints nothing. The call is
 # network-bound at SessionStart, so it runs in the background with a hard
@@ -417,17 +534,18 @@ while IFS= read -r _l; do
 done < <(git worktree list --porcelain 2>/dev/null)
 [ -n "$DIRTY_WT" ] && OUTPUT="${OUTPUT}Open worktrees:${NL}${DIRTY_WT}"
 
-if [ -f "$PROJ/.squad/progress.txt" ]; then
-  OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$PROJ/.squad/progress.txt")${NL}"
+if [ -f "$STATE/progress.txt" ]; then
+  OUTPUT="${OUTPUT}progress.txt (tail):${NL}$(tail -n 5 "$STATE/progress.txt")${NL}"
 fi
 
-if [ -f "$PROJ/.squad/session.log" ]; then
-  OUTPUT="${OUTPUT}session.log (tail):${NL}$(tail -n 5 "$PROJ/.squad/session.log")${NL}"
+if [ -f "$STATE/session.log" ]; then
+  OUTPUT="${OUTPUT}session.log (tail):${NL}$( [ -n "$SQUAD_COMMON_OK" ] && { tail -n 5 "$STATE/session.log" | squad_fence_render log -; } || echo "(session.log withheld: squad-common.sh missing, cannot fence third-party text)" )${NL}"
 fi
 
 # Staleness and budget signals. Each line is omitted when not applicable.
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 SIGNALS=""
+vault_signals
 if [ -f "$SQUAD_DIR/architecture.md" ]; then
   ARCH_M="$(mtime "$SQUAD_DIR/architecture.md")"
   NEWEST_F=""; NEWEST_M=0
@@ -448,7 +566,7 @@ fi
 HEALTH=""
 if [ -x "$HOOK_DIR/vault-check.sh" ]; then
   _vc_args=(check --vault "$VAULT" --project "$DISPLAY")
-  [ "$SQUAD_DIR" != "$PROJ/.squad" ] && _vc_args+=(--context repo)
+  ( [ -n "$SQUAD_COMMON_OK" ] && squad_dir_is_repo "$VAULT" "$DISPLAY" "$SQUAD_DIR" ) && _vc_args+=(--context repo)
   _projs=("$VAULT"/projects/*/)
   [ "${#_projs[@]}" -le 60 ] && _vc_args+=(--vault-wide)
   HEALTH="$(bash "$HOOK_DIR/vault-check.sh" "${_vc_args[@]}" 2>/dev/null | bash "$HOOK_DIR/vault-check.sh" render 2>/dev/null)"

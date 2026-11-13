@@ -24,7 +24,7 @@
 #   needs-review  re-applies review_label to an issue whose PR is open (in_review
 #             present), keeping in_review. review_label not configured = 10.
 # Detached: zero gh calls; appends a checklist line to --handoff (required).
-# Exit: 0 ok, 2 usage, 10 illegal transition, 20 gh/io failure.
+# Exit: 0 ok, 2 usage, 10 illegal transition or no project mapped, 20 gh/io failure.
 
 . "$(dirname "${BASH_SOURCE[0]}")/squad-common.sh"
 
@@ -55,6 +55,8 @@ if [ "$VERB" = escalate ]; then
 fi
 
 squad_resolve || squad_fail_incident squad-labels 20 "cannot resolve project paths"
+# Unmapped cwd (#395): fail before any projects/<name> path is built; no incident (nothing to dedupe).
+[ -n "${DISPLAY_NAME:-}" ] || squad_fail 10 "no project mapped for ${PROJECT_ROOT:-$PWD}; run /seed or /lore start"
 
 # --- detached: record only, no gh calls of any kind -------------------------
 if [ "$TRACKER_MODE" != connected ]; then
@@ -81,7 +83,7 @@ if [ "$TRACKER_MODE" != connected ]; then
 fi
 
 # --- connected: label names from config -------------------------------------
-CFG="$VAULT_PATH/projects/$DISPLAY_NAME/.squad/chisel-config.json"
+CFG="$STATE_DIR/chisel-config.json"
 [ -f "$CFG" ] && [ -r "$CFG" ] || squad_fail_incident squad-labels 20 "chisel-config.json missing or unreadable: $CFG"
 # cfgval <key>: first string value of "<key>" in the config (keys are unique).
 cfgval() { grep -o "\"$1\" *: *\"[^\"]*\"" "$CFG" | head -1 | sed 's/^"[^"]*" *: *"//; s/"$//'; }

@@ -163,7 +163,7 @@ asks Lore to. Retro never calls Lore, never edits `decisions.md` or
 ## Session log
 
 Append to `.squad/session.log` through the progress script
-(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --skill retro --line "<text>"`):
+(`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source retro --line "<text>"`):
 
   start — window: <WINDOW>
   end — PRs: <PRS>, candidates: <CANDIDATES>

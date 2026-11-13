@@ -15,7 +15,7 @@ bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
 
 mkdir -p "$TMPROOT/hooks" "$TMPROOT/fakebin"
-cp "$REPO_ROOT"/claude/hooks/{cody-checkpoint.sh,lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{cody-checkpoint.sh,lore-checkpoint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh,squad-progress.sh,lore} "$TMPROOT/hooks/"
 SUT="$TMPROOT/hooks/cody-checkpoint.sh"
 # Fake gh: `pr list` prints "<number> <base>" when FAKE_PR is set, nothing otherwise.
 printf '#!/bin/sh\n[ -n "$FAKE_PR" ] && echo "$FAKE_PR"\nexit 0\n' > "$TMPROOT/fakebin/gh"
@@ -41,8 +41,14 @@ commit_on() {  # commit_on <branch> <subject>
   git -C "$F_PROJECT" checkout -q -b "$1"
   echo x >> "$F_PROJECT/f.txt"; git -C "$F_PROJECT" add f.txt; $GIT -C "$F_PROJECT" commit -q -m "$2"
 }
-run_hook() {  # run_hook [agent_type]
+run_hook_nofold() {  # run_hook_nofold [agent_type]: the hook alone, no fold afterwards
   printf '{"cwd":"%s","agent_type":"%s","agent_transcript_path":"%s/none.jsonl"}' "$F_PROJECT" "${1:-cody}" "$TMPROOT" | bash "$SUT" >/dev/null 2>&1
+}
+# run_hook: the hook, then the fold the next SessionStart would run (#424: the hook
+# emits an event and never commits, so status.md changes only after a fold).
+run_hook() {
+  run_hook_nofold "$@"
+  bash "$TMPROOT/hooks/lore" fold --vault "$F_VAULT" >/dev/null 2>&1
 }
 envval() { sed -n "s/^$1=//p" "$ENVF" 2>/dev/null; }
 
@@ -61,6 +67,20 @@ check "pr: idempotent progress" 1 "$(wc -l < "$PROGRESS" | tr -d ' ')"
 # status.md and progress.txt are committed by path; the summary .env stays untracked.
 git -C "$F_VAULT" status --porcelain -- projects/fixture/status.md projects/fixture/.squad/progress.txt | grep -q . \
   && bad "pr: status.md and progress.txt committed" || ok "pr: status.md and progress.txt committed"
+
+# 1b. #424: no fold in between. The summary and the progress line are readable at
+#     once, the checkpoint is one event in the inbox, and nothing was committed.
+setup connected
+commit_on 296-w "[#296] direct"
+HEAD_BEFORE="$(git -C "$F_VAULT" rev-parse HEAD)"
+FAKE_PR="7 main" run_hook_nofold
+check "no fold: summary SHA" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(envval SHA)"
+check "no fold: progress line readable" "[#296] $(date +%Y-%m-%d) resolved. PR: #7 (base: main). Notes: [#296] direct" "$(cat "$PROGRESS" 2>/dev/null)"
+check "no fold: one checkpoint event" 1 "$(grep -l '^KIND=checkpoint' "$F_VAULT"/projects/fixture/.squad/inbox/*.ev 2>/dev/null | wc -l | tr -d ' ')"
+check "no fold: no vault commit" "$HEAD_BEFORE" "$(git -C "$F_VAULT" rev-parse HEAD)"
+check "no fold: status.md untouched" 0 "$(grep -c 'PR #7 opened' "$STATUS")"
+FAKE_PR="7 main" run_hook_nofold
+check "no fold: repeat adds no second event" 1 "$(grep -l '^KIND=checkpoint' "$F_VAULT"/projects/fixture/.squad/inbox/*.ev 2>/dev/null | wc -l | tr -d ' ')"
 
 # 2. connected, stopped with a commit, no PR (maxTurns): checkpoint line, no progress line
 setup connected
@@ -171,10 +191,10 @@ commit_on 296-n "[#296] add thing"
 mkdir -p "$(dirname "$PROGRESS")"
 echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: on main" > "$PROGRESS"
 rm -f "$STATUS"  # the status note is a separate, legitimate vault write; keep it out of this check
-FAKE_PR="7 main" run_hook
+FAKE_PR="7 main" run_hook_nofold
 check "pr mode, no worktree: main copy dedupes" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
-check "pr mode, no worktree: no lore branch created" 0 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
-check "pr mode, no worktree: no worktree created" 1 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
+check "pr mode: working state lives in the session worktree (branch created)" 1 "$(git -C "$F_VAULT" branch --list 'lore/*' | wc -l | tr -d ' ')"
+check "pr mode: session worktree created" 2 "$(git -C "$F_VAULT" worktree list | wc -l | tr -d ' ')"
 
 # 4c4. local-only project in a PR-mode vault: no worktree lookup (a worktree copy holding the
 #      line is ignored, so the line is appended to the main copy)
@@ -197,9 +217,21 @@ commit_on 296-m "[#296] add thing"
 _wt="$( . "$TMPROOT/hooks/squad-common.sh"; squad_vault_wt "$F_VAULT" fixture )"
 mkdir -p "$(dirname "$PROGRESS")"
 echo "[#296] 2026-10-28 resolved. PR: #7 (base: main). Notes: uncommitted on main" > "$PROGRESS"
-FAKE_PR="7 main" run_hook
+FAKE_PR="7 main" run_hook_nofold
 check "pr mode: main-only line, no duplicate on main" 1 "$(grep -c '^\[#296\]' "$PROGRESS")"
 grep -q '^\[#296\]' "$_wt/projects/fixture/.squad/progress.txt" 2>/dev/null && bad "pr mode: main-only line, nothing added to worktree" || ok "pr mode: main-only line, nothing added to worktree"
+
+# 4c6. PR mode (#424): cody-checkpoint.env lands in the session worktree, the checkout stays
+#      clean, so another session can switch it; the env is still readable via the worktree.
+setup connected
+jq '. + {vault_main: "pr"}' "$F_VAULT/lore-config.json" > "$TMPROOT/cfg.json" && cp "$TMPROOT/cfg.json" "$F_VAULT/lore-config.json"; git -C "$F_VAULT" add lore-config.json; $GIT -C "$F_VAULT" commit -q -m cfg
+commit_on 296-e "[#296] env"
+FAKE_PR="7 main" run_hook_nofold
+[ -f "$ENVF" ] && bad "pr mode: env not in the vault checkout" || ok "pr mode: env not in the vault checkout"
+_wenv="$(ls "$F_VAULT"/.claude/worktrees/lore-*/projects/fixture/.squad/cody-checkpoint.env 2>/dev/null | head -n 1)"
+check "pr mode: env in the session worktree" "$(git -C "$F_PROJECT" rev-parse --short HEAD)" "$(sed -n 's/^SHA=//p' "$_wenv" 2>/dev/null)"
+check "pr mode: checkout has no dirty file of ours" "" "$(git -C "$F_VAULT" status --porcelain -- projects | grep -v status.md)"
+git -C "$F_VAULT" switch -qc lore/other-2026-11-03 && ok "pr mode: another session can switch the checkout" || bad "pr mode: another session can switch the checkout"
 
 # 4d. vault commit is by path: an unrelated pre-staged vault file stays staged, out of the commit
 setup connected
@@ -208,7 +240,7 @@ echo u > "$F_VAULT/unrelated.txt"; git -C "$F_VAULT" add unrelated.txt
 FAKE_PR="7 main" run_hook
 git -C "$F_VAULT" diff --cached --name-only | grep -qx unrelated.txt && ok "vault: unrelated file still staged" || bad "vault: unrelated file still staged"
 git -C "$F_VAULT" log --name-only --format= | grep -q unrelated.txt && bad "vault: unrelated file not committed" || ok "vault: unrelated file not committed"
-git -C "$F_VAULT" log --format=%s | grep -q 'lore: progress' && ok "vault: progress commit made" || bad "vault: progress commit made"
+git -C "$F_VAULT" log --format=%s | grep -q '^\[lore\] .* fold ' && ok "vault: progress commit made" || bad "vault: progress commit made"
 
 # 4e. local-only project (only status.md excluded, so the progress commit still happens):
 #     the vault commit message carries no project name; a non-excluded control keeps it
@@ -217,12 +249,12 @@ git -C "$F_VAULT" rm -q --cached projects/fixture/status.md; $GIT -C "$F_VAULT" 
 printf 'projects/fixture/status.md\n' >> "$F_VAULT/.git/info/exclude"
 commit_on 296-l "[#296] add thing"
 FAKE_PR="7 main" run_hook
-git -C "$F_VAULT" log --format=%s | grep -q '^lore: progress local$' && ok "local-only: progress commit uses public name" || bad "local-only: progress commit uses public name"
+git -C "$F_VAULT" log --format=%s | grep -q '^\[lore\] local fold ' && ok "local-only: progress commit uses public name" || bad "local-only: progress commit uses public name"
 git -C "$F_VAULT" log --format=%B | grep -q fixture && bad "local-only: name absent from git log" || ok "local-only: name absent from git log"
 setup connected
 commit_on 296-c "[#296] add thing"
 FAKE_PR="7 main" run_hook
-git -C "$F_VAULT" log --format=%s | grep -qx 'lore: progress fixture' && ok "control: progress commit keeps name" || bad "control: progress commit keeps name"
+git -C "$F_VAULT" log --format=%s | grep -q '^\[lore\] fixture fold ' && ok "control: progress commit keeps name" || bad "control: progress commit keeps name"
 
 # 4f. bare numeric ID in the subject ([283]) is normalised to [#283]: one progress line, summary ISSUE=#283
 setup connected

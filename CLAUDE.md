@@ -22,10 +22,15 @@ never read at runtime by anything — only `path-resolve.sh` is. If you
 change how project-root resolution works, edit `path-resolve.sh`, then
 update `PATH_RESOLUTION.md` to match.
 
-Second-brain: a SessionStart hook auto-orients (read-only); run
-`/seed` on first contact with a project (it records the vault mapping);
-the hooks handle each session. `/lore start` is setup and repair only
-(legacy `.squad/` migration, re-mapping a moved checkout). Command surface: `lore start`,
+Second-brain: a SessionStart hook auto-orients (it first folds pending writer
+events, a vault commit when any are pending; the orientation itself is
+read-only); run
+`/lore start` (or `/seed`, which calls `lore map` first) on first contact
+with a project. Lore owns first contact; Seed scans. The hooks handle each
+session; `/lore start` also migrates a legacy `.squad/` and re-maps a moved
+checkout. Other plugins write only through the `lore` shim (`lore event`,
+SCRIPT_CONTRACT.md); `examples/lore-client/` proves that and is not shipped.
+Command surface: `lore start [--local]`,
 `lore prefer`, `lore recover` (no session-end command — status
 is rebuilt by the SessionEnd hook or `lore recover`).
 

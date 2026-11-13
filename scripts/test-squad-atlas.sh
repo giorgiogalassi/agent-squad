@@ -304,5 +304,14 @@ EOPY
 rrun report
 check "T-12 one held, one followed by a fix: 50%" "50" "$(key HELD_PCT)"
 
+# no project (#441): the vault-state readers refuse (exit 10) instead of writing under projects/
+NV="$TMPROOT/v441"; NG="$TMPROOT/nongit441"; mkdir -p "$NV" "$NG"; printf '{"projects":{}}\n' > "$NV/lore-config.json"
+for c in "$ATLAS render 1" "$RETRO report"; do
+  ( cd "$NG" && env -u SQUAD_VAULT_PATH -u SQUAD_PROJECT_ROOT -u SQUAD_DISPLAY_NAME -u SQUAD_DIR -u SQUAD_STATE_DIR SECOND_BRAIN_PATH="$NV" python3 $c >/dev/null 2>"$TMPROOT/err441" ); rc=$?
+  check "no project: ${c##*/} exits 10" 10 "$rc"
+  grep -q 'no project mapped' "$TMPROOT/err441" && ok "no project: ${c##*/} names the reason" || bad "no project reason: $(cat "$TMPROOT/err441")"
+done
+[ -z "$(ls -A "$NV/projects" 2>/dev/null)" ] && ok "no project: nothing created under projects/" || bad "projects/ created"
+
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

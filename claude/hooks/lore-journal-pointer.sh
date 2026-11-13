@@ -7,7 +7,7 @@
 #                                [--context repo]
 #
 # Without flags the project is resolved with path-resolve.sh; it is
-# `context: repo` when SQUAD_DIR is not <vault>/projects/<name>/.squad.
+# `context: repo` when SQUAD_DIR is outside <vault>/projects/<name>/.
 # Writes exactly two lines, both idempotent:
 #   decisions.md  `Decisions for this project live in <root>/JOURNAL.md
 #                 (context: repo); this file holds vault-only rules.`
@@ -48,20 +48,21 @@ if [ -z "$VAULT" ] || [ -z "$NAME" ] || [ -z "$ROOT" ]; then
   [ -z "$VAULT" ] && VAULT="$VAULT_PATH"
   [ -z "$NAME" ] && NAME="$DISPLAY_NAME"
   [ -z "$ROOT" ] && ROOT="$PROJECT_ROOT"
-  if [ -z "$CTX" ] && [ -n "${SQUAD_DIR:-}" ] && [ -n "$NAME" ] \
-     && [ "$SQUAD_DIR" != "$VAULT/projects/$NAME/.squad" ]; then
+  if [ -z "$CTX" ] && squad_dir_is_repo "$VAULT" "$NAME" "${SQUAD_DIR:-}"; then
     CTX=repo
   fi
 fi
 [ -n "$NAME" ] || squad_fail 10 "no project resolved (use --project or run inside a mapped project)"
-[ -d "$VAULT/projects/$NAME" ] || squad_fail 10 "no vault project at $VAULT/projects/$NAME"
+# decisions.md and status.md are read and edited where a PR-mode vault holds them (#453):
+# the project's session worktree; `lore commit` below finds the edit there.
+PROJ="$(squad_vault_rroot "$VAULT" "$NAME")/projects/$NAME"
+[ -d "$PROJ" ] || squad_fail 10 "no vault project at $PROJ"
 
 if [ "$CTX" != repo ]; then
   squad_emit OUTCOME unchanged; squad_emit CHANGED no
   exit 0
 fi
 
-PROJ="$VAULT/projects/$NAME"
 JOURNAL="$ROOT/JOURNAL.md"
 if [ -f "$JOURNAL" ]; then
   STATE=present; SUFFIX="(context: repo decisions)"
@@ -130,7 +131,7 @@ fi
 
 if [ "$(git -C "$VAULT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$VAULT" && pwd -P)" ]; then
   # shellcheck disable=SC2086
-  squad_vault_commit "$VAULT" "$NAME" "[lore] $(squad_public_name "$VAULT" "$NAME") journal pointer" $WROTE
+  bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$NAME" --message "[lore] $(squad_public_name "$VAULT" "$NAME") journal pointer" --paths $WROTE >/dev/null || squad_commit_fail $?
 fi
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit JOURNAL "$STATE"
 exit 0

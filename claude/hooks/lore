@@ -1,0 +1,865 @@
+#!/usr/bin/env bash
+# lore -- dispatcher for vault writes (#422, parent #420). Contract: SCRIPT_CONTRACT.md.
+#
+#   lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>...
+#   lore root [--vault <dir>] [--project <name>|--vault-level] [--read]
+#   lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]
+#   lore fold [--project <p>] [--vault <dir>]
+#   lore push [--vault <dir>]
+#   lore project [--root <dir>]
+#   lore map [--root <dir>] [--name <n>] [--local] [--create-vault] [--adopt]
+#   lore version
+#
+# `root` (#443) is the one owner of "where a vault writer puts its files". PR-mode
+# vault: it creates the project's session worktree on first use (squad_vault_wt) and
+# prints it as ROOT=; the writer edits <ROOT>/projects/<name>/... and commits with
+# `lore commit --paths <vault-relative path>...`, so the vault checkout stays clean
+# and the files ride the vault PR. Direct and local-only vaults: ROOT is the vault.
+# `--vault-level` is the root for files that belong to no project (INDEX.md,
+# preferences/, docs/). Stdout: OUTCOME (applied when the worktree was just created),
+# CHANGED, ROOT, PROJECT_DIR, SQUAD_DIR, STATE_DIR (the last three under ROOT; a
+# `context: repo` project keeps its repo SQUAD_DIR). Exit: 0 ok, 2 usage, 10 no
+# project / direct-mode vault off its default branch, 20 failure. Readers need no
+# call: path-resolve.sh already reports the session worktree's SQUAD_DIR. `--read`
+# never creates anything: ROOT is the project's newest existing session worktree for
+# today, else the vault (for scripts that read state before they may write it).
+#
+# `event` drops one event file into <state>/inbox/; `fold` claims the inbox
+# events, applies them under the same lock and commits once through the same
+# committer internal as `commit` (#423). Event file: SCRIPT_CONTRACT.md.
+#
+# `map --adopt --name <existing>` re-attaches an existing projects/<name>/ that
+# no live root maps (a moved checkout). A mapping whose root is gone from disk is
+# stale and replaced (REPLACED=<old root>); NEED=owner (+OWNER=) when the old
+# root still exists.
+# `map` is first contact: it never prompts. It resolves vault and root, records
+# the mapping through lore-map.sh set (which commits through `commit`) and
+# creates projects/<name>/. Exit 10 with NEED=vault|name|migrate|jq (plus
+# SUGGESTED= for name) when a human must decide; nothing is written then. Exit 2
+# when the root is the vault. Stdout: OUTCOME, CHANGED, NAME, TARGET, ROOT.
+#
+# `commit` is the single committer: the only code that calls squad_vault_commit
+# (PR mode, session worktree, union merge stay in squad-common.sh; there is no
+# second commit path). It runs synchronously under one vault lock, the
+# directory <git-dir>/lore.lock/ holding `owner` (PID=, AT=<epoch>). The lock is
+# acquired with mkdir; it is stale when its pid is gone or it is older than
+# 10 minutes, and the next caller breaks it with a stderr notice.
+# Stdout: OUTCOME=applied|unchanged, CHANGED=yes|no.
+# Exit: 0 ok, 2 usage, 20 vault not a git repo / lock wait timed out / commit failed.
+#
+# `push` (#427) wraps squad_vault_finish: push each lore/* session branch and open or
+# update its PR. SessionEnd starts it detached, SessionStart retries it. The vault lock
+# is taken only around the local git step that mutates worktrees (dropping a landed
+# session branch), never across a fetch, push or gh call. It writes
+# <git-common-dir>/lore-push-status (AT=<epoch>, OUTCOME=applied|unchanged|failed,
+# REASON=<one line>) and emits OUTCOME/CHANGED. A local-only vault (vault_main
+# "local-only", or no origin) is OUTCOME=unchanged and never calls gh.
+# Exit for push: 0 ok, 20 push or PR failure.
+# Env: LORE_LOCK_WAIT seconds to wait for a live lock (default 60; hooks pass a short one).
+#      SECOND_BRAIN_PATH vault for event/fold (default ~/second-brain).
+set -u
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=squad-common.sh
+. "$HOOK_DIR/squad-common.sh"
+
+LOCK_MAX_AGE=600
+LOCK_GRACE=10   # seconds an ownerless lock directory is left alone
+MY_OWNER=""
+LOCK=""  # global: the EXIT trap runs after cmd_commit returns
+
+lock_owner_field() {  # lock_owner_field <file> <KEY>
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
+}
+
+# lock_owner_text <lockdir>: the owner file verbatim on one line ("" when absent).
+lock_owner_text() {
+  tr '\n' ' ' < "$1/owner" 2>/dev/null
+}
+
+# lock_mtime <path>: modification time in epoch seconds (BSD or GNU stat).
+lock_mtime() {
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+}
+
+# lock_is_stale <lockdir>: 0 when the owner is gone, malformed or too old. A lock
+# without an owner file is a holder between mkdir and writing `owner`: stale only
+# once the directory itself is older than the grace period.
+lock_is_stale() {
+  local f="$1/owner" pid at now m
+  now="$(date +%s)"
+  if [ ! -f "$f" ]; then
+    m="$(lock_mtime "$1")"
+    case "$m" in ''|*[!0-9]*) return 1 ;; esac
+    [ $((now - m)) -gt "$LOCK_GRACE" ] && return 0
+    return 1
+  fi
+  pid="$(lock_owner_field "$f" PID)"; at="$(lock_owner_field "$f" AT)"
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  case "$at" in ''|*[!0-9]*) return 0 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 0
+  [ $((now - at)) -gt "$LOCK_MAX_AGE" ] && return 0
+  return 1
+}
+
+# lock_acquire <lockdir> <wait-seconds>: 0 held, 1 timed out.
+lock_acquire() {
+  local lock="$1" wait="$2" waited=0 gone seen
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      # owner appears whole (rename), never as an empty file a waiter could misread.
+      printf 'PID=%s\nAT=%s\n' "$$" "$(date +%s)" > "$lock/owner.$$" && mv "$lock/owner.$$" "$lock/owner"
+      MY_OWNER="$(lock_owner_text "$lock")"
+      return 0
+    fi
+    if lock_is_stale "$lock"; then
+      seen="$(lock_owner_text "$lock")"
+      [ -n "${LORE_TEST_BREAK_DELAY:-}" ] && sleep "$LORE_TEST_BREAK_DELAY"
+      # rename is atomic: of several breakers only one moves the directory. What
+      # it moved must still be the owner it judged stale; else it took a lock
+      # acquired in between, which goes back untouched.
+      gone="$lock.stale.$$"
+      if mv "$lock" "$gone" 2>/dev/null; then
+        if [ "$(lock_owner_text "$gone")" = "$seen" ]; then
+          echo "lore: broke stale vault lock (${seen:-no owner})" >&2
+          rm -rf "$gone"
+        else
+          [ -e "$lock" ] || mv "$gone" "$lock" 2>/dev/null
+          [ -e "$gone" ] && rm -rf "$gone"
+        fi
+      fi
+      continue
+    fi
+    [ "$waited" -ge "$wait" ] && return 1
+    sleep 1; waited=$((waited + 1))
+  done
+}
+
+# lock_release: remove the lock only while it is still ours.
+lock_release() {
+  [ -n "$LOCK" ] && [ -n "$MY_OWNER" ] || return 0
+  if [ -n "${LORE_TEST_RELEASE_SWAP:-}" ]; then
+    printf 'PID=424242\nAT=%s\n' "$(date +%s)" > "$LOCK/owner"
+  fi
+  [ "$(lock_owner_text "$LOCK")" = "$MY_OWNER" ] && rm -rf "$LOCK"
+  return 0
+}
+
+cmd_commit() {
+  local vault="" proj="" msg="" p gitdir vlevel=0
+  local paths=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --message) msg="${2:-}"; shift 2 || break ;;
+      --vault-level) vlevel=1; shift ;;
+      --paths)   shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do paths+=("$1"); shift; done ;;
+      *) squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>..." ;;
+    esac
+  done
+  [ "${#paths[@]}" -gt 0 ] || squad_fail 2 "usage: lore commit [--vault <dir>] [--project <name>|--vault-level] [--message <msg>] --paths <p>..."
+  if [ -z "$vault" ]; then
+    squad_resolve || exit 20
+    vault="$VAULT_PATH"
+    [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
+  fi
+  # No default project (#444): an empty one would name a lore/vault-* branch. Files that
+  # belong to no project are committed with --vault-level, on lore/_vault-<date>.
+  [ "$vlevel" = 1 ] && proj="$SQUAD_VAULT_LEVEL"
+  [ -n "$proj" ] || squad_fail 10 "no project for this commit; pass --project <name> or --vault-level for vault-level files"
+  [ -n "$msg" ] || msg="[lore] $(squad_public_name "$vault" "$proj") update $(date '+%Y-%m-%d %H:%M')"
+  # The common git dir, so every linked worktree of the vault shares one lock.
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
+  LOCK="$gitdir/lore.lock"
+  lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
+  trap lock_release EXIT
+  commit_locked "$vault" "$proj" "$msg" "${paths[@]}" || {
+    [ "$?" = 10 ] && squad_fail 10 "vault checkout is not on its default branch and the vault is in direct mode; nothing committed (see stderr above)"
+    squad_fail 20 "vault commit failed; change left uncommitted"
+  }
+  squad_emit OUTCOME "$COMMIT_OUTCOME"; squad_emit CHANGED "$([ "$COMMIT_OUTCOME" = applied ] && echo yes || echo no)"
+}
+
+# root_repo_sq <vault> <project>: the repo SQUAD_DIR of a `context: repo` project
+# (empty for a vault project), judged from the cwd when it resolves to that same
+# vault and project. Runs in a subshell so squad_resolve's exports do not leak.
+root_repo_sq() {
+  squad_resolve >/dev/null 2>&1 || return 0
+  [ "${VAULT_PATH:-}" = "$1" ] && [ "${DISPLAY_NAME:-}" = "$2" ] || return 0
+  case "${SQUAD_DIR:-}" in
+    "$1"/*|"") ;;
+    *) printf '%s' "$SQUAD_DIR" ;;
+  esac
+}
+
+# cmd_root: see the header. Takes the vault lock around worktree creation.
+cmd_root() {
+  local vault="" proj="" vlevel=0 root rc existed=0 sq="" gitdir name rd=0 wt
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --vault-level) vlevel=1; shift ;;
+      --read) rd=1; shift ;;
+      *) squad_fail 2 "usage: lore root [--vault <dir>] [--project <name>|--vault-level] [--read]" ;;
+    esac
+  done
+  if [ -z "$vault" ]; then
+    squad_resolve || exit 20
+    vault="$VAULT_PATH"
+    [ -n "$proj" ] || proj="${DISPLAY_NAME:-}"
+    # `context: repo`: SQUAD_DIR stays in the repo, whatever the root.
+    case "${SQUAD_DIR:-}" in "$vault"/*|"") ;; *) sq="$SQUAD_DIR" ;; esac
+  elif [ -n "$proj" ] && [ "$vlevel" = 0 ]; then
+    # An explicit --vault/--project (squad_pylib.lore_root) must not lose
+    # `context: repo` either: when the cwd resolves to this same vault and project
+    # and its SQUAD_DIR is outside the vault, that repo SQUAD_DIR is kept.
+    sq="$(root_repo_sq "$vault" "$proj")"
+  fi
+  [ "$vlevel" = 1 ] && { proj="$SQUAD_VAULT_LEVEL"; sq=""; }
+  [ -n "$proj" ] || squad_fail 10 "no project for this root; pass --project <name> or --vault-level"
+  if [ "$rd" = 1 ]; then
+    root="$(squad_vault_rroot "$vault" "$proj")"
+    name="projects/$proj"; [ -n "$sq" ] || sq="$root/$name/.squad"
+    squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit ROOT "$root"
+    squad_emit PROJECT_DIR "$root/$name"; squad_emit SQUAD_DIR "$sq"
+    squad_emit STATE_DIR "$root/$name/$(squad_state_name "$vault")"
+    return 0
+  fi
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
+  if [ -n "$gitdir" ]; then
+    squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1 && existed=1
+    LOCK="$gitdir/lore.lock"
+    lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || squad_fail 20 "vault lock busy: $LOCK"
+    trap lock_release EXIT
+  fi
+  root="$(squad_vault_wroot "$vault" "$proj")"; rc=$?
+  [ "$rc" = 10 ] && squad_fail 10 "no write root: vault checkout is not on its default branch and the vault is in direct mode, or no project"
+  [ "$rc" = 0 ] && [ -n "$root" ] || squad_fail 20 "vault worktree failed"
+  name="projects/$proj"
+  [ -n "$sq" ] || sq="$root/$name/.squad"
+  squad_emit OUTCOME "$([ "$existed" = 0 ] && [ "$root" != "$vault" ] && echo applied || echo unchanged)"
+  squad_emit CHANGED "$([ "$existed" = 0 ] && [ "$root" != "$vault" ] && echo yes || echo no)"
+  squad_emit ROOT "$root"
+  squad_emit PROJECT_DIR "$root/$name"
+  squad_emit SQUAD_DIR "$sq"
+  squad_emit STATE_DIR "$root/$name/$(squad_state_name "$vault")"
+}
+
+# commit_locked <vault> <project> <msg> <path>...: the committer internal; the
+# caller holds the lock. Sets COMMIT_OUTCOME=applied|unchanged. 0 ok, 1 failed, 10 refused (direct-mode vault off its default branch).
+COMMIT_OUTCOME=unchanged
+commit_locked() {
+  local vault="$1" proj="$2" msg="$3" pending wt rc=0
+  shift 3
+  COMMIT_OUTCOME=unchanged
+  pending="$(git -C "$vault" status --porcelain -- "$@" 2>/dev/null)"
+  if [ -z "$pending" ]; then
+    # A writer edits its session worktree (squad_vault_wroot, `lore root`), on or off
+    # the default branch: look there when the checkout has nothing pending.
+    while IFS= read -r wt; do
+      [ -n "$wt" ] && pending="$pending$(git -C "$wt" status --porcelain -- "$@" 2>/dev/null)"
+    done < <(squad_vault_wt_existing "$vault" "$proj" 2>/dev/null)
+  fi
+  [ -n "$pending" ] || return 0
+  squad_vault_commit "$vault" "$proj" "$msg" "$@" || { rc=$?; [ "$rc" = 10 ] || rc=1; }
+  [ "$rc" = 0 ] && COMMIT_OUTCOME=applied
+  return "$rc"
+}
+
+# --- event / fold (#423) -----------------------------------------------------
+# Event file `<state>/inbox/<id>.ev`, KEY=value lines: V=1, ID, SOURCE,
+# KIND=log|checkpoint|progress|note, optional KEY, TS, LINE. Written through a
+# dot-prefixed temp file and mv, so a reader never sees a partial event.
+
+EVENT_KINDS="log checkpoint progress note"
+EVENT_USAGE="usage: lore event --project <p> --source <s> --kind log|checkpoint|progress|note --line <text> [--key <k>] [--vault <dir>]"
+
+# one_line <text>: newlines and CRs become spaces.
+one_line() { printf '%s' "$1" | tr '\n\r' '  '; }
+
+# ev_field <file> <KEY>: first value of KEY (no sourcing, no eval).
+ev_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1; }
+
+# fine_stamp <file>: <epoch seconds><9 digit fraction> from the file's mtime, so
+# events written in the same second still sort in write order (seconds when the
+# platform has no sub-second stat).
+fine_stamp() {
+  local m s f
+  m="$(stat -c %.9Y "$1" 2>/dev/null)"
+  case "$m" in [0-9]*.[0-9]*) ;; *) m="$(stat -f %Fm "$1" 2>/dev/null)" ;; esac
+  case "$m" in
+    [0-9]*.[0-9]*) s="${m%%.*}"; f="${m#*.}" ;;
+    *) s="$(date +%s)"; f="" ;;
+  esac
+  f="${f}000000000"
+  printf '%s%s' "$s" "${f:0:9}"
+}
+
+# ensure_exclude <vault> <state-name>: local-only state stays out of git (squad_vault_excludes).
+ensure_exclude() { squad_vault_excludes "$1" "$2"; }
+
+cmd_event() {
+  local vault="" proj="" source="" kind="" line="" key="" sn inbox tmp stamp id
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      --source)  source="${2:-}"; shift 2 || break ;;
+      --kind)    kind="${2:-}"; shift 2 || break ;;
+      --line)    line="${2:-}"; shift 2 || break ;;
+      --key)     key="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "$EVENT_USAGE" ;;
+    esac
+  done
+  source="$(one_line "$source")"; line="$(one_line "$line")"; key="$(one_line "$key")"
+  [ -n "$proj" ] || { [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] && squad_fail 10 "no project mapped for ${PROJECT_ROOT:-$PWD}; run /seed or /lore start"; }
+  [ -n "$proj" ] && [ -n "$source" ] && [ -n "$kind" ] && [ -n "$line" ] || squad_fail 2 "$EVENT_USAGE"
+  case "$proj" in */*|.*) squad_fail 2 "invalid project name: $proj" ;; esac
+  case " $EVENT_KINDS " in *" $kind "*) ;; *) squad_fail 2 "unknown kind '$kind' (log|checkpoint|progress|note)" ;; esac
+  [ -n "$vault" ] || vault="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+  [ -d "$vault/projects/$proj" ] || squad_fail 10 "no vault or unmapped project: $proj (nothing written)"
+  sn="$(squad_state_name "$vault")"; [ -n "$sn" ] || squad_fail 20 "cannot resolve the state directory name"
+  inbox="$vault/projects/$proj/$sn/inbox"
+  mkdir -p "$inbox" 2>/dev/null || squad_fail 20 "cannot create $inbox"
+  ensure_exclude "$vault" "$sn"
+  tmp="$inbox/.tmp-$$-$RANDOM"
+  : > "$tmp" 2>/dev/null || squad_fail 20 "cannot write in $inbox"
+  stamp="$(fine_stamp "$tmp")"
+  id="$stamp-$$-$RANDOM"
+  {
+    printf 'V=1\nID=%s\nSOURCE=%s\nKIND=%s\n' "$id" "$source" "$kind"
+    [ -n "$key" ] && printf 'KEY=%s\n' "$key"
+    printf 'TS=%s\nLINE=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line"
+  } > "$tmp" 2>/dev/null && mv "$tmp" "$inbox/$id.ev" 2>/dev/null || { rm -f "$tmp"; squad_fail 20 "cannot write the event in $inbox"; }
+  squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ID "$id"
+}
+
+# section_body <file> <heading>: the lines under "## heading" up to the next "## ".
+section_body() {
+  awk -v h="$2" '$0 == h { f = 1; next } /^## / { f = 0 } f' "$1" 2>/dev/null
+}
+
+# section_set <file> <heading> <bodyfile>: file with the section body replaced
+# (created before "## Context refs" when missing, else appended).
+section_set() {
+  awk -v h="$2" -v bf="$3" '
+    function emit(   l) { print h; while ((getline l < bf) > 0) print l; close(bf) }
+    $0 == h { emit(); skip = 1; found = 1; next }
+    /^## / { if (skip) { print ""; skip = 0 }
+             if (!found && index($0, "## Context refs") == 1) { emit(); print ""; found = 1 } }
+    skip { next }
+    { print }
+    END { if (!found) { print ""; emit() } }' "$1"
+}
+
+QUARANTINED=0
+quarantine() {  # quarantine <file> <inbox> <reason>
+  mkdir -p "$2/quarantine" 2>/dev/null
+  local n="${1##*/}"
+  mv "$1" "$2/quarantine/$n" 2>/dev/null && printf '%s\n' "$3" > "$2/quarantine/$n.why"
+  QUARANTINED=$((QUARANTINED + 1))
+}
+
+# append_line <file> <line>: append.
+append_line() {
+  printf '%s\n' "$2" >> "$1"
+}
+
+# set_section_lines <status> <heading> <bodyfile>
+set_section_lines() {
+  section_set "$1" "$2" "$3" > "$1.new.$$" && mv "$1.new.$$" "$1"
+}
+
+apply_checkpoint() {  # apply_checkpoint <status> <line>
+  local body="$1.body.$$"
+  [ -f "$1" ] || printf '# Status\n\n## Last checkpoint\n' > "$1"
+  { section_body "$1" "## Last checkpoint" | grep '^\['; printf '%s\n' "$2"; } \
+    | sort -r | awk '!seen[$0]++' | head -n 3 > "$body"
+  set_section_lines "$1" "## Last checkpoint" "$body"
+  rm -f "$body"
+}
+
+apply_note() {  # apply_note <status> <source> <key> <line>
+  local body="$1.body.$$" rendered
+  [ -f "$1" ] || printf '# Status\n' > "$1"
+  if [ -n "$3" ]; then rendered="[$2] $3: $4"; else rendered="[$2] $4"; fi
+  { section_body "$1" "## Other sources" | grep -v '^$'; printf '%s\n' "$rendered"; } \
+    | NOTE_SRC="[$2] " NOTE_KEY="${3:+[$2] $3: }" NOTE_MAX=10 awk '
+        BEGIN { src = ENVIRON["NOTE_SRC"]; key = ENVIRON["NOTE_KEY"] }
+        { line[NR] = $0 }
+        END {
+          last = NR
+          for (i = 1; i <= NR; i++) {   # a keyed line is replaced by the newer one
+            if (key != "" && i < last && index(line[i], key) == 1) drop[i] = 1
+          }
+          for (i = NR; i >= 1; i--) if (!drop[i] && index(line[i], src) == 1) {
+            if (++n > ENVIRON["NOTE_MAX"] + 0) drop[i] = 1
+          }
+          for (i = 1; i <= NR; i++) if (!drop[i]) print line[i]
+        }' > "$body"
+  set_section_lines "$1" "## Other sources" "$body"
+  rm -f "$body"
+}
+
+# commit_in_wt <worktree> <msg> <path>...: commit already-written paths inside the
+# session worktree (PR mode, #424); the caller holds the lock. Sets COMMIT_OUTCOME.
+commit_in_wt() {
+  local wt="$1" msg="$2" id=""
+  shift 2
+  COMMIT_OUTCOME=unchanged
+  [ -n "$(git -C "$wt" status --porcelain -- "$@" 2>/dev/null)" ] || return 0
+  git -C "$wt" add -- "$@" >/dev/null 2>&1
+  git -C "$wt" config user.name >/dev/null 2>&1 || id="$id -c user.name=lore"
+  git -C "$wt" config user.email >/dev/null 2>&1 || id="$id -c user.email=lore@localhost"
+  # shellcheck disable=SC2086
+  git -C "$wt" $id commit -q -m "$msg" -- "$@" >/dev/null 2>&1 || return 1
+  COMMIT_OUTCOME=applied
+}
+
+FOLD_APPLIED=0
+FOLD_COMMITS=0
+FOLD_REDACTED=0
+FOLD_CAPPED=0
+
+# --- redaction and caps (#425): the committer is the one choke point ----------
+LINE_MAX=300          # characters of one event line kept
+SOURCE_CAP=20         # events per SOURCE kept (the newest) in one fold
+REDACT_MARK="[REDACTED]"
+TRUNC_MARK="[truncated]"
+REDACT_FILE="$HOOK_DIR/lore-redact.patterns"
+
+# redact_line <text> <local-names>: text with local-only project names replaced
+# by `local` and secret-pattern matches masked, then capped at LINE_MAX
+# characters. The result is in REDACTED_OUT and the match count added to
+# FOLD_REDACTED (no subshell, so the counter survives).
+REDACTED_OUT=""
+redact_line() {
+  local text="$1" names="$2" n pat cnt d
+  d="$(printf '\001')"
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    text="${text//"$n"/local}"
+  done <<EOF3
+$names
+EOF3
+  if [ -f "$REDACT_FILE" ]; then
+    while IFS= read -r pat; do
+      case "$pat" in ''|'#'*) continue ;; esac
+      cnt="$(printf '%s\n' "$text" | grep -oE -- "$pat" 2>/dev/null | wc -l | tr -d ' ')"
+      [ "${cnt:-0}" -gt 0 ] || continue
+      text="$(printf '%s' "$text" | sed -E "s${d}${pat}${d}${REDACT_MARK}${d}g")"
+      FOLD_REDACTED=$((FOLD_REDACTED + cnt))
+    done < "$REDACT_FILE"
+  fi
+  if [ "${#text}" -gt "$LINE_MAX" ]; then
+    text="${text:0:$((LINE_MAX - ${#TRUNC_MARK}))}$TRUNC_MARK"
+  fi
+  REDACTED_OUT="$text"
+}
+
+# local_names <vault>: names of the vault's local-only projects, one per line.
+local_names() {
+  local all shared
+  all="$(for d in "$1"/projects/*/; do [ -d "$d" ] || continue; d="${d%/}"; printf '%s\n' "${d##*/}"; done)"
+  [ -n "$all" ] || return 0
+  shared="$(printf '%s\n' "$all" | squad_shared_projects "$1")"
+  printf '%s\n' "$all" | grep -vxF -- "$shared"
+  return 0
+}
+
+# cap_events <event-list>: sets CAPPED_OUT to the list without the events beyond SOURCE_CAP
+# per SOURCE (the oldest drop; files removed, FOLD_CAPPED counts them).
+CAPPED_OUT=""
+cap_events() {
+  local f dropped
+  dropped="$(printf '%s\n' "$1" | awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' \
+    | while IFS= read -r f; do [ -n "$f" ] && printf '%s\t%s\n' "$(ev_field "$f" SOURCE)" "$f"; done \
+    | awk -F'\t' -v cap="$SOURCE_CAP" '++c[$1] > cap { print $2 }')"
+  CAPPED_OUT="$1"
+  [ -n "$dropped" ] || return 0
+  while IFS= read -r f; do rm -f "$f"; FOLD_CAPPED=$((FOLD_CAPPED + 1)); done <<EOF3
+$dropped
+EOF3
+  CAPPED_OUT="$(printf '%s\n' "$1" | grep -vxF -- "$dropped")"
+  return 0
+}
+
+# inbox_has_work <inbox>: 0 when the inbox holds an event or a claimed batch to adopt.
+inbox_has_work() {
+  local f
+  for f in "$1"/*.ev "$1"/.claimed-*; do [ -e "$f" ] && return 0; done
+  return 1
+}
+
+# fold_project <vault> <project> <state-name> <lock>: claim, lock, apply, commit.
+# 0 done, 1 failed (claimed events stay in .claimed-<pid>/ for the next fold).
+fold_project() {
+  local vault="$1" proj="$2" sn="$3" lock="$4"
+  local state inbox claimed f d pid evs rev seen skip
+  local kind source key line ts status paths rel msg eid ledger applied_n=0 root="$vault" prmode=0 lnames
+  inbox="$vault/projects/$proj/$sn/inbox"; claimed="$inbox/.claimed-$$"
+  # PR-mode vault: working state and events are applied in this project's session
+  # worktree, whatever branch the checkout sits on. Any other mode: nothing is applied
+  # while the checkout is off its default branch (another session's); events wait.
+  if ! squad_local_only "$vault" "$proj" && squad_vault_pr_mode_any "$vault"; then
+    # A session worktree only when there is something to write (#444): events waiting
+    # in the inbox, or a worktree of today that already exists (its uncommitted state
+    # is snapshotted). Otherwise nothing is created and nothing is folded.
+    if ! inbox_has_work "$inbox" && ! squad_vault_wt_existing "$vault" "$proj" >/dev/null 2>&1; then
+      return 0
+    fi
+    root="$(squad_vault_wt "$vault" "$proj")" || { echo "lore: vault worktree failed" >&2; return 1; }
+    prmode=1
+  elif squad_vault_offdefault "$vault"; then
+    echo "lore: vault checkout is not on its default branch; $proj left unfolded" >&2
+    return 0
+  fi
+  state="$root/projects/$proj/$sn"
+  status="$root/projects/$proj/status.md"
+  [ -d "$inbox" ] && ensure_exclude "$vault" "$sn"
+  if [ -d "$inbox" ]; then
+    for f in "$inbox"/*.ev; do
+      [ -f "$f" ] || continue
+      mkdir -p "$claimed" 2>/dev/null || return 1
+      mv "$f" "$claimed/" 2>/dev/null
+    done
+    # A dead folder's claim is adopted by one rename: of several folds only one wins.
+    for d in "$inbox"/.claimed-*; do
+      [ -d "$d" ] || continue
+      pid="${d##*.claimed-}"
+      [ "$pid" = "$$" ] && continue
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      kill -0 "$pid" 2>/dev/null && continue
+      mkdir -p "$claimed" 2>/dev/null || return 1
+      mv "$d" "$claimed/adopt-$pid" 2>/dev/null
+    done
+  fi
+  LOCK="$lock"
+  lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "lore: vault lock busy: $LOCK" >&2; return 1; }
+  mkdir -p "$state" 2>/dev/null
+  evs=""; ledgers="$claimed.ledgers"
+  if [ -d "$claimed" ]; then
+    find "$claimed" -type f -name applied -exec cat {} + > "$ledgers" 2>/dev/null
+    evs="$(find "$claimed" -type f -name '*.ev' 2>/dev/null | awk -F/ '{ print $NF "\t" $0 }' | sort | cut -f2-)"
+  fi
+  [ -n "$evs" ] && { cap_events "$evs"; evs="$CAPPED_OUT"; }
+  lnames="$(local_names "$vault")"
+  # Same SOURCE+KIND+KEY inside one batch: only the newest applies.
+  skip=""; seen=""
+  rev="$(printf '%s\n' "$evs" | awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }')"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    key="$(ev_field "$f" KEY)"; [ -n "$key" ] || continue
+    d="$(ev_field "$f" KIND)|$(ev_field "$f" SOURCE)|$key"
+    if printf '%s\n' "$seen" | grep -qxF -- "$d"; then
+      skip="$skip
+$f"
+    else
+      seen="$seen
+$d"
+    fi
+  done <<EOF2
+$rev
+EOF2
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if printf '%s\n' "$skip" | grep -qxF -- "$f"; then rm -f "$f"; FOLD_APPLIED=$((FOLD_APPLIED + 1)); continue; fi
+    kind="$(ev_field "$f" KIND)"; source="$(ev_field "$f" SOURCE)"; key="$(ev_field "$f" KEY)"
+    line="$(ev_field "$f" LINE)"; ts="$(ev_field "$f" TS)"
+    # Crash recovery goes by event ID: an event whose effect was recorded in an
+    # `applied` ledger (written right after the effect) is not applied again.
+    eid="$(ev_field "$f" ID)"
+    if [ -n "$eid" ] && [ -f "$ledgers" ] && grep -qxF -- "$eid" "$ledgers"; then rm -f "$f"; continue; fi
+    if [ "$(ev_field "$f" V)" != 1 ]; then quarantine "$f" "$inbox" "unsupported or missing V"; continue; fi
+    if [ -z "$source" ] || [ -z "$line" ]; then quarantine "$f" "$inbox" "missing SOURCE or LINE"; continue; fi
+    [ -n "$ts" ] || ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    redact_line "$line" "$lnames"; line="$REDACTED_OUT"
+    redact_line "$key" "$lnames"; key="$REDACTED_OUT"
+    case "$kind" in
+      log)        append_line "$state/session.log" "[$ts] [$source] $line"  ;;
+      progress)   append_line "$state/progress.txt" "$line"  ;;
+      checkpoint) apply_checkpoint "$status" "[$ts] [$source] $line" ;;
+      note)       apply_note "$status" "$source" "$key" "$line" ;;
+      *) quarantine "$f" "$inbox" "unknown kind: $kind"; continue ;;
+    esac
+    [ -n "$eid" ] && printf '%s\n' "$eid" >> "$claimed/applied"
+    rm -f "$f"
+    FOLD_APPLIED=$((FOLD_APPLIED + 1)); applied_n=$((applied_n + 1))
+    [ -n "${LORE_TEST_DIE_AFTER:-}" ] && [ "$applied_n" -ge "$LORE_TEST_DIE_AFTER" ] && kill -9 $$
+  done <<EOF2
+$evs
+EOF2
+  # Working-state files are snapshotted with the events, in the same commit.
+  paths=""
+  for rel in "projects/$proj/status.md" "projects/$proj/$sn/session.log" "projects/$proj/$sn/progress.txt" \
+             "projects/$proj/$sn/ralph-run.md" "projects/$proj/$sn/cody-checkpoint.env"; do
+    # An ignored path (status.md of a local-only project) would fail the whole `git add`.
+    git -C "$root" check-ignore -q "$rel" 2>/dev/null && continue
+    [ -f "$root/$rel" ] && paths="$paths
+$rel"
+  done
+  msg="[lore] $(squad_public_name "$vault" "$proj") fold $(date '+%Y-%m-%d %H:%M')"
+  local rc=0
+  if [ -n "$paths" ]; then
+    # shellcheck disable=SC2046
+    set -f; IFS='
+'; set -- $paths; unset IFS; set +f
+    if [ "$prmode" = 1 ]; then commit_in_wt "$root" "$msg" "$@" || rc=1
+    else commit_locked "$vault" "$proj" "$msg" "$@" || rc=1; fi
+    [ "$COMMIT_OUTCOME" = applied ] && FOLD_COMMITS=$((FOLD_COMMITS + 1))
+  fi
+  lock_release; MY_OWNER=""
+  [ "$rc" = 0 ] && rm -rf "$claimed"
+  rm -f "$ledgers"
+  return "$rc"
+}
+
+cmd_fold() {
+  local vault="" proj="" gitdir sn d p rc=0 projects
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault)   vault="${2:-}"; shift 2 || break ;;
+      --project) proj="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "usage: lore fold [--project <p>] [--vault <dir>]" ;;
+    esac
+  done
+  [ -n "$vault" ] || vault="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+  [ -d "$vault" ] || squad_fail 10 "no vault: $vault"
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
+  sn="$(squad_state_name "$vault")"; [ -n "$sn" ] || squad_fail 20 "cannot resolve the state directory name"
+  trap lock_release EXIT
+  if [ -n "$proj" ]; then
+    [ -d "$vault/projects/$proj" ] || squad_fail 10 "unmapped project: $proj"
+    projects="$proj"
+  else
+    projects="$(for d in "$vault"/projects/*/; do
+      [ -d "${d}$sn" ] || continue
+      p="${d%/}"; printf '%s\n' "${p##*/}"
+    done)"
+  fi
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    fold_project "$vault" "$p" "$sn" "$gitdir/lore.lock" || rc=20
+  done <<EOF2
+$projects
+EOF2
+  squad_emit OUTCOME "$([ "$FOLD_COMMITS" -gt 0 ] && echo applied || echo unchanged)"
+  squad_emit CHANGED "$([ "$FOLD_COMMITS" -gt 0 ] && echo yes || echo no)"
+  squad_emit APPLIED "$FOLD_APPLIED"; squad_emit QUARANTINED "$QUARANTINED"
+  squad_emit CAPPED "$FOLD_CAPPED"; squad_emit REDACTED "$FOLD_REDACTED"
+  [ "$rc" = 0 ] || echo "lore: fold incomplete; unapplied events stay claimed for the next fold" >&2
+  exit "$rc"
+}
+
+# squad_vault_drop removes a landed session worktree: a local mutation, so it runs
+# under the vault lock (taken and released around that call alone).
+eval "_lore_vault_drop_unlocked() $(declare -f squad_vault_drop | sed '1d')"
+squad_vault_drop() {
+  local rc=0 gitdir
+  gitdir="$(squad_git_common_dir "$1")" || gitdir=""
+  [ -n "$gitdir" ] && LOCK="$gitdir/lore.lock" && lock_acquire "$LOCK" "${LORE_LOCK_WAIT:-60}" || { echo "squad: vault lock busy; $3 not dropped" >&2; return 1; }
+  _lore_vault_drop_unlocked "$@" || rc=$?
+  lock_release; MY_OWNER=""
+  return "$rc"
+}
+
+push_status() {  # push_status <gitdir> <OUTCOME> [reason]
+  local reason
+  reason="$(printf '%s' "${3:-}" | tr '\n\r' '  ' | cut -c1-300)"
+  printf 'AT=%s\nOUTCOME=%s\nREASON=%s\n' "$(date +%s)" "$2" "$reason" > "$1/lore-push-status.$$" \
+    && mv "$1/lore-push-status.$$" "$1/lore-push-status"
+}
+
+cmd_push() {
+  local vault="" gitdir rc=0 errf outcome reason
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault) vault="${2:-}"; shift 2 || break ;;
+      *) squad_fail 2 "usage: lore push [--vault <dir>]" ;;
+    esac
+  done
+  if [ -z "$vault" ]; then squad_resolve || exit 20; vault="$VAULT_PATH"; fi
+  gitdir="$(squad_git_common_dir "$vault")" || gitdir=""
+  [ -n "$gitdir" ] || squad_fail 20 "$vault is not a git repository"
+  errf="$gitdir/lore-push.err.$$"
+  squad_vault_finish "$vault" 2> "$errf" || rc=$?
+  cat "$errf" >&2
+  if [ "$rc" != 0 ]; then
+    reason="$(grep -v '^$' "$errf" | tail -n 1)"
+    rm -f "$errf"
+    push_status "$gitdir" failed "${reason:-push failed}"
+    squad_emit OUTCOME failed; squad_emit CHANGED no
+    exit 20
+  fi
+  rm -f "$errf"
+  if [ "${SQUAD_VAULT_PUSHED:-0}" -gt 0 ]; then outcome=applied; else outcome=unchanged; fi
+  push_status "$gitdir" "$outcome" ""
+  squad_emit OUTCOME "$outcome"; squad_emit CHANGED "$([ "$outcome" = applied ] && echo yes || echo no)"
+}
+
+cmd_map() {
+  local root="" name="" local_flag="" create=no adopt=no resolved cand vault pr_root disp ctx f n old olds stale=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --root) [ $# -ge 2 ] || squad_fail 2 "--root needs a value"; root="$2"; shift 2 ;;
+      --name) [ $# -ge 2 ] || squad_fail 2 "--name needs a value"; name="$2"; shift 2 ;;
+      --local) local_flag="--local"; shift ;;
+      --create-vault) create=yes; shift ;;
+      --adopt) adopt=yes; shift ;;
+      *) squad_fail 2 "usage: lore map [--root <dir>] [--name <n>] [--local] [--create-vault] [--adopt]" ;;
+    esac
+  done
+  [ "$adopt" != yes ] || [ -n "$name" ] || squad_fail 2 "--adopt needs --name"
+  [ -n "$root" ] || root="$PWD"
+  [ -d "$root" ] || squad_fail 2 "root is not a directory: $root"
+  # shellcheck disable=SC2046
+  resolved="$(cd "$root" && bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)" || squad_fail 20 "path resolution failed"
+  vault="$(printf '%s\n' "$resolved" | sed -n 's/^VAULT_PATH=//p')"
+  pr_root="$(printf '%s\n' "$resolved" | sed -n 's/^PROJECT_ROOT=//p')"
+  disp="$(printf '%s\n' "$resolved" | sed -n 's/^DISPLAY_NAME=//p')"
+  [ -n "$vault" ] || squad_fail 20 "no vault path resolved"
+  [ -n "$pr_root" ] || pr_root="$(cd "$root" && pwd -P)"
+  if [ -d "$vault" ] && [ "$(cd "$vault" && pwd -P)" = "$(cd "$pr_root" && pwd -P)" ]; then
+    squad_fail 2 "the vault is not a project: run lore map from a project directory"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    squad_emit NEED jq; squad_fail 10 "jq is required to write the mapping"
+  fi
+  if [ -n "$disp" ] && [ -z "$name" ]; then
+    n="$disp"
+    squad_emit OUTCOME unchanged; squad_emit CHANGED no; squad_emit NAME "$n"
+    if [ "$(jq -r --arg k "$pr_root" '.projects[$k] // empty' "$vault/lore-config.local.json" 2>/dev/null)" = "$n" ]; then
+      squad_emit TARGET local
+    else
+      squad_emit TARGET tracked
+    fi
+    squad_emit ROOT "$pr_root"
+    return 0
+  fi
+  cand="${name:-$(basename "$pr_root")}"
+  ctx=""
+  for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
+    [ -f "$f" ] || continue
+    ctx="$(jq -r --arg k "$pr_root" '.context[$k] // empty' "$f" 2>/dev/null)"
+    [ -n "$ctx" ] && break
+  done
+  if [ -d "$pr_root/.squad" ] && [ "$ctx" != repo ]; then
+    squad_emit NEED migrate; squad_fail 10 "legacy $pr_root/.squad needs migration: run /lore start"
+  fi
+  if [ "$adopt" = yes ] && [ ! -d "$vault/projects/$cand" ]; then
+    squad_fail 2 "nothing to adopt: projects/$cand does not exist"
+  fi
+  if [ ! -d "$vault" ]; then
+    if [ "$create" != yes ]; then
+      squad_emit NEED vault; squad_fail 10 "no vault at $vault; rerun with --create-vault to create it"
+    fi
+    mkdir -p "$vault" || squad_fail 20 "cannot create $vault"
+    git -C "$vault" init -q -b main 2>/dev/null || git -C "$vault" init -q || squad_fail 20 "git init failed in $vault"
+    printf '{\n  "projects": {},\n  "state_dir": ".lore"\n}\n' > "$vault/lore-config.json" || squad_fail 20 "cannot write config"
+    bash "$HOOK_DIR/lore-map.sh" ignore --vault "$vault" >/dev/null || exit $?
+    # A subprocess: cmd_commit holds the lock until this process exits.
+    bash "$HOOK_DIR/lore" commit --vault "$vault" --vault-level --message "[lore] create vault" --paths lore-config.json .gitignore >/dev/null || exit $?
+  fi
+  if [ "$adopt" = yes ]; then
+    [ -d "$vault/projects/$cand" ] || squad_fail 2 "nothing to adopt: $vault/projects/$cand does not exist"
+    # Other roots mapping this name: one that still exists on disk is a live
+    # owner (refuse, NEED=owner); one that is gone is stale (moved checkout) and
+    # is replaced below. Nothing is written until every root has been judged.
+    for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
+      [ -f "$f" ] || continue
+      olds="$(jq -r --arg n "$cand" --arg k "$pr_root" '.projects | to_entries[]? | select(.value == $n and .key != $k) | .key' "$f" 2>/dev/null)"
+      while IFS= read -r old; do
+        [ -n "$old" ] || continue
+        if [ -e "$old" ]; then
+          squad_emit NEED owner; squad_emit OWNER "$old"
+          squad_fail 10 "projects/$cand is still mapped to $old, which exists; nothing adopted (use a new --name or unmap that root)"
+        fi
+        stale="$stale$old
+"
+      done <<STALE_EOF
+$olds
+STALE_EOF
+    done
+    if [ -n "$stale" ]; then
+      while IFS= read -r old; do
+        [ -n "$old" ] || continue
+        for f in "$vault/lore-config.local.json" "$vault/lore-config.json"; do
+          [ -f "$f" ] || continue
+          jq --arg k "$old" 'del(.projects[$k])' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; squad_fail 20 "cannot drop stale mapping from $f"; }
+        done
+      done <<STALE_EOF
+$stale
+STALE_EOF
+    fi
+  elif [ -e "$vault/projects/$cand" ]; then
+    n=2
+    while [ -e "$vault/projects/$cand-$n" ]; do n=$((n + 1)); done
+    squad_emit NEED name; squad_emit SUGGESTED "$cand-$n"
+    squad_fail 10 "a vault project named $cand already exists"
+  fi
+  # lore-map.sh set picks the target, makes a local-only name ignored before the
+  # folder exists, and commits a tracked mapping through `commit`; its exit
+  # (10 refusal, 20 failure) is surfaced as is, never reported as applied.
+  local out rc=0
+  out="$(bash "$HOOK_DIR/lore-map.sh" set --vault "$vault" --root "$pr_root" --name "$cand" $local_flag)" || rc=$?
+  [ "$rc" = 0 ] || exit "$rc"
+  # A stale root dropped from the tracked config must land in a commit even when
+  # the new mapping went to the local file (set only commits its own change).
+  if [ -n "$stale" ] && [ -d "$vault/.git" ] && ! git -C "$vault" diff --quiet -- lore-config.json 2>/dev/null; then
+    bash "$HOOK_DIR/lore" commit --vault "$vault" --project "$cand" --message "[lore] drop stale mapping for $cand" --paths lore-config.json >/dev/null || exit $?
+  fi
+  mkdir -p "$vault/projects/$cand" || squad_fail 20 "cannot create projects/$cand"
+  squad_emit OUTCOME "$(printf '%s\n' "$out" | sed -n 's/^OUTCOME=//p')"
+  squad_emit CHANGED "$(printf '%s\n' "$out" | sed -n 's/^CHANGED=//p')"
+  squad_emit NAME "$cand"
+  squad_emit TARGET "$(printf '%s\n' "$out" | sed -n 's/^TARGET=//p')"
+  squad_emit ROOT "$pr_root"
+  [ -z "$stale" ] || squad_emit REPLACED "$(printf '%s' "$stale" | sed -n '1p')"
+  squad_emit TRACKED_FILES "$(printf '%s\n' "$out" | sed -n 's/^TRACKED_FILES=//p')"
+}
+
+# project [--root <dir>]: read-only lookup of the mapped project (for clients that must never
+# do first contact). Same resolution as `map` (path-resolve.sh), no write, no worktree.
+cmd_project() {
+  local root="" resolved pr_root disp
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --root) [ $# -ge 2 ] || squad_fail 2 "--root needs a value"; root="$2"; shift 2 ;;
+      *) squad_fail 2 "usage: lore project [--root <dir>]" ;;
+    esac
+  done
+  [ -n "$root" ] || root="$PWD"
+  [ -d "$root" ] || squad_fail 2 "root is not a directory: $root"
+  resolved="$(cd "$root" && bash "$HOOK_DIR/path-resolve.sh" 2>/dev/null)" || squad_fail 20 "path resolution failed"
+  pr_root="$(printf '%s\n' "$resolved" | sed -n 's/^PROJECT_ROOT=//p')"
+  disp="$(printf '%s\n' "$resolved" | sed -n 's/^DISPLAY_NAME=//p')"
+  [ -n "$pr_root" ] || pr_root="$(cd "$root" && pwd -P)"
+  if [ -z "$disp" ]; then
+    squad_emit NEED map; squad_fail 10 "no project mapped for $pr_root; run /lore start"
+  fi
+  squad_emit NAME "$disp"; squad_emit ROOT "$pr_root"
+}
+
+cmd_version() {
+  local pj="$HOOK_DIR/../.claude-plugin/plugin.json" v=""
+  [ -f "$pj" ] || pj="$HOOK_DIR/../plugin.json"
+  [ -f "$pj" ] && v="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n 1)"
+  squad_emit OUTCOME unchanged; squad_emit CHANGED no
+  squad_emit VERSION "${v:-unknown}"
+}
+
+VERB="${1:-}"; [ $# -gt 0 ] && shift
+case "$VERB" in
+  commit)  cmd_commit "$@" ;;
+  root)    cmd_root "$@" ;;
+  event)   cmd_event "$@" ;;
+  fold)    cmd_fold "$@" ;;
+  push)    cmd_push "$@" ;;
+  map)     cmd_map "$@" ;;
+  project) cmd_project "$@" ;;
+  version) cmd_version ;;
+  *) squad_fail 2 "usage: lore <commit|root|event|fold|push|map|version> ..." ;;
+esac

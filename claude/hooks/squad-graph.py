@@ -16,19 +16,25 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
       tree, tracked and untracked-not-ignored files). `--level file` (default)
       writes one node per source file; `--level unit` writes unit-to-unit
       edges only, filling the incremental cache. Defaults: root and scout-cache
-      from path-resolve.sh, out <SQUAD_DIR>/graph.json.
+      from path-resolve.sh, out <SQUAD_DIR>/graph.json. graph.json is knowledge
+      (committed with Seed's files), so with no --out it is written under the
+      `lore root` write root: the session worktree in a PR-mode vault, whatever a
+      stale $SQUAD_DIR says; the vault checkout is never touched.
   diff --base <ref> --head <ref> [--root <dir>] [--merge-base <sha>]
        [--out <graph.json>] [--scout <scout-cache.md>] [--cache <file>]
       The structural change between merge-base(base, head) and head, scoped
       to the changed units plus the units that use something they changed.
-      Default out: <SQUAD_DIR>/graph-diff.json.
+      Default out: <tmp>/squad-graph-<project>/graph-diff.json
+      (a throwaway; never inside the session worktree, where it would block
+      the worktree drop).
   check --plan <planned-graph.json> (--diff <graph.json> | --base <ref> --head <ref>)
         [--root <dir>] [--out <drift.json>] [--scout <file>] [--cache <file>]
   check --plan <planned-graph.json> --validate
       Actual versus planned. The actual side is a `diff` graph (given, or
       built from --base/--head). Drift never changes the exit code: 0 with
       DRIFT_COUNT=n, so a caller reports it and asks for a reason, it does not
-      block. Writes <drift.json> (default <SQUAD_DIR>/graph-drift.json).
+      block. Writes <drift.json> (default <tmp>/squad-graph-<project>/graph-drift.json,
+      a throwaway kept out of the session worktree).
       Keys: DRIFT (file), DRIFT_COUNT, DRIFT_UNITS, DRIFT_DEPENDENCIES,
       DRIFT_BOUNDARIES, UNREALIZED, one DRIFT_ITEM=<kind>:<subject> per item.
       `--validate` only checks the plan (exit 10 when malformed) and prints
@@ -45,10 +51,12 @@ Verbs (stdout follows SCRIPT_CONTRACT.md: KEY=value lines only):
       call compares the diff with the branch's earlier events, so an edge
       added by one issue and removed by a later one is recorded twice even
       though the net diff shows neither. Idempotent: the same diff appends
-      nothing. Default timeline: <vault>/projects/<name>/.squad/
+      nothing. Default timeline: <STATE_DIR>/
       graph-timeline.jsonl. Keys: TIMELINE, BRANCH, EVENTS (appended now),
       EVENTS_TOTAL (for the branch), one EVENT=<type>:<subject> per new event.
-  render --graph <graph.json> --out <file.html|file.svg>
+  render [--graph <graph.json>] [--out <file.html|file.svg>]
+      (no --graph: <SQUAD_DIR>/graph.json read from the session worktree when one
+      exists; no --out: <SQUAD_DIR>/graph.html at the write root)
          [--overlay <atlas.json>] [--title <text>]
       Draw the file-level graph grouped by unit (SVG plus a drill-down table).
   render --diff <diff graph.json> --out <file.html> [--remote <git url>]
@@ -133,7 +141,7 @@ by a reader):
 
 Cache: unit-to-unit edges are cached per unit by the git tree id of its
 folder (and a digest of the unit/alias configuration), so a run only reads the
-units that changed since the last one. Default <vault>/projects/<name>/.squad/
+units that changed since the last one. Default <STATE_DIR>/
 graph-cache.json; `--cache ""` turns it off. A cache that cannot be written
 is reported on stderr and the run goes on.
 
@@ -151,6 +159,8 @@ import math
 import os
 import posixpath
 import re
+import tempfile
+import shutil
 import subprocess
 import sys
 from urllib.parse import quote
@@ -213,38 +223,87 @@ def fail(code, reason):
 
 def resolve_paths():
     env = {k: os.environ.get("SQUAD_" + k, "") for k in
-           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "DIR")}
-    if env["PROJECT_ROOT"] and env["DIR"]:
+           ("VAULT_PATH", "PROJECT_ROOT", "DISPLAY_NAME", "DIR", "STATE_DIR")}
+    # The session env predates a session worktree created later (#443), and in a
+    # PR-mode vault SQUAD_DIR then moves into it: re-resolve when the vault has any.
+    sessions = os.path.isdir(os.path.join(env["VAULT_PATH"], ".claude", "worktrees")) if env["VAULT_PATH"] else False
+    if env["PROJECT_ROOT"] and env["DIR"] and env["VAULT_PATH"] and not sessions:
         return env
     try:
         out = subprocess.run(["bash", os.path.join(HERE, "path-resolve.sh")],
                              capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         return env
+    explicit = dict(env)
     for line in out.splitlines():
         if "=" in line:
             k, v = line.split("=", 1)
-            env[k] = v
+            # An env that already named the project keeps what it named; the
+            # re-resolve only fills the gaps (the vault) or follows a session worktree.
+            env[k] = v if (sessions or not explicit.get(k)) else explicit[k]
     if not env.get("DIR") and env.get("VAULT_PATH"):
-        name = env.get("DISPLAY_NAME") or os.path.basename(env.get("PROJECT_ROOT") or "")
-        env["DIR"] = os.path.join(env["VAULT_PATH"], "projects", name, ".squad")
+        env["DIR"] = lib.state_dir(env)
     return env
 
 
 def default_cache(paths):
-    """The vault's run-state folder (never the repo's .squad)."""
-    if not paths.get("VAULT_PATH"):
-        return ""
-    name = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths["VAULT_PATH"], "projects", name, ".squad", "graph-cache.json") if name else ""
+    """The graph cache in the vault's run-state folder (never the repo's). Read from
+    where state is read (the session worktree when one exists); "" with no project,
+    never a bare relative file name."""
+    d = lib.read_state_dir(paths) if paths.get("VAULT_PATH") else ""
+    return os.path.join(d, "graph-cache.json") if d else ""
 
 
 def default_state_file(paths, name):
-    """A file in the vault's run-state folder (never the repo's .squad)."""
-    if not paths.get("VAULT_PATH"):
-        return ""
-    proj = paths.get("DISPLAY_NAME") or os.path.basename(paths.get("PROJECT_ROOT") or "")
-    return os.path.join(paths["VAULT_PATH"], "projects", proj, ".squad", name) if proj else ""
+    """A file in the vault's run-state folder (never the repo's); "" with no project.
+    Read-side path: a writer re-roots it with write_file()."""
+    d = lib.read_state_dir(paths) if paths.get("VAULT_PATH") else ""
+    return os.path.join(d, name) if d else ""
+
+
+def knowledge_dir(paths, write=False):
+    """Where graph.json and the other SQUAD_DIR files live (knowledge, #454: Seed
+    commits graph.json with architecture.md and scout-cache.md, so it follows them).
+    In a PR-mode vault that is the project's session worktree, which a stale
+    $SQUAD_DIR (the session env, or one a caller passed) can predate: ask `lore root`
+    (write=True creates the worktree; otherwise nothing is created). A context: repo
+    project keeps its repo SQUAD_DIR (lore root reports it whatever --vault says), and
+    no worktree is created for it. Falls back
+    to paths["DIR"] when there is no vault/project; "" when there is neither."""
+    rc, kv = lib.lore_root(paths, read=True)
+    vault = os.path.realpath(paths.get("VAULT_PATH") or "")
+    repo = rc == 0 and kv.get("SQUAD_DIR") and not os.path.realpath(kv["SQUAD_DIR"]).startswith(vault + os.sep)
+    if write and not repo:  # only a vault SQUAD_DIR needs (and creates) the worktree
+        rc, kv = lib.lore_root(paths)
+    if rc == 0 and kv.get("SQUAD_DIR"):
+        if write and not repo:
+            paths["WROOT"] = kv.get("ROOT", "")
+        return kv["SQUAD_DIR"]
+    return paths.get("DIR") or ""
+
+
+def scratch_file(paths, name):
+    """A throwaway output (graph-diff.json, graph-drift.json) under $TMPDIR, never in
+    the SQUAD_DIR or the session worktree: an untracked file there makes the
+    non-forced `git worktree remove` of the worktree drop refuse."""
+    d = os.path.join(tempfile.gettempdir(), "squad-graph-%s" % (lib._project(paths) or "project"))
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, name)
+
+
+def write_file(paths, name):
+    """The session-worktree (PR-mode vault) or vault path of state file `name`, for a
+    writer; "" when there is no write root. lore root creates the worktree here."""
+    d = lib.write_state_dir(paths)
+    return os.path.join(d, name) if d else ""
+
+
+def cache_writer(o, paths):
+    """Where the default cache is saved: a session-worktree path in a PR-mode vault
+    (resolved at save time). None for an explicit --cache, which is used as given."""
+    if "cache" in o:
+        return None
+    return lambda: write_file(paths, "graph-cache.json")
 
 
 def read_text(path):
@@ -797,8 +856,11 @@ def scannable(path):
 class Cache(object):
     """Unit-to-unit edges per unit, keyed by the unit folder's git tree id."""
 
-    def __init__(self, path):
+    def __init__(self, path, write_path=None):
+        # write_path: called at save time, so the session worktree is only created
+        # when the cache actually changed (#443).
         self.path, self.hits, self.misses, self.dirty = path or "", 0, 0, False
+        self.write_path = write_path
         self.data = {"v": 1, "units": {}}
         if self.path:
             try:
@@ -827,7 +889,10 @@ class Cache(object):
         if not (self.path and self.dirty):
             return
         try:
-            lib.write_if_changed(self.path, json.dumps(self.data, sort_keys=True))
+            target = (self.write_path() if self.write_path else self.path) or ""
+            if not target:
+                return
+            lib.write_if_changed(target, json.dumps(self.data, sort_keys=True))
         except OSError as e:
             sys.stderr.write("squad-graph: cache not written: %s\n" % e)
 
@@ -967,11 +1032,11 @@ def cmd_extract(argv):
     root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
     if not root or not os.path.isdir(root):
         fail(10, "no root: pass --root or resolve the project")
-    squad_dir = paths.get("DIR") or ""
+    squad_dir = knowledge_dir(paths, write=not o.get("out"))
     out = o.get("out") or (os.path.join(squad_dir, "graph.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
-    scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
+    scout = o.get("scout") or (os.path.join(knowledge_dir(paths), "scout-cache.md") if squad_dir else None)
     ref = o.get("ref")
     if ref:
         git_text(root, ["rev-parse", "--show-prefix"], code=10)
@@ -980,7 +1045,7 @@ def cmd_extract(argv):
     snap = GitSnapshot(root, ref) if ref else TreeSnapshot(root)
     cfg = discover(snap, scout)
     if level == "unit":
-        cache = Cache(o["cache"] if "cache" in o else default_cache(paths))
+        cache = Cache(o["cache"] if "cache" in o else default_cache(paths), cache_writer(o, paths))
         edges = sorted((u, t) for u in cfg.units for t in unit_targets(snap, cfg, u, cache))
         cache.save()
         data = new_doc("extract", "unit", cfg)
@@ -1114,7 +1179,7 @@ def hunk_lines(root, mb, head, bp, hp):
     return old_l, new_l
 
 
-def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None):
+def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None, cache_write=None):
     """-> (doc, stats) for the structural change merge-base(base, head)..head."""
     prefix = git_text(root, ["rev-parse", "--show-prefix"], code=10).strip()
 
@@ -1135,7 +1200,7 @@ def build_diff(root, base, head, merge_base=None, scout=None, cache_path=None):
     outside = max(0, n_all - n_rel)
     sb, sh = GitSnapshot(root, mb), GitSnapshot(root, hsha)
     cfg_b, cfg_h = discover(sb, scout), discover(sh, scout)
-    cache = Cache(cache_path)
+    cache = Cache(cache_path, cache_write)
 
     files_by_unit = {}
     for st, bp, hp in entries:
@@ -1244,13 +1309,13 @@ def cmd_diff(argv):
     root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
     if not root or not os.path.isdir(root):
         fail(10, "no root: pass --root or resolve the project")
-    squad_dir = paths.get("DIR") or ""
-    out = o.get("out") or (os.path.join(squad_dir, "graph-diff.json") if squad_dir else None)
+    squad_dir = knowledge_dir(paths)
+    out = o.get("out") or (scratch_file(paths, "graph-diff.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
-    scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
+    scout = o.get("scout") or (os.path.join(knowledge_dir(paths), "scout-cache.md") if squad_dir else None)
     cache = o["cache"] if "cache" in o else default_cache(paths)
-    doc, st = build_diff(root, o["base"], o["head"], o.get("merge_base"), scout, cache)
+    doc, st = build_diff(root, o["base"], o["head"], o.get("merge_base"), scout, cache, cache_writer(o, paths))
     emit_head("GRAPH", out, write_graph(out, doc))
     emit("BASE", doc["base"])
     emit("HEAD", doc["head"])
@@ -1328,17 +1393,17 @@ def diff_from_opts(o, paths):
     root = os.path.abspath(o.get("root") or paths.get("PROJECT_ROOT") or "")
     if not root or not os.path.isdir(root):
         fail(10, "no root: pass --root or resolve the project")
-    squad_dir = paths.get("DIR") or ""
+    squad_dir = knowledge_dir(paths)
     scout = o.get("scout") or (os.path.join(squad_dir, "scout-cache.md") if squad_dir else None)
     cache = o["cache"] if "cache" in o else default_cache(paths)
-    return build_diff(root, o["base"], o["head"], None, scout, cache)[0]
+    return build_diff(root, o["base"], o["head"], None, scout, cache, cache_writer(o, paths))[0]
 
 
 def cmd_check(argv):
     usage = "usage: check --plan <planned-graph.json> (--diff <graph.json> | --base <ref> --head <ref>) [--out <drift.json>] | check --plan <file> --validate"
     o = parse_opts(argv, ("--plan", "--diff", "--base", "--head", "--root", "--out", "--scout", "--cache"), ("--validate",))
     paths = resolve_paths()
-    squad_dir = paths.get("DIR") or ""
+    squad_dir = knowledge_dir(paths)
     plan_path = o.get("plan") or (os.path.join(squad_dir, "forge", "planned-graph.json") if squad_dir else None)
     if not plan_path:
         fail(2, usage)
@@ -1354,9 +1419,9 @@ def cmd_check(argv):
     if not o.get("diff") and not (o.get("base") and o.get("head")):
         fail(2, usage)
     doc = diff_from_opts(o, paths)
-    out = o.get("out") or (os.path.join(squad_dir, "graph-drift.json") if squad_dir else None)
+    out = o.get("out") or (scratch_file(paths, "graph-drift.json") if squad_dir else None)
     if not out:
-        fail(10, "no --out and no squad dir")
+        fail(10, "no --out and no project mapped; run /seed or /lore start")
     items, unrealized = compute_drift(doc, plan)
     drift = {"version": 1, "kind": "drift", "generated": dt.date.today().isoformat(),
              "head_sha": doc.get("head_sha", ""), "merge_base": doc.get("merge_base", ""),
@@ -1497,12 +1562,24 @@ def cmd_event(argv):
         lines.append(json.dumps(ev, sort_keys=True))
         shown.append("%s:%s" % (kind, subject))
     if lines:
+        if not o.get("timeline"):
+            # Default timeline: append in the session worktree (PR-mode vault) and
+            # commit it; the read copy above only supplied the prior events.
+            wt = write_file(paths, "graph-timeline.jsonl")
+            if not wt:
+                fail(10, "no write root for the timeline (no project, or the vault checkout is off its default branch in direct mode)")
+            if wt != timeline and os.path.exists(timeline) and not os.path.exists(wt):
+                os.makedirs(os.path.dirname(wt), exist_ok=True)
+                shutil.copyfile(timeline, wt)
+            timeline = wt
         try:
             os.makedirs(os.path.dirname(os.path.abspath(timeline)), exist_ok=True)
             with open(timeline, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
         except OSError as e:
             fail(20, "cannot write timeline: %s" % e)
+        if not o.get("timeline") and lib.commit_paths(paths, [timeline], "[graph] timeline events") not in (0,):
+            sys.stderr.write("squad-graph: timeline not committed (lore commit failed); left in %s\n" % timeline)
     emit("OUTCOME", "applied" if lines else "unchanged")
     emit("CHANGED", "yes" if lines else "no")
     emit("TIMELINE", timeline)
@@ -1784,8 +1861,14 @@ def change_graph_fragment(doc, host=None):
 def cmd_render(argv):
     o = parse_opts(argv, ("--graph", "--out", "--overlay", "--title", "--diff", "--remote"))
     graph, out, overlay, title, diff = o.get("graph"), o.get("out"), o.get("overlay"), o.get("title"), o.get("diff")
+    if not graph and not diff:
+        # Same location extract writes (#454): the session worktree's graph.json
+        # before the vault PR merges, the page beside it.
+        graph = os.path.join(knowledge_dir(resolve_paths()), "graph.json")
+        if not out:
+            out = os.path.join(knowledge_dir(resolve_paths(), write=True), "graph.html")
     if not out or bool(graph) == bool(diff):
-        fail(2, "usage: render --graph <graph.json> --out <file> [--overlay <atlas.json>] [--title <text>] | render --diff <graph.json> --out <file.html> [--remote <git url>]")
+        fail(2, "usage: render [--graph <graph.json>] [--out <file>] [--overlay <atlas.json>] [--title <text>] | render --diff <graph.json> --out <file.html> [--remote <git url>]")
     try:
         with open(graph or diff, encoding="utf-8") as f:
             data = json.load(f)

@@ -13,7 +13,7 @@ has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1 (missing [$2] in [$3])" ;; es
 
 export SQUAD_INCIDENTS=off
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{lore-journal-pointer.sh,vault-check.sh,decisions-lint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,lore-journal-pointer.sh,vault-check.sh,decisions-lint.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 JP="$TMPROOT/hooks/lore-journal-pointer.sh"
 VC="$TMPROOT/hooks/vault-check.sh"
 

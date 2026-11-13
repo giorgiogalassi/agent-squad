@@ -5,10 +5,10 @@
 #
 # This is mechanism only, not policy: DISPLAY_NAME is printed empty when
 # no mapping exists (or jq is unavailable to read one). What a caller
-# does about an empty DISPLAY_NAME differs by skill — Seed does first
-# contact itself (names and records the mapping); Forge, Chisel, Archy, and
-# Ralph fall back to the basename of PROJECT_ROOT and continue; Lore
-# handles repair (re-mapping, migration). This script
+# does about an empty DISPLAY_NAME differs by skill — Seed and Lore do
+# first contact through `lore map` (names and records the mapping); Forge,
+# Chisel, Archy, and Ralph fall back to the basename of PROJECT_ROOT and
+# continue; Lore also handles repair (re-mapping, migration). This script
 # does not decide any of that — it only reports what's true right now.
 #
 # PROJECT_ROOT is resolved via `git rev-parse --git-common-dir`, not
@@ -45,7 +45,9 @@
 # lore-config.local.json (untracked, same schema) is read first for both maps.
 # status.md, decisions.md, preferences/, session.log, chisel-config.json,
 # progress.txt and issues/ always stay in the vault regardless.
-# SQUAD_DIR is a path only; callers check that it exists.
+# SQUAD_DIR is a path only; callers check that it exists. With no project (empty
+# DISPLAY_NAME and no PROJECT_ROOT) SQUAD_DIR and STATE_DIR are emitted empty,
+# never with an empty `projects//` segment (#441).
 #
 # TRACKER_MODE is `connected` or `detached`, read from `chisel.mode` in
 # <VAULT>/projects/<name>/.squad/chisel-config.json (always the vault,
@@ -60,7 +62,19 @@
 # where Reven reads the project's issue and PR: that comes from the
 # `## Issue tracker and PR host` section of architecture.md.
 #
-# Output: five KEY=VALUE lines on stdout, always in this order. Read
+# STATE_DIR is the per-project vault state directory:
+# <vault>/projects/<name>/<state_dir>. The directory name comes only from
+# the top-level `state_dir` key of lore-config.local.json / lore-config.json
+# (a single path segment; the local file wins). Key absent: `.squad` when any
+# projects/*/.squad/ already holds a state file (session.log, progress.txt,
+# ralph-run.md, chisel-config.json, inbox/, issues/; existing vaults keep working,
+# nothing moves), else `.lore`. SQUAD_DIR content (architecture.md, forge/, prd/)
+# does not count, so Seed cannot flip the name (#442). No env var or client flag changes the name.
+# STATE_DIR is always in the vault, also for `context: repo` projects.
+# `path-resolve.sh --state-name` prints just the directory name (for scripts
+# that hold a vault and a project name but no project root).
+#
+# Output: six KEY=VALUE lines on stdout, always in this order. Read
 # them with the values a shell or an agent can both parse directly.
 #
 # Ships in the plugin's hooks/ directory; skills and agents call it as
@@ -69,6 +83,38 @@
 # as its first step instead of re-deriving the algorithm inline.
 
 VAULT="${SECOND_BRAIN_PATH:-$HOME/second-brain}"
+
+# state_name: the state directory name for this vault (see STATE_DIR above).
+state_name() {
+  local f v=""
+  for f in "$VAULT/lore-config.local.json" "$VAULT/lore-config.json"; do
+    [ -f "$f" ] || continue
+    if command -v jq >/dev/null 2>&1; then
+      v="$(jq -r '.state_dir // empty | strings' "$f" 2>/dev/null)"
+    else
+      v="$(sed -n 's/.*"state_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -n 1)"
+    fi
+    case "$v" in
+      ""|.|..|*/*) v="" ;;
+      *) printf '%s' "$v"; return 0 ;;
+    esac
+  done
+  # Fallback for vaults without the key: keep `.squad` when it already holds STATE
+  # (#442). Only state files count; project knowledge (architecture.md, forge/, prd/)
+  # lives in SQUAD_DIR, which stays `.squad` by design, so Seed writing it must not
+  # flip the name. Read-only: nothing is pinned or written.
+  for f in "$VAULT"/projects/*/.squad; do
+    [ -d "$f" ] || continue
+    for s in session.log progress.txt ralph-run.md chisel-config.json inbox issues; do
+      if [ -e "$f/$s" ]; then printf '.squad'; return 0; fi
+    done
+  done
+  printf '.lore'
+}
+if [ "${1:-}" = "--state-name" ]; then
+  state_name; echo
+  exit 0
+fi
 
 ROOT=""
 SUPERPROJECT="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
@@ -82,6 +128,15 @@ fi
 if [ -z "$ROOT" ]; then
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 fi
+# Canonical (physical) root: /var vs /private/var and symlinks must match the keys
+# `lore map` writes (#440). A non-git directory has no git root; its physical cwd is
+# only a candidate and becomes PROJECT_ROOT when a config maps it (checked below).
+CAND=""
+if [ -n "$ROOT" ]; then
+  ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P || printf '%s' "$ROOT")"
+else
+  CAND="$(pwd -P 2>/dev/null)"
+fi
 
 # lore-config.local.json (#355) is an optional, untracked file with the same
 # `projects`/`context` schema, for projects whose name must stay out of the
@@ -90,18 +145,80 @@ fi
 DISPLAY=""
 CONFIG="$VAULT/lore-config.json"
 LOCAL_CONFIG="$VAULT/lore-config.local.json"
-# cfg_get <map> <root>: first non-empty value from the local, then the tracked config.
+# Session worktrees (#440): in a PR-mode vault `lore map` commits the mapping on the
+# open session branch (worktree <vault>/.claude/worktrees/lore-*), not in the
+# checkout. SESSION_CONFIGS lists those worktrees' lore-config.json, newest commit
+# first, and is read after the checkout's local and tracked configs. Once the vault PR
+# merges and the worktree is cleaned up, the checkout carries the mapping and this
+# list no longer matters. Read-only: nothing is written or fetched.
+SESSION_CONFIGS=""
+sess_configs() {
+  local wt ts
+  for wt in "$VAULT"/.claude/worktrees/lore-*; do
+    [ -f "$wt/lore-config.json" ] || continue
+    ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null)"
+    printf '%s %s\n' "${ts:-0}" "$wt/lore-config.json"
+  done | sort -k1,1nr -k2 | sed 's/^[0-9]* //'
+}
+# cfg_get <map> <root>: first non-empty value from the local, the tracked, then the
+# session-worktree configs (newest first, one path per line in SESSION_CONFIGS).
 cfg_get() {
   local f v
-  for f in "$LOCAL_CONFIG" "$CONFIG"; do
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     v="$(jq -r --arg k "$2" ".$1[\$k] // empty" "$f" 2>/dev/null)"
     if [ -n "$v" ]; then printf '%s' "$v"; return 0; fi
-  done
+  done <<EOF2
+$LOCAL_CONFIG
+$CONFIG
+$SESSION_CONFIGS
+EOF2
   return 0
 }
-if [ -n "$ROOT" ] && command -v jq >/dev/null 2>&1; then
-  DISPLAY="$(cfg_get projects "$ROOT")"
+# resolve_display <root>: DISPLAY from the checkout configs, then the session worktrees;
+# names a conflict between session branches on stderr.
+resolve_display() {
+  local d f o
+  d="$(cfg_get projects "$1")"
+  if [ -z "$d" ]; then
+    SESSION_CONFIGS="$(sess_configs)"
+    d="$(cfg_get projects "$1")"
+    if [ -n "$d" ]; then
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        o="$(jq -r --arg k "$1" '.projects[$k] // empty' "$f" 2>/dev/null)"
+        [ -n "$o" ] && [ "$o" != "$d" ] \
+          && echo "path-resolve: session branches map $1 to different names ('$d' newest wins, '$o' in $f)" >&2
+      done <<EOF3
+$SESSION_CONFIGS
+EOF3
+    fi
+  fi
+  printf '%s' "$d"
+}
+# sess_squad_dir <name>: <worktree>/projects/<name>/.squad of the newest session
+# worktree (lore-<name>-<date>[-N]) that has it; empty when none. A local-only
+# project's worktrees are named lore-local-*, so they never match.
+sess_squad_dir() {
+  local wt t n d="[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" pub
+  [ -d "$VAULT/.claude/worktrees" ] || return 0
+  pub="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')"
+  # One open branch per project (#443): the same worktree squad_vault_wt picks, i.e.
+  # the newest by date then -N suffix (a project's earlier ones have landed). $d is a glob.
+  for wt in "$VAULT/.claude/worktrees/lore-$pub-"$d "$VAULT/.claude/worktrees/lore-$pub-"$d-[0-9]*; do
+    [ -d "$wt/projects/$1/.squad" ] || continue
+    t="${wt##*/lore-$pub-}"; n="${t:10}"; n="${n#-}"
+    printf '%s %05d %s\n' "${t:0:10}" "${n:-0}" "$wt/projects/$1/.squad"
+  done | sort | tail -n 1 | sed 's/^[^ ]* [^ ]* //'
+}
+if command -v jq >/dev/null 2>&1; then
+  if [ -n "$ROOT" ]; then
+    DISPLAY="$(resolve_display "$ROOT")"
+  elif [ -n "$CAND" ]; then
+    # Non-git directory: it is a project only when a config maps it.
+    DISPLAY="$(resolve_display "$CAND")"
+    [ -n "$DISPLAY" ] && ROOT="$CAND"
+  fi
 fi
 
 CONTEXT=""
@@ -115,15 +232,30 @@ if [ -n "$ROOT" ] && { [ -f "$CONFIG" ] || [ -f "$LOCAL_CONFIG" ]; }; then
   fi
 fi
 NAME="${DISPLAY:-$(basename "$ROOT")}"
-if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
-  SQUAD_DIR="$ROOT/.squad"
-else
-  SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+# No project (empty NAME: a non-git directory no config maps, #441): SQUAD_DIR and
+# STATE_DIR stay empty. A path with an empty `projects//` segment is never built.
+SQUAD_DIR=""; STATE_DIR=""
+if [ -n "$NAME" ]; then
+  if [ "$CONTEXT" = "repo" ] && [ -n "$ROOT" ]; then
+    SQUAD_DIR="$ROOT/.squad"
+  else
+    SQUAD_DIR="$VAULT/projects/$NAME/.squad"
+    # PR-mode vault (#443): Seed/Forge/Archy/Chisel write SQUAD_DIR content into the
+    # project's session worktree (lore root), never the checkout, so until the vault
+    # PR merges the files exist only there. A worktree holds the checkout's committed
+    # files plus those writes, so readers take the newest session worktree's copy
+    # when one has the folder. Read-only: nothing is created here.
+    SESS_SQ="$(sess_squad_dir "$NAME")"
+    [ -n "$SESS_SQ" ] && SQUAD_DIR="$SESS_SQ"
+  fi
+  STATE_DIR="$VAULT/projects/$NAME/$(state_name)"
 fi
 
 TRACKER_MODE="detached"
-CHISEL_CONFIG="$VAULT/projects/$NAME/.squad/chisel-config.json"
-if [ ! -f "$CHISEL_CONFIG" ]; then
+CHISEL_CONFIG="$STATE_DIR/chisel-config.json"
+if [ -z "$STATE_DIR" ]; then
+  : # no project: detached, nothing to report missing
+elif [ ! -f "$CHISEL_CONFIG" ]; then
   echo "path-resolve: $CHISEL_CONFIG not found; TRACKER_MODE=detached" >&2
 elif ! command -v jq >/dev/null 2>&1; then
   echo "path-resolve: jq not found; cannot read chisel.mode, TRACKER_MODE=detached" >&2
@@ -142,3 +274,4 @@ echo "PROJECT_ROOT=$ROOT"
 echo "DISPLAY_NAME=$DISPLAY"
 echo "SQUAD_DIR=$SQUAD_DIR"
 echo "TRACKER_MODE=$TRACKER_MODE"
+echo "STATE_DIR=$STATE_DIR"

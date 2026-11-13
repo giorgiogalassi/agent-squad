@@ -21,43 +21,53 @@ You never write code, plan features, or make architectural decisions.
 1. Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix). Never derive the root from
    `git rev-parse --show-toplevel` (breaks in worktrees; see
    PATH_RESOLUTION.md).
-2. First contact. Seed owns it; Lore owns repair only.
-   - `VAULT_PATH` is not an existing directory → ask
-     `Second-brain vault not found at <path>. Create it? [Y/n]` and wait.
-     Y → create it, then
-     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh ignore --vault "<path>"`
-     (writes the `.gitignore` listing `lore-config.local.json`; exit 0 =
-     done, other = report and stop). n → stop.
-   - `DISPLAY_NAME` non-empty → mapping exists; continue (never overwrite
-     it).
-   - `DISPLAY_NAME` empty → candidate = final component of `PROJECT_ROOT`.
-     `PROJECT_ROOT` equals the vault → stop ("The vault is not a
-     project"); never register it. If `<PROJECT_ROOT>/.squad/` exists and
-     the project is not `context: repo`, tell the user to run `lore start`
-     (setup/repair) to migrate it, then stop; do not migrate here. No
-     `<vault>/projects/<candidate>/` conflict → use `candidate` silently.
-     Conflict → prompt once: "A vault project named `<candidate>` already
-     exists. Display name for this project [`<candidate>-2`]:"; use the
-     answer (default `<candidate>-2`). Create `<vault>/projects/<name>/`
-     and record the mapping with
-     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<PROJECT_ROOT>" --name "<name>"`
-     (add `--local` when the user asked for a local-only project). The script
-     picks `lore-config.local.json` for a local-only project (vault-ignored
-     `projects/<name>/`, #351) or `--local`, else `lore-config.json`, and
-     keeps every other key. Read `OUTCOME`, `TARGET` and `TRACKED_FILES`.
-     Exit 0 = done; 10 = jq missing or the config is not valid JSON, tell
-     the user and stop (never overwrite it); 2 = report the stderr reason
-     and stop; 20 = report the stderr reason and stop.
-     `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
-     the user and never run it; until they do, write nothing else under
-     that project's folder.
-     Then set `DISPLAY_NAME` to the chosen name for step 3 onward.
+2. First contact. Lore owns it; Seed calls it. Run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore map [--name "<name>"] [--local] [--create-vault]`
+   from the project (add `--root "<PROJECT_ROOT>"` outside it). It never
+   prompts and writes nothing when it asks a question. Read `OUTCOME`,
+   `NAME`, `TARGET`, `TRACKED_FILES`, and on exit 10 `NEED`/`SUGGESTED`:
+   - Exit 0: `OUTCOME=applied|unchanged`; an existing mapping is never
+     overwritten. Re-run `path-resolve.sh` and take `DISPLAY_NAME`,
+     `SQUAD_DIR` and `STATE_DIR` from its output (the session env still holds
+     the pre-mapping values). If `SQUAD_DIR` or `STATE_DIR` is still empty,
+     stop: no project mapped, nothing written.
+   - `NEED=vault`: ask `Second-brain vault not found at <path>. Create it?
+     [Y/n]` and wait. Y: rerun with `--create-vault`. n: stop.
+   - `NEED=name`: ask once: "A vault project named `<candidate>` already
+     exists. Display name for this project [`<SUGGESTED>`]:", then rerun
+     with `--name <answer>` (default `SUGGESTED`).
+   - `NEED=migrate`: a legacy `<PROJECT_ROOT>/.squad/` exists; tell the user
+     to run `/lore start` to migrate it, then stop; do not migrate here.
+   - `NEED=jq`: tell the user jq is required and stop.
+   - Exit 10 without `NEED` (the vault checkout is off its default branch,
+     the config is not valid JSON): report the stderr reason and stop; never
+     claim the project was mapped. Exit 2 (the root is the vault: "The vault
+     is not a project") or 20: report the stderr reason and stop.
+   - `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
+     the user and never run it; until they do, write nothing else under that
+     project's folder.
+   - `--local` only when the user asked for a local-only project.
 3. `<project-name>` below = `DISPLAY_NAME`; `.squad/` paths =
-   `<vault>/projects/<project-name>/.squad/`, except `architecture.md`,
+   `STATE_DIR` (`<vault>/projects/<project-name>/<state_dir>/`, from path-resolve.sh), except `architecture.md`,
    `scout-cache.md`, `forge/` and `prd/`, which are under `SQUAD_DIR`
    (the vault path by default; `<PROJECT_ROOT>/.squad` when
    `lore-config.json` sets `context: repo` for this project). Seed is the
-   one skill that creates a missing `SQUAD_DIR`.
+   one skill that creates a missing `SQUAD_DIR`. Never mkdir or write
+   when `SQUAD_DIR` or `STATE_DIR` is empty.
+
+4. Write root. Seed's vault writes never go into the vault checkout. Before
+   the first one (Phase 3) run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root` and
+   read `OUTCOME`, `ROOT`, `PROJECT_DIR`, `SQUAD_DIR`; for the vault-wide files
+   (`INDEX.md`, `preferences/`, `docs/`) run
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --vault-level` and read its
+   `ROOT` (`VROOT` below). Exit 10: print the stderr reason and stop; nothing
+   is written. From here on, "the project's folder" means `PROJECT_DIR`,
+   `SQUAD_DIR` is the one `lore root` printed (the session env's value is
+   stale), and `<vault>/INDEX.md`, `<vault>/preferences/` and `<vault>/docs/`
+   mean the same paths under `VROOT`.  The
+   existence checks of Phases 2 and 6 read these same locations. A
+   `context: repo` project keeps `SQUAD_DIR` in the repo; only its project
+   files and the scaffolding move.
 
 ## Phase 1: read the project
 
@@ -180,7 +190,7 @@ project declares none (then folders):
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py extract
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/squad-graph.py render --graph <SQUAD_DIR>/graph.json --out <SQUAD_DIR>/graph.html   # SQUAD_DIR from lore root
 ```
 
 Read `GRAPH`, `FILES`, `EDGES`, `MODULES`, `CYCLES`, `UNTESTED_MODULES`,
@@ -192,7 +202,9 @@ from `render`.
 | 0 | Continue; mention `CYCLES` and `UNTESTED_MODULES` in the closing summary when above 0. |
 | 10, 20 | Print the stderr reason and continue; the graph is optional. |
 
-`graph.json` is the one import graph of the project (format in the
+`graph.json` is knowledge: it is written under the `lore root` write root (the session
+worktree in a PR-mode vault, whatever `$SQUAD_DIR` the env holds) and committed in the
+Seed commit below. It is the one import graph of the project (format in the
 `squad-graph.py` docstring); `graph.html` is its page. Atlas does not
 read it: it asks `squad-graph.py diff` for the change graph of each
 range. Never write either by hand and never describe the graph in
@@ -212,35 +224,14 @@ Idempotent; lets Forge and Chisel write on first run.
 `<vault>/preferences/`, `<vault>/docs` exist. If
 `<vault>/projects/<project-name>/` is new, create:
 
-`status.md`:
-```markdown
----
-title: <project-name> — Status
-tags: [status, active]
-project: <project-name>
----
-
-# Status — <project-name>
-Last updated: — by —
-
-## Goal
-—
-
-## Done
-—
-
-## Next
-—
-
-## Blocked
-—
-
-## Last checkpoint
-—
-
-## Context refs
-—
+`status.md`: run
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-status-seed.sh --vault <vault> --project <project-name> --goal "<one line>"
 ```
+`<one line>` is the project's purpose in one sentence, from the README and
+`architecture.md` gathered above (omit `--goal` if there is none). The script stamps
+`Last updated: <date time> by seed`, leaves Done/Next `—`, and never overwrites an
+existing status.md (`OUTCOME=unchanged`). Exit 20: report it and stop.
 
 `decisions.md`:
 ```markdown
@@ -413,6 +404,27 @@ What is the next step, and what blocks it?
 Expected:
 ```
 
+## Phase 8: commit (PR-mode vault only)
+
+Only when `ROOT` is not `SQUAD_VAULT_PATH`. Commit the written files through
+lore, paths relative to the root they were written under; list only what
+changed, `<n>` = `DISPLAY_NAME`:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[seed] <n> context" --paths projects/<n>/.squad/architecture.md projects/<n>/.squad/scout-cache.md projects/<n>/.squad/graph.json projects/<n>/.squad/graph.html projects/<n>/status.md projects/<n>/decisions.md projects/<n>/golden.md
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --vault-level --message "[seed] vault scaffolding" --paths INDEX.md preferences/development.md docs
+```
+
+Leave out the paths Seed did not write (a `context: repo` project has no
+`SQUAD_DIR` paths here). Read `OUTCOME`.
+
+| Exit | Action |
+|---|---|
+| 0 | Continue. |
+| 10, 20 | Print the stderr reason; the files stay uncommitted in the session worktree; say so in the summary. |
+
+The vault checkout stays clean; the session branches ride the vault PR.
+
 ## Output
 
 When all phases complete, print this and nothing else (Written list
@@ -443,14 +455,15 @@ reflecting only what actually changed):
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append; create it if
-missing; timestamp via `date "+%Y-%m-%d %H:%M"`) a start line before
-phase 1 and an end line when all phases complete:
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source seed --line "<text>"`;
+the script adds the timestamp and `[seed]`): a start line before phase 1
+and an end line when all phases complete; the lines read:
 
   [YYYY-MM-DD HH:MM] [seed] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [seed] end — context files written
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.
 

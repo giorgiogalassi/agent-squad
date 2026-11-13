@@ -1,0 +1,7 @@
+{
+  "name": "lore-client",
+  "version": "0.1.0",
+  "description": "Example client of the lore write API: writes events through the lore shim only. Not shipped with agent-squad.",
+  "author": { "name": "giorgiogalassi" },
+  "license": "MIT"
+}

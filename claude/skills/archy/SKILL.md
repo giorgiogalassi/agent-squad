@@ -18,7 +18,7 @@ decision points before writing anything.
 ## On start
 
 **Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix).
-All `.squad/` paths below mean `<SQUAD_VAULT_PATH>/projects/<display-name>/.squad/`,
+All `.squad/` paths below mean `$SQUAD_STATE_DIR` (`<SQUAD_VAULT_PATH>/projects/<display-name>/<state_dir>/`; `STATE_DIR` from path-resolve.sh),
 except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
 under `SQUAD_DIR` (vault by default, `<SQUAD_PROJECT_ROOT>/.squad` when the
 project is `context: repo`). If `SQUAD_DIR` does not exist, print
@@ -26,6 +26,17 @@ project is `context: repo`). If `SQUAD_DIR` does not exist, print
 to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files use CWD.
+
+**Write root.** The session's `SQUAD_DIR` predates any session worktree made since
+(by Seed or an earlier skill), so take `SQUAD_DIR` for the existence check and every
+read from `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --read` (never creates anything).
+Files this skill writes under `SQUAD_DIR` go through the write root, never into the
+vault checkout: before the first one run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root`
+and read `OUTCOME`, `ROOT`, `SQUAD_DIR`; write under that `SQUAD_DIR`. When `ROOT` is
+not `SQUAD_VAULT_PATH` (a PR-mode vault) commit what you wrote, once the step that
+wrote it is done, with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[archy] <what>" --paths <path relative to ROOT>...`
+(`projects/<display-name>/.squad/...`; read `OUTCOME`). Exit 10: print the stderr
+reason and stop; nothing is written. A `context: repo` project keeps its `SQUAD_DIR`.
 
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if Forge concluded
@@ -101,6 +112,11 @@ Numbered list. Each criterion independently verifiable.
 ## Data
 Schema changes, new data structures, API contracts. Omit if n/a.
 
+## Premises
+The YAML's `premises`, copied as they are: ID, requirement, status, trigger,
+state at trigger, evidence, decision. Never re-derive or change a status. Omit
+if the YAML has none.
+
 ## Open questions
 Anything unresolved Chisel or Cody should know. Omit if none.
 
@@ -126,13 +142,14 @@ user, post-review.
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source archy --line "<text>"`;
+the script adds the timestamp and `[archy]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [archy] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [archy] end — PRD written
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.
 

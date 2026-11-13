@@ -17,7 +17,7 @@ YAML at the end.
 ## On start
 
 **Path resolution.** Use `$SQUAD_VAULT_PATH`, `$SQUAD_PROJECT_ROOT`, `$SQUAD_DISPLAY_NAME` (empty → basename of `$SQUAD_PROJECT_ROOT`), `$SQUAD_DIR` and `$SQUAD_TRACKER_MODE`, exported by the SessionStart hook (read them with Bash, e.g. `echo "$SQUAD_DIR"`); if `$SQUAD_PROJECT_ROOT` is unset or empty, run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `KEY=value` lines (same keys without the `SQUAD_` prefix).
-All `.squad/` paths below mean `<SQUAD_VAULT_PATH>/projects/<display-name>/.squad/`,
+All `.squad/` paths below mean `$SQUAD_STATE_DIR` (`<SQUAD_VAULT_PATH>/projects/<display-name>/<state_dir>/`; `STATE_DIR` from path-resolve.sh),
 except `architecture.md`, `scout-cache.md`, `forge/` and `prd/`, which live
 under `SQUAD_DIR` (vault by default, `<SQUAD_PROJECT_ROOT>/.squad` when the
 project is `context: repo`). If `SQUAD_DIR` does not exist, print
@@ -25,6 +25,17 @@ project is `context: repo`). If `SQUAD_DIR` does not exist, print
 to the vault. Never derive the project
 root from `git rev-parse --show-toplevel` (breaks in worktrees; see
 PATH_RESOLUTION.md). Source files use CWD.
+
+**Write root.** The session's `SQUAD_DIR` predates any session worktree made since
+(by Seed or an earlier skill), so take `SQUAD_DIR` for the existence check and every
+read from `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root --read` (never creates anything).
+Files this skill writes under `SQUAD_DIR` go through the write root, never into the
+vault checkout: before the first one run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore root`
+and read `OUTCOME`, `ROOT`, `SQUAD_DIR`; write under that `SQUAD_DIR`. When `ROOT` is
+not `SQUAD_VAULT_PATH` (a PR-mode vault) commit what you wrote, once the step that
+wrote it is done, with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore commit --message "[forge] <what>" --paths <path relative to ROOT>...`
+(`projects/<display-name>/.squad/...`; read `OUTCOME`). Exit 10: print the stderr
+reason and stop; nothing is written. A `context: repo` project keeps its `SQUAD_DIR`.
 
 **Scope boundaries.** Never promote to global config uninvited; never
 create `.squad/` state in the workspace (unless `SQUAD_DIR` points there); if a prior phase
@@ -205,6 +216,45 @@ There is no `AskUserQuestion` call here and no reopening of any earlier
 answer — a round-1 decision stands even if the delta check would have
 argued for something else at the time.
 
+## Premise check
+
+A requirement is a claim about the current code: that a capability is absent,
+or that a condition can hold when an event fires. Before the close gate, prove
+it. Skipped for `change_type: docs` and for sessions with no requirement about
+code behaviour.
+
+Give each requirement a premise ID (`P1`, `P2`, ... in the order they appear)
+and a status:
+
+- `gap confirmed`: the code shows the gap.
+- `already covered`: the code already does what the requirement asks.
+- `not verifiable`: you could not settle it from the code you could read.
+
+Read the target repo's own context first (its `CLAUDE.md`, rules and skills):
+lifecycle conventions such as "leaving a section resets it" live there, not in
+the code you would grep first.
+
+Two tiers:
+
+- **New capability** (something that does not exist yet): a light check. Show
+  it is absent: the symbol, route or field is not found. Name what you searched.
+- **Conditional or reactive** (a condition, event or state transition: "if/when
+  X while in state Y, do Z"): a full trace. Record where the trigger fires and
+  the state at that moment, each as `file:line`. The status follows from the
+  trace: the requirement is `already covered` when that state already gets the
+  outcome, or when the condition never holds at the trigger.
+
+A planned graph, or any code graph, may only help you pick which code to read.
+Its presence is never evidence that a premise holds.
+
+**Never apply `already covered` or `not verifiable` silently.** Put each to the
+user with its evidence (`AskUserQuestion`; with the trace it is one question per
+premise, which counts as a root question for the round cap) and let them decide:
+keep the requirement as a safeguard, narrow it, or drop it. Forge never drops or
+reshapes a requirement on its own, since the story owner may still want it. At
+the round cap an unanswered premise stays in `premises` with its status and goes
+to `open_questions` too. `gap confirmed` premises are recorded without asking.
+
 ## Closing the session
 
 Close when all hold:
@@ -213,7 +263,9 @@ Close when all hold:
 2. **A fresh dependency pass comes back empty** — actually re-run steps
    1–2; do not assume. If it surfaces a question, ask the next round
    (cap permitting) and the close waits.
-3. **The opening challenge and delta check have been attempted** (or
+3. **Every premise has a status**, and each `already covered` or `not verifiable`
+   one has been put to the user (or carried to `open_questions` at the cap).
+4. **The opening challenge and delta check have been attempted** (or
    skipped as trivial input / no post-input decisions — see "Trivial-
    input skip" and "Delta check" above), so an agent failure on either
    step never blocks closing.
@@ -282,6 +334,15 @@ affected_modules:
   - ""
 owners:
   - ""
+premises:
+  - id: P1
+    requirement: ""
+    status: gap confirmed | already covered | not verifiable
+    kind: capability | conditional
+    trigger: ""      # conditional only: file:line where the trigger fires
+    state_at_trigger: ""   # conditional only: file:line and the state found there
+    evidence: ""     # capability: what was searched and not found; else the trace
+    decision: ""     # already covered / not verifiable: what the user chose
 open_questions:
   - ""
 notes: ""
@@ -295,6 +356,10 @@ YAML rules: English regardless of conversation language;
 concept (type, map, derivation, wire key) the analysis introduces, so
 Chisel can carry it into the issue's `Owner:` line; no codebase scan,
 omit when none;
+`premises` = one entry per requirement, from the premise check; `trigger` and
+`state_at_trigger` are required for `kind: conditional` and omitted for
+`capability`; omit the whole field for `change_type: docs`. Existing readers
+ignore keys they do not know, so the field is additive;
 `notes` = decisions or assumptions not captured elsewhere; omit empty
 optional fields.
 `planned_graph` = `forge/planned-graph.json` when the planned graph below was
@@ -344,13 +409,14 @@ delete it and omit `planned_graph`.
 
 ## Session log
 
-Append to `.squad/session.log` (read first, append, create if missing;
-timestamps via `date "+%Y-%m-%d %H:%M"`):
+Write the session log through the progress script, never by editing the
+file (`bash ${CLAUDE_PLUGIN_ROOT}/hooks/squad-progress.sh log --source forge --line "<text>"`;
+the script adds the timestamp and `[forge]`); the lines read:
 
   [YYYY-MM-DD HH:MM] [forge] start — branch: <branch>
   [YYYY-MM-DD HH:MM] [forge] end — complexity: <X>, change_type: <Y>, rounds: <N>
 
-`<branch>` is `git branch --show-current` (`detached` if empty). The
+`<branch>` is `git branch --show-current` (`detached` if empty; the log script turns that into `none` when the root is not a git repository). The
 SessionEnd hook closes a start that has no end by matching this branch, so
 keep the `— branch:` field exactly in this form.
 

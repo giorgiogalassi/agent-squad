@@ -23,7 +23,7 @@
 #             record it with `lore decide` first)
 #   obsolete  strike
 #   open      strike and carry the text to status.md `## Next`
-# and commits through squad_vault_commit. Emits OUTCOME= CHANGED= ITEM_LINE=.
+# and commits through lore commit. Emits OUTCOME= CHANGED= ITEM_LINE=.
 # close refuses (exit 10) when the line no longer holds the listed item (hash).
 # Exit: 0 ok, 2 usage, 10 precondition (bad or stale line, missing decision), 20 I/O.
 set -u
@@ -53,7 +53,7 @@ if [ -z "$VAULT" ] || [ -z "$PROJECT" ]; then
   [ -n "$PROJECT" ] || PROJECT="${DISPLAY_NAME:-}"
 fi
 [ -n "$PROJECT" ] || squad_fail 20 "no project name resolved"
-SQ="$VAULT/projects/$PROJECT/.squad"
+SQ="$VAULT/projects/$PROJECT/$(squad_state_name "$VAULT")"
 ISSUES="$SQ/issues"
 PROGRESS="$SQ/progress.txt"
 
@@ -192,7 +192,7 @@ TMP="$F.tmp.$$"
 BA_PRE="$indent" BA_TXT="$text" BA_PTR="$PTR" awk -v n="$LINE" \
   'NR==n { print ENVIRON["BA_PRE"] "~~" ENVIRON["BA_TXT"] "~~" ENVIRON["BA_PTR"]; next } { print }' "$F" > "$TMP" && mv "$TMP" "$F" || { rm -f "$TMP"; squad_fail 20 "cannot write $F"; }
 
-PATHS="projects/$PROJECT/.squad/issues/$(basename "$F")"
+PATHS="projects/$PROJECT/$(squad_state_name "$VAULT")/issues/$(basename "$F")"
 if [ "$AS" = open ]; then
   ST="$VAULT/projects/$PROJECT/status.md"
   item="- $text (from $(basename "$F"))"
@@ -206,6 +206,6 @@ if [ "$AS" = open ]; then
   PATHS="$PATHS projects/$PROJECT/status.md"
 fi
 # shellcheck disable=SC2086
-squad_vault_commit "$VAULT" "$PROJECT" "[lore] $(squad_public_name "$VAULT" "$PROJECT") audit $(date '+%Y-%m-%d %H:%M')" $PATHS
+bash "$HOOK_DIR/lore" commit --vault "$VAULT" --project "$PROJECT" --message "[lore] $(squad_public_name "$VAULT" "$PROJECT") audit $(date '+%Y-%m-%d %H:%M')" --paths $PATHS >/dev/null || squad_commit_fail $?
 squad_emit OUTCOME applied; squad_emit CHANGED yes; squad_emit ITEM_LINE "$LINE"
 exit 0

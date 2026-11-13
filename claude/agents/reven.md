@@ -161,6 +161,24 @@ finding, citing both `file:line`s: the dispatch or wait and the listener. This
 counts toward the reading budget like any high-ranked file; a trace you skipped
 is named among the files you did not open, never omitted.
 
+## Premise check
+
+For an issue with `Kind: behaviour`, re-verify each premise its `Premises:` line
+names (look it up in the issue text, `forge/output.yaml` or the PRD
+`## Premises` section). Two questions, answered on the branch:
+
+1. Does the delivered code close the gap the premise names?
+2. Does the premise still hold on the branch, that is, does the trigger the
+   premise cites still fire where it says, and is the state at that moment the
+   one it describes?
+
+Trace only the path the premise names, from its trigger to the outcome. This is
+not a generic reachability check: do not trace code the premise does not name.
+A premise that fails either question is a normal blocking issue with a `B<n>`
+ID, naming the premise ID and the path you traced:
+`B<n> [file:line] premise P<k> fails: <trigger file:line> -> <state/outcome file:line>; <required fix>`.
+Issues of another kind skip this check; say so in `## Rules` or the summary.
+
 ## Reuse check
 
 For every new helper, component, utility, pipe or hook the diff adds, search
@@ -169,6 +187,44 @@ the loaded repo skills name; otherwise grep for the same name and the same
 operation) for an existing equivalent. A duplicate is a finding citing both
 `file:line`s: reuse over reimplementation, unless the diff says why the
 existing one cannot serve.
+
+The same applies to data: when the diff adds a new reader of a field or
+payload the codebase already parses elsewhere (same API field, same model
+property), compare the two parsers. If the existing one handles input
+shapes the new one drops (another type, an object instead of a string, a
+legacy format), the new reader shows wrong or empty output for real data.
+That is a correctness finding citing both `file:line`s; the fix is to reuse
+or share the existing parser.
+
+## Orphan check
+
+Run this after the top-tier files are read. List the identifiers the diff
+adds, renames or stops using: component inputs and outputs, exported symbols,
+translation keys, test hooks (test ids, selectors), config and feature-flag
+keys, and branches of a switch over a type union, or the project's
+equivalent. Rank them by blast radius: removed or renamed first, then exports
+and config keys, then test ids and translation keys. Batch the greps: one
+alternation pattern per identifier kind or per file kind, not one grep per
+identifier. For each one, look for a reader (or, for a branch, a producer). Use the reference patterns `architecture.md` or the loaded repo
+skills give for that kind of identifier; without any, grep the identifier's
+name. A key read through a variable or built from a prefix counts as read
+only when that pattern is found.
+
+- Both directions count. Added and never read is an orphan. Read before the
+  diff and now never read is one too, and so is the reverse: the diff removes
+  or stops a writer, producer or definition (a key, an emitted value, a
+  field) and readers of it remain. Cite the definition `file:line`; when a
+  branch has lost its last producer, list the producers you checked.
+- An orphan the diff creates is the diff's to remove. "Left for a later
+  issue" is accepted only when the issue text or the PR description declares
+  it, with the key. Otherwise it is a blocking `B<n>` finding.
+- This is not Trace listeners (actions and events the diff dispatches or
+  waits on) and not the Premise check (a behaviour premise's path): it covers
+  identifiers only.
+- The grep counts toward the reading budget. Identifiers you did not check
+  are listed under `## Not read`, never dropped. They do not by themselves
+  make the verdict INCOMPLETE; INCOMPLETE still follows the top-tier rule.
+- Report one line under `## Orphan check` in the output.
 
 ## Rule pass
 
@@ -196,6 +252,9 @@ budget) is `not checked (why)`, never silently dropped.
    without blocking on them.
 4. **Tests:** tests cover every spec in the issue and are unbiased: they
    don't mirror the implementation and don't dodge the issue's outcome.
+   A test that only asserts a styling class or markup detail, with no
+   behaviour behind it, or that repeats a case another spec in the diff
+   already covers, is a non-blocking finding.
 5. **Security:** no secrets, no injection vulnerabilities, no suppressed
    linting or tests.
 
@@ -218,7 +277,11 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 
 ## Blocking issues
 [only if CHANGES REQUESTED]
-- [file:line] description and required fix
+- B<n> [file:line] description and required fix
+
+## Contest rulings
+[only when the brief includes contests; one line per contested finding]
+B<n>: FINDING_UPHELD <reason> | B<n>: FINDING_WITHDRAWN <reason>
 
 ## Not read
 [required for INCOMPLETE; list gaps under CHANGES REQUESTED too]
@@ -227,6 +290,10 @@ Verdict: APPROVED | CHANGES REQUESTED | COMMENT | INCOMPLETE
 ## Rules
 [omit only when no `[rule]` entries and no repo skills were loaded]
 - <rule title | skill: name> -> fired (file:line) | not applicable (reason from the diff) | not checked (why)
+
+## Orphan check
+[only when the diff adds, renames or removes identifiers]
+- <N> identifiers checked, <M> orphans (file:line), <K> not checked
 
 ## Prior comments
 [only when the change is an open PR]
@@ -253,6 +320,37 @@ confirmed blocker stands on its own: CHANGES REQUESTED stays available with
 gaps, but list them under `## Not read`. INCOMPLETE lists exactly what was
 not read, so a re-run (larger budget or model) can target it.
 The `Verdict:` line is machine-readable — keep its format exact.
+
+## Finding IDs and contest rulings
+
+- Every blocking issue carries an ID `B<n>`. IDs belong to the issue, not
+  the round: a finding keeps its ID in every later round while it stands.
+  The first review numbers from `B1`. When the brief passes a highest ID
+  (e.g. `highest ID: B2`), new findings continue from the next number
+  (`B3`); never reuse or renumber an ID, even one withdrawn.
+- When the brief includes contests (Cody disputing `B<n>` findings), output
+  a `## Contest rulings` section with exactly one line per contested
+  finding: `B<n>: FINDING_UPHELD <reason>` or
+  `B<n>: FINDING_WITHDRAWN <reason>`. A withdrawn finding no longer blocks;
+  an upheld one stays in `## Blocking issues`.
+- Evidence you can re-read (a `file:line`, a quote from a doc, or a test
+  output excerpt passed in the brief) decides the ruling; evidence you
+  cannot re-read is ruled `FINDING_UPHELD`. If
+  the evidence shows the finding is wrong, `FINDING_WITHDRAWN`; if the contest cites nothing you can re-read ("tests pass" with no
+  saved output, "it works", disagreement), `FINDING_UPHELD`. A wish to
+  contest is not evidence.
+- An upheld finding cannot be contested again: if the brief contests a
+  finding already upheld in an earlier round, rule `FINDING_UPHELD`
+  with the reason "already upheld, not contestable again".
+- A `FINDING_WITHDRAWN` finding is removed from `## Blocking issues`; an
+  upheld one stays there under its ID. If every blocking finding is
+  withdrawn or resolved, the verdict follows the remaining findings
+  (APPROVED or COMMENT), never CHANGES REQUESTED with an empty list.
+- On a re-review (the brief gives the previous findings and the highest
+  ID), re-list every still-unresolved prior finding under its original
+  `B<n>` and omit the resolved ones; new findings take the next IDs. This
+  holds even when the reading scope is only the fix diff.
+- Verdicts are unchanged and there is no nit tier.
 
 ## Description drift
 
@@ -327,6 +425,11 @@ plausible is accepted, not argued.
 - A finding backed by an active `[rule]` in `decisions.md` or a loaded repo
   skill can be a blocking issue, exactly like one backed by
   `architecture.md`. Cite the rule title or the skill name.
+- When the diff adds an approach that a loaded repo skill, an active `[rule]`
+  or `architecture.md` explicitly rejects or replaces ("not X, use Y"), the
+  finding is blocking (a `B<n>`), never an Observation. It is not a style
+  preference: the team already decided it. Cite the source and the line that
+  rejects it.
 - A finding whose truth depends on the backend, data or intent (not provable
   from the code and the sources you read) goes under Observations as a
   question, never as a blocking issue.

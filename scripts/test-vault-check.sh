@@ -15,7 +15,7 @@ lacks() { case "$3" in *"$2"*) bad "$1 (unexpected [$2] in [$3])" ;; *) ok "$1" 
 export SQUAD_INCIDENTS=off
 export VAULT_CHECK_NOW="2026-10-26 12:00"
 mkdir -p "$TMPROOT/hooks"
-cp "$REPO_ROOT"/claude/hooks/{vault-check.sh,decisions-lint.sh,lore-orient.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
+cp "$REPO_ROOT"/claude/hooks/{lore,vault-check.sh,decisions-lint.sh,lore-orient.sh,path-resolve.sh,squad-incidents.sh,squad-common.sh} "$TMPROOT/hooks/"
 VC="$TMPROOT/hooks/vault-check.sh"
 
 # mkvault <dir>: clean vault with project "clean" (everything consistent).

@@ -1544,6 +1544,114 @@ built, and the net diff hid anything introduced and reverted inside one PR.
 > script; no skill extracts, compares or recomputes the graph, and nothing
 > enforces the plan.
 
+
+### Iteration 43: a client that is not agent-squad proves the write API (#430)
+
+**Problem:** the lore write API (shim, `event`, `fold`, `map`) was built
+and tested only by agent-squad's own callers, so nothing showed that an
+outside plugin could use it from its documented surface alone.
+
+**Change:** `examples/lore-client/` (outside `claude/`, not in the marketplace;
+`claude plugin validate claude` never sees it): a manifest, one agent, a
+SubagentStop hook that filters on its own agent and emits a `checkpoint`
+event, and a skill whose Bash step emits a `note` event. Both go through one
+script that calls only `"${LORE_BIN:-$HOME/.local/share/lore/bin/lore}"`
+(`project` to learn the project name, `event` to write). No `SQUAD_*`, no `.squad`,
+no vault path, no version control; a missing shim is exit 0 and nothing written.
+`scripts/test-lore-client.sh` installs the shim into a temp HOME the way
+SessionStart does, feeds SubagentStop JSON to the hook, runs the skill step,
+folds, and asserts that both lines are in `## Other sources` of `status.md`,
+inside the fenced data block of `squad_fence_render` and of the orientation, and
+still there after a SessionEnd rebuild (stub `claude`; the real binary is never run).
+
+**What worked:** the contract held as written: the shim as the only entry,
+`event` exit codes as the failure signal, `fold` placing client lines under
+"Other sources" and the #426 fence rendering them as data.
+
+**What the API lacked:**
+
+- `event` needs `--project`, and there was no read-only "which project is this
+  directory" verb. The first client version used `lore map` as a lookup, but
+  `map` is a write verb: in an unmapped directory it maps the folder and commits
+  (found in review). Added `lore project [--root <dir>]`: `NAME` and `ROOT`,
+  exit 10 `NEED=map` when unmapped, never writes. The client uses it, and a test
+  shows an unmapped hook or skill step leaves the vault untouched.
+- The shim is installed at `${XDG_DATA_HOME:-$HOME/.local/share}/lore/bin/lore`
+  but the client default is `$HOME/.local/share/...` and the `LORE_BIN` export
+  reaches only the session's Bash calls, not another plugin's hook process. On a
+  host with `XDG_DATA_HOME` set to something else, a client hook silently finds no
+  shim and writes nothing. Either the client convention should honour
+  `XDG_DATA_HOME` or the shim should also be placed at the `$HOME` path.
+
+**Open question, SessionStart under `claude -p`:** not verified, because the
+real binary may not be run here. `claude --help` says only that `--bare`
+"skip[s] hooks (those defined in settings and by installed plugins)", which
+implies hooks, SessionStart among them, run in a plain `-p` session; `--include-hook-events` exists for `--print` and streams "all hook lifecycle events".
+Neither names SessionStart. Until confirmed with
+a live headless run, a headless client must treat the shim as possibly absent
+(which the client already does).
+
+> **Key decision:** a client writes through `event` alone and treats a
+> missing shim as success; the example is a test fixture, never shipped.
+
+### Iteration 44: Chisel runs the reader on drafts before creating issues (#483)
+
+**Problem:** Cody receives one issue and the repo, but Chisel's granularity rule
+("implementation details are Cody's call") said nothing about which decisions
+must be made before the issue exists. Interface-level gaps (a schema, an API
+shape) surfaced mid-implementation as guesses.
+
+**Change (#483, on the #482 `reader` agent):**
+
+- *Rule.* Interface-level decisions are decided in the issue; internal choices
+  stay with Cody. The categories are defined once, in `reader.md`; Chisel refers
+  to them, and lint check 15 fails when Chisel names two of their labels.
+- *Draft, read, then create.* Chisel drafts all issues, runs `reader` once per
+  batch (once per chunk when oversized) before any `gh issue create` or batch-file
+  write, asks the user to decide the blockers once, re-runs the reader once, and
+  creates the issues. Headless runs skip the prompt and the edits. A reader
+  failure creates the issues without the section and prints
+  `readiness check unavailable`.
+- *`## Readiness` is written by a script.* `squad-readiness.sh apply` cuts one
+  issue's block out of the reader output, replaces any earlier `## Readiness`
+  section and marker line (so a re-run never appends), counts open blockers and
+  emits `BLOCKERS`. That is text surgery with edge cases, so it is a tested script,
+  not prose.
+- *Open blockers reuse `blocked`.* Row L10 of `LABEL_STATE_MACHINE.md`: Chisel
+  creates the issue with `state_labels.blocked` plus `Readiness: blocked (<n>)`
+  (connected) or `Blocked: readiness` (detached). Ralph Phase 1 already skips
+  `blocked`, so no new label or gate exists. L10 is applied by Chisel like L5, so
+  check 7 gained a `tested in scripts/<file>` form: the row names its test file
+  and lint fails when that file has no `L10` test.
+
+> **Key decision:** readiness is a draft-time check with one human round, and an
+> unresolved blocker is marked with the existing `blocked` state, not a new one.
+
+---
+
+### Iteration 45: Ralph routes contests and escalations in fix rounds (#486)
+
+**Problem:** Cody could only fix or give up; a finding it believed wrong either
+cost a wasted fix round or an unrecorded refusal, and nothing bounded disputes.
+
+**Change (#486, on the #485 typed responses):**
+
+- *Parse, then route.* After each fix round Ralph runs `squad-fix-parse.sh`.
+  Exit 10 is a stall (2b); any `FIX` keeps the round on the `review_rounds`
+  budget; a round of only `CONTEST`s is outside it and spends the per-issue
+  contest cap of 1 instead, so disputes cannot eat the fix budget.
+- *Reven rules.* Ralph passes the highest finding ID so far and each contest
+  with the evidence Cody saved in `progress.txt`, prints the `## Contest
+  rulings`, and appends each `FINDING_WITHDRAWN`. Any `ESCALATE` pushes the
+  round's fixes, then L9 and the reason; either cap with contests unruled ends
+  at needs-review listing them.
+- *`Contests` column.* `<used>/<upheld ids>` in `ralph-run.md`, written through
+  `squad-progress.sh run-row`, which adds the column to an older 8-column table
+  on first write; readers use header names, so resume of an old run still works.
+
+> **Key decision:** a contest never counts as a fix round; its budget is separate
+> and fixed at one.
+
 ---
 
 ## 3. Final Architecture

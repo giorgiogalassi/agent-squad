@@ -255,6 +255,7 @@ agent-squad/
       reven.md      Claude agent definition for review
       lore.md       Claude agent for second-brain memory
       challenge.md  Stateless agent that stress-tests a proposal or draft
+      reader.md     Stateless read-only agent that judges an issue as Cody receives it
     hooks/
       path-resolve.sh Shared vault/project-root resolution. Required —
                        every skill and agent calls it as step one.
@@ -482,6 +483,11 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
 - Default vault location: `~/second-brain/`
 - Override with the `SECOND_BRAIN_PATH` environment variable:
   `export SECOND_BRAIN_PATH=/path/to/your/vault`
+  A shell `export` does not reach sessions started from the desktop app. To set it
+  permanently, use the `env` key of `~/.claude/settings.json` (all sessions) or of a
+  project's `.claude/settings.local.json` (that project only), with an absolute path
+  (`~` is not expanded):
+  `{ "env": { "SECOND_BRAIN_PATH": "/Users/you/second-brain" } }`
 - `lore-config.json` lives at the vault root (`~/second-brain/lore-config.json`
   by default).
 - `lore-config.local.json` (same schema, untracked, listed in the vault
@@ -494,6 +500,16 @@ On the first `/seed`, Seed creates the vault mapping (and the vault, after askin
   `<project>/.squad/` so it is versioned with the code. `path-resolve.sh`
   reports the choice as `SQUAD_DIR`. Status, decisions, preferences and
   session log stay in the vault. Never both; keep client repos on `vault`.
+- `"vault_main": "local-only"` in `lore-config.json` (also what detection picks
+  when the vault has no `origin`): vault writes commit on the current branch and
+  nothing is pushed, no PR is opened and `gh` is never called; `lore push` reports
+  `OUTCOME=unchanged`. SessionEnd never waits on the network: after the local commit it
+  starts `lore push` detached; the result is in `<vault>/.git/lore-push-status`
+  (`AT`, `OUTCOME=applied|unchanged|failed`, `REASON`). SessionStart shows a failed
+  push and retries it in the background, also when a `lore/*` branch is ahead of its
+  remote tip (a push cut short at SessionEnd); this is also what `/lore recover`
+  relies on, it has no push step of its own. A local-only vault still commits on its
+  default branch only: off it, writes are refused as in any direct-mode vault.
 - Optional `"vault_main": "pr"` in `lore-config.json` (`"direct"` forces
   today's behaviour; absent = detected from a `pre-push` hook that rejects
   `refs/heads/main`): Lore commits its vault writes on `lore/<project>-<date>`,

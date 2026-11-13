@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# Tests `lore push` and the detached SessionEnd push (#427, parent #420), plus
+# the local-only vault mode. Plain bash 3.2; fixture vaults with a bare origin
+# and a recording gh shim; never touches a real remote or vault.
+set -u
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$(dirname "$0")/lib/test-tmp.sh"
+test_tmp_init test-lore-push
+PASS=0; FAIL=0
+ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
+bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
+check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected [$2], got [$3])"; fi; }
+has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1 (missing [$2] in [$3])" ;; esac; }
+
+for _v in $(env | sed -n 's/^\(\(SQUAD\|LORE\)_[A-Z_]*\)=.*/\1/p'); do unset "$_v"; done
+unset SECOND_BRAIN_PATH
+export SQUAD_INCIDENTS=off GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+HOOKS="$TMPROOT/hooks"; mkdir -p "$HOOKS" "$TMPROOT/bin"
+cp "$REPO_ROOT"/claude/hooks/{lore,lore-checkpoint.sh,lore-orient.sh,path-resolve.sh,squad-common.sh,squad-progress.sh,squad-incidents.sh,vault-check.sh,worktree.sh,squad-session.sh} "$HOOKS/" 2>/dev/null
+LORE="$HOOKS/lore"
+cat > "$TMPROOT/bin/gh" <<'EOP'
+#!/usr/bin/env bash
+echo "gh $*" >> "$GH_LOG"
+case "$1 $2" in
+  "pr list") [ -f "$GH_LOG.open" ] && printf '7' ;;
+  "pr create") touch "$GH_LOG.open"; echo "https://example.invalid/pull/7" ;;
+  *) exit 1 ;;
+esac
+EOP
+chmod +x "$TMPROOT/bin/gh"
+printf '#!/bin/sh\ncat >/dev/null\nexit 1\n' > "$TMPROOT/bin/claude"; chmod +x "$TMPROOT/bin/claude"
+export PATH="$TMPROOT/bin:$PATH" GH_LOG="$TMPROOT/gh.log"; : > "$GH_LOG"
+
+# mkvault <name> <config-json|""> <with-origin 1|0>: vault, project checkout mapped to "proj"
+mkvault() {
+  local v="$TMPROOT/$1" p="$TMPROOT/$1-proj"
+  mkdir -p "$p"; git init -q -b main "$p"; echo x > "$p/f"; git -C "$p" add -A; git -C "$p" commit -qm init
+  git init -q -b main "$v"; mkdir -p "$v/projects/proj"
+  printf '# Decisions -- proj\n' > "$v/projects/proj/decisions.md"
+  printf '{"projects":{"%s":"proj"}%s}\n' "$p" "${2:+,$2}" > "$v/lore-config.json"
+  git -C "$v" add -A; git -C "$v" commit -qm init
+  if [ "${3:-1}" = 1 ]; then
+    git init -q --bare -b main "$TMPROOT/$1-origin.git"
+    git -C "$v" remote add origin "$TMPROOT/$1-origin.git"; git -C "$v" push -q -u origin main 2>/dev/null
+    git -C "$v" remote set-head origin main >/dev/null 2>&1
+  fi
+}
+write() {  # write <vault> <file-content-tag>: a committed change through lore commit
+  echo "$2" >> "$1/projects/proj/decisions.md"
+  bash "$LORE" commit --vault "$1" --project proj --message "[lore] $2" --paths projects/proj/decisions.md >/dev/null 2>&1
+}
+remote_has() { git -C "$1" ls-remote "$TMPROOT/$2-origin.git" "refs/heads/$3" 2>/dev/null | wc -l | tr -d ' '; }
+BR="lore/proj-$(date +%Y-%m-%d)"
+
+# 1. lore push in PR mode: pushes, one PR, status applied
+mkvault a '"vault_main":"pr"'; V="$TMPROOT/a"; write "$V" one
+out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; rc=$?
+check "push: exit 0" 0 "$rc"; has "push: applied" "OUTCOME=applied" "$out"
+check "push: branch on remote once" 1 "$(remote_has "$V" a "$BR")"
+check "push: one pr create" 1 "$(grep -c '^gh pr create' "$GH_LOG")"
+st="$(cat "$V/.git/lore-push-status")"
+has "status: OUTCOME=applied" "OUTCOME=applied" "$st"; has "status: AT" "AT=" "$st"
+check "push: lock released" no "$([ -e "$V/.git/lore.lock" ] && echo yes || echo no)"
+out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; has "push again: unchanged" "OUTCOME=unchanged" "$out"
+
+# 2. rejecting remote: failed status, orientation names it
+mkvault b '"vault_main":"pr"'; V="$TMPROOT/b"; P="$TMPROOT/b-proj"
+printf '#!/bin/sh\necho rejected >&2\nexit 1\n' > "$TMPROOT/b-origin.git/hooks/pre-receive"; chmod +x "$TMPROOT/b-origin.git/hooks/pre-receive"
+write "$V" one
+out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; rc=$?
+check "rejected: exit 20" 20 "$rc"; has "rejected: OUTCOME=failed" "OUTCOME=failed" "$out"
+st="$(cat "$V/.git/lore-push-status")"
+has "rejected: status failed" "OUTCOME=failed" "$st"; has "rejected: REASON" "REASON=" "$st"
+o="$(cd "$P" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null 2>/dev/null)"
+has "orient names the failed push" "vault push failed" "$o"
+sleep 1; rm -f "$TMPROOT/b-origin.git/hooks/pre-receive"
+
+# 3. SessionEnd returns fast while a slow push completes afterwards
+mkvault c '"vault_main":"pr"'; V="$TMPROOT/c"; P="$TMPROOT/c-proj"
+printf '#!/bin/sh\nsleep 6\nexit 0\n' > "$TMPROOT/c-origin.git/hooks/pre-receive"; chmod +x "$TMPROOT/c-origin.git/hooks/pre-receive"
+printf -- '---\ntitle: s\n---\n# Status\nLast updated: 2999-01-01 00:00 by x\n\n## Goal\n\n## Last checkpoint\n\n## Context refs\n' > "$V/projects/proj/status.md"
+git -C "$V" add -A; git -C "$V" commit -qm status; git -C "$V" push -q origin main 2>/dev/null
+write "$V" one
+t0="$(date +%s)"
+printf '{"cwd":"%s"}' "$P" | SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-checkpoint.sh" >/dev/null 2>&1
+t1="$(date +%s)"
+[ $((t1 - t0)) -lt 3 ] && ok "SessionEnd returned in under 3 s ($((t1 - t0)) s)" || bad "SessionEnd took $((t1 - t0)) s"
+check "slow push not done at return" 0 "$(remote_has "$V" c "$BR")"
+i=0; while [ "$i" -lt 30 ] && [ "$(remote_has "$V" c "$BR")" = 0 ]; do sleep 1; i=$((i+1)); done
+check "slow push completed afterwards" 1 "$(remote_has "$V" c "$BR")"
+sleep 1
+
+# 4. push killed right after start: SessionStart retries, remote has the branch once
+mkvault d '"vault_main":"pr"'; V="$TMPROOT/d"; P="$TMPROOT/d-proj"
+write "$V" one
+check "ahead branch before retry: not on remote" 0 "$(remote_has "$V" d "$BR")"
+( cd "$P" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 )
+i=0; while [ "$i" -lt 15 ] && [ "$(remote_has "$V" d "$BR")" = 0 ]; do sleep 1; i=$((i+1)); done
+check "SessionStart retried: branch on remote once" 1 "$(remote_has "$V" d "$BR")"
+sleep 1
+( cd "$P" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 2
+check "caught up: still once" 1 "$(remote_has "$V" d "$BR")"
+
+# 5. vault_main local-only: local commit on the default branch, unchanged, gh never called
+mkvault e '"vault_main":"local-only"'; V="$TMPROOT/e"; : > "$GH_LOG"
+write "$V" one
+check "local-only: committed on the default branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
+out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; rc=$?
+check "local-only: exit 0" 0 "$rc"; has "local-only: unchanged" "OUTCOME=unchanged" "$out"
+check "local-only: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+check "local-only: nothing on remote" 0 "$(remote_has "$V" e "$BR")"
+# off the default branch: refused (exit 10), branch untouched
+git -C "$V" switch -qc side; h="$(git -C "$V" rev-parse HEAD)"
+echo two >> "$V/projects/proj/decisions.md"
+bash "$LORE" commit --vault "$V" --project proj --message "[lore] two" --paths projects/proj/decisions.md >/dev/null 2>&1; rc=$?
+check "local-only off default: exit 10" 10 "$rc"; check "local-only off default: no commit" "$h" "$(git -C "$V" rev-parse HEAD)"
+
+# 6. detect: no origin behaves as local-only (still guarded)
+mkvault f "" 0; V="$TMPROOT/f"; : > "$GH_LOG"
+write "$V" one
+check "no origin: committed on the default branch" "[lore] one" "$(git -C "$V" log -1 --format=%s)"
+out="$(bash "$LORE" push --vault "$V" 2>/dev/null)"; has "no origin: unchanged" "OUTCOME=unchanged" "$out"
+check "no origin: no gh call" 0 "$(wc -l < "$GH_LOG" | tr -d ' ')"
+git -C "$V" switch -qc side; h="$(git -C "$V" rev-parse HEAD)"
+echo two >> "$V/projects/proj/decisions.md"
+bash "$LORE" commit --vault "$V" --project proj --message "[lore] two" --paths projects/proj/decisions.md >/dev/null 2>&1; rc=$?
+check "no origin off default: exit 10" 10 "$rc"; check "no origin off default: no commit" "$h" "$(git -C "$V" rev-parse HEAD)"
+
+# 7. push_pending skips what finish skips: a lore branch with no session worktree
+mkvault g '"vault_main":"pr"'; V="$TMPROOT/g"
+git -C "$V" branch lore/orphan-2026-01-01; git -C "$V" checkout -q lore/orphan-2026-01-01; echo z > "$V/z"; git -C "$V" add z; git -C "$V" commit -qm z; git -C "$V" checkout -q main
+( . "$HOOKS/squad-common.sh"; squad_vault_push_pending "$V" ); check "pending: worktree-less lore branch is not pending" 1 "$?"
+
+# 8. No project resolves (#445): the push is vault-wide, so a pending lore/* branch is
+# still pushed (stub lore records the call) and a failed last push is still shown.
+SHOOKS="$TMPROOT/stub-hooks"; mkdir -p "$SHOOKS"; cp "$HOOKS"/* "$SHOOKS/"
+printf '#!/bin/sh\necho "$@" >> "$STUB_LOG"\n' > "$SHOOKS/lore"; chmod +x "$SHOOKS/lore"
+export STUB_LOG="$TMPROOT/stub.log"
+UNM="$TMPROOT/unmapped"; mkdir -p "$UNM"; git init -q -b main "$UNM"; echo x > "$UNM/f"; git -C "$UNM" add -A; git -C "$UNM" commit -qm init
+NOGIT="$TMPROOT/nogit"; mkdir -p "$NOGIT"
+# pending fixture: a lore branch with a session worktree, one commit ahead of origin
+mkvault h '"vault_main":"pr"'; V="$TMPROOT/h"
+git -C "$V" worktree add -q -b "$BR" "$V/.claude/worktrees/lore-proj" main 2>/dev/null
+echo y > "$V/.claude/worktrees/lore-proj/y"; git -C "$V/.claude/worktrees/lore-proj" add y; git -C "$V/.claude/worktrees/lore-proj" commit -qm y
+: > "$STUB_LOG"
+for _r in "$UNM" "$NOGIT"; do
+  printf '{"cwd":"%s"}' "$_r" | SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-checkpoint.sh" >/dev/null 2>&1; sleep 1
+  has "no project ($(basename "$_r")): SessionEnd pushes the vault" "push --vault $V" "$(cat "$STUB_LOG")"
+  : > "$STUB_LOG"
+  ( cd "$_r" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+  has "no project ($(basename "$_r")): SessionStart retries the push" "push --vault $V" "$(cat "$STUB_LOG")"
+  : > "$STUB_LOG"
+done
+printf 'OUTCOME=failed\nREASON=rejected\n' > "$V/.git/lore-push-status"
+o="$(cd "$UNM" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null 2>/dev/null)"; sleep 1
+has "no project: orient prints the failed push" "Last vault push failed: rejected" "$o"
+has "no project: failed-push retry recorded" "push --vault $V" "$(cat "$STUB_LOG")"
+check "no project: no session worktree created" 1 "$(ls -d "$V"/.claude/worktrees/* | wc -l | tr -d ' ')"
+# no pending branch: no push call, nothing injected
+mkvault i '"vault_main":"pr"'; V="$TMPROOT/i"; : > "$STUB_LOG"
+printf '{"cwd":"%s"}' "$UNM" | SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-checkpoint.sh" >/dev/null 2>&1
+o="$(cd "$NOGIT" && SECOND_BRAIN_PATH="$V" bash "$SHOOKS/lore-orient.sh" </dev/null 2>/dev/null)"; sleep 1
+check "no pending: stub never called" 0 "$(wc -l < "$STUB_LOG" | tr -d ' ')"
+check "no pending: orient prints nothing" "{}" "$o"
+
+# 9. No empty session worktree (#444). The caller that made lore/vault-<date>: a PR-mode
+# vault whose commit/fold ran with no project (the removed `vault` default).
+wtn() { git -C "$1" worktree list | wc -l | tr -d ' '; }
+lbr() { git -C "$1" branch --list 'lore/*' | wc -l | tr -d ' '; }
+mkvault j '"vault_main":"pr"'; V="$TMPROOT/j"
+( . "$HOOKS/squad-common.sh"; squad_vault_wt "$V" "" ) >/dev/null 2>&1; check "wt: empty project refused (10)" 10 "$?"
+( . "$HOOKS/squad-common.sh"; squad_vault_wroot "$V" "" ) >/dev/null 2>&1; check "wroot: empty project refused (10)" 10 "$?"
+( . "$HOOKS/squad-common.sh"; squad_vault_wt_existing "$V" "" ) >/dev/null 2>&1; check "wt_existing: empty project: none" 1 "$?"
+echo n >> "$V/projects/proj/decisions.md"
+out="$(env -u DISPLAY_NAME SECOND_BRAIN_PATH="$V" bash "$LORE" commit --vault "$V" --message m --paths projects/proj/decisions.md 2>&1)"; rc=$?
+check "commit without project: exit 10" 10 "$rc"
+has "commit without project: reason" "no project for this commit" "$out"
+check "commit without project: no worktree" 1 "$(wtn "$V")"; check "commit without project: no lore branch" 0 "$(lbr "$V")"
+git -C "$V" checkout -q -- .
+# SessionStart in an unmapped root, then a mapped project with an empty inbox
+UN2="$TMPROOT/unmapped2"; mkdir -p "$UN2"; git init -q -b main "$UN2"; echo x > "$UN2/f"; git -C "$UN2" add -A; git -C "$UN2" commit -qm init
+mkdir -p "$V/projects/proj/.lore/inbox"
+( cd "$UN2" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+check "unmapped SessionStart: one worktree" 1 "$(wtn "$V")"; check "unmapped SessionStart: no lore branch" 0 "$(lbr "$V")"
+SECOND_BRAIN_PATH="$V" bash "$LORE" fold >/dev/null 2>&1; check "fold (all projects), empty inbox: no worktree" 1 "$(wtn "$V")"
+( cd "$TMPROOT/j-proj" && SECOND_BRAIN_PATH="$V" bash "$HOOKS/lore-orient.sh" </dev/null >/dev/null 2>&1 ); sleep 1
+check "mapped SessionStart, nothing pending: one worktree" 1 "$(wtn "$V")"; check "mapped SessionStart: no lore branch" 0 "$(lbr "$V")"
+# with an event waiting the fold does create the project's session worktree
+SECOND_BRAIN_PATH="$V" bash "$LORE" event --project proj --source t --kind log --line hi >/dev/null 2>&1
+SECOND_BRAIN_PATH="$V" bash "$LORE" fold >/dev/null 2>&1
+check "fold with an event: the project's worktree" 1 "$(git -C "$V" branch --list "$BR" | wc -l | tr -d ' ')"
+# vault-level files: explicit, documented branch lore/_vault-<date>
+mkvault k '"vault_main":"pr"'; V="$TMPROOT/k"; echo '# n' >> "$V/.gitignore"
+SECOND_BRAIN_PATH="$V" bash "$LORE" commit --vault "$V" --vault-level --message m --paths .gitignore >/dev/null 2>&1
+check "vault-level commit: lore/_vault-<date>" 1 "$(git -C "$V" branch --list "lore/_vault-$(date +%Y-%m-%d)" | wc -l | tr -d ' ')"
+check "vault-level commit: no lore/vault-* branch" 0 "$(git -C "$V" branch --list 'lore/vault-*' | wc -l | tr -d ' ')"
+
+echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]

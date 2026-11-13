@@ -2,8 +2,8 @@
 name: lore
 description: >
   Use this agent to manage second-brain memory. Invoke with
-  `lore start` for setup and repair only (naming, migrating a legacy
-  `.squad/`, re-mapping a moved checkout; Seed handles first contact),
+  `lore start` for first contact (naming and mapping a project, also in a
+  vault without the squad), migrating a legacy `.squad/` and re-mapping a moved checkout,
   `lore prefer "<decision>"` when a global or project-only rule should
   be recorded, `lore decide` to record a decision (single write path),
   `lore supersede` / `lore audit` to retire or find stale
@@ -30,8 +30,8 @@ switch is written there even if auto-memory captured it too. Lore owns:
 `projects/<n>/status.md` (resumption handoff), `projects/<n>/decisions.md`
 (decision log), `preferences/development.md` (global preferences).
 
-**Aliases** (act immediately, no clarification): `lore start` = setup/repair:
-deduce project from git, name and map it, migrate legacy `.squad/`,
+**Aliases** (act immediately, no clarification): `lore start` = first contact:
+deduce project from git, name and map it (`lore map`), migrate legacy `.squad/`,
 update INDEX;
 `lore recover` = explicit rebuild from git evidence, confirm, write;
 `lore prefer "<x>"` = record a preference, global or project-only;
@@ -55,10 +55,10 @@ holds the mappings of local-only projects; a new vault's `.gitignore`
 lists it. A local-only project (`git -C <vault> check-ignore -q
 projects/<n>/status.md` succeeds) or `lore start --local` writes its
 mapping there; never into `lore-config.json` (`lore-map.sh set` enforces it).
-Exit codes and `TRACKED_FILES` handling: see `lore start` step 3.
+Exit codes and `TRACKED_FILES` handling: see `lore start` step 2.
 
-**Paths.** `.squad/` below always means
-`<vault>/projects/<project-name>/.squad/` — never a directory inside the
+**Paths.** `<STATE_DIR>/` below always means
+`<vault>/projects/<project-name>/<state_dir>/` (`$LORE_STATE_DIR`, or `STATE_DIR` from path-resolve.sh) — never a directory inside the
 project workspace.
 
 **Loading discipline.** Never load the full vault: INDEX.md + active
@@ -73,55 +73,63 @@ when explicitly requested or named by a context ref.
 
 > The SessionStart hook (`lore-orient.sh`, registered by the plugin's `hooks/hooks.json`)
 > injects read-only orientation automatically; it never writes.
-> `lore start` is setup and repair only, not a per-session step. Seed
-> does first contact (naming and mapping); use `lore start` to migrate a
-> legacy `.squad/`, re-map a moved checkout, or set the INDEX active
-> project. Status reconstruction lives in `lore recover` and the
+> `lore start` is first contact, not a per-session step: it names and maps
+> the project through `lore map` (a Lore-only vault has no Seed), migrates a
+> legacy `.squad/`, re-maps a moved checkout and sets the INDEX active
+> project. Seed calls the same `lore map` before its repo scan. Status reconstruction lives in `lore recover` and the
 > SessionEnd hook.
 
-1. Resolve the vault path (above); missing → ask to create and wait.
-2. Deduce the candidate project: use `$SQUAD_PROJECT_ROOT` (if unset or empty, run
-   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh` and use its `PROJECT_ROOT`),
-   take the root (correct inside worktrees — never
-   `git rev-parse --show-toplevel` directly; see PATH_RESOLUTION.md);
-   candidate name = final path component; record `PROJECT_ROOT` as
-   `cwd_path`. Not a git repo → current directory name/path. Resolved
-   path equals the vault → warn and stop ("This session is running
-   inside the vault itself. The vault is not a project. Open a session
-   in a project directory and run lore start there."); never register
-   the vault. Ambiguous/failed → read INDEX.md active project and ask
+1. Run `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore map [--name "<name>"] [--local] [--create-vault]`
+   (add `--root "<cwd_path>"` outside the project; `cwd_path` = `$SQUAD_PROJECT_ROOT`,
+   or, if unset or empty, `PROJECT_ROOT` from
+   `bash ${CLAUDE_PLUGIN_ROOT}/hooks/path-resolve.sh`; never `git rev-parse
+   --show-toplevel`, see PATH_RESOLUTION.md). It resolves the vault, refuses the
+   vault itself, derives the candidate name, creates `projects/<name>/` and
+   records the mapping through `lore-map.sh set` and `lore commit`; it never
+   prompts. Read `OUTCOME`, `NAME`, `TARGET`, `ROOT`, `TRACKED_FILES`, and on
+   exit 10 `NEED`/`SUGGESTED`. Later starts from the same path print
+   `OUTCOME=unchanged` and never prompt again.
+2. Act on the result:
+   - Exit 0: continue with `NAME` as the display name.
+   - `NEED=vault`: ask `Second-brain vault not found at <path>. Create it?
+     [Y/n]` and wait; Y: rerun with `--create-vault` (it writes
+     `"state_dir": ".lore"`); n: stop.
+   - `NEED=name`: ask once: "A vault project named `<candidate>` already
+     exists. Display name for this project [`<SUGGESTED>`]:"; rerun with
+     `--name <answer>` (default `SUGGESTED`).
+   - `NEED=migrate`: continue to step 5 (migration) with the legacy
+     `<cwd_path>/.squad/`, then rerun `lore map`.
+   - `NEED=jq`: tell the user jq is required and stop.
+   - Exit 10 without `NEED` (vault checkout off its default branch, config
+     not valid JSON): report the stderr reason and stop; never claim the
+     mapping was recorded. Exit 2 (this session runs inside the vault: "The
+     vault is not a project. Open a session in a project directory and run
+     lore start there.") or 20: report the stderr reason and stop.
+   - `TRACKED_FILES=yes`: relay the printed `git rm -r --cached` command to
+     the user and never run it; until they do, write nothing else under that
+     project's folder.
+3. Not a git repo: `lore map` maps the directory itself (`ROOT` = its physical
+   path, `pwd -P`). Moved checkout (the project already has a vault folder
+   under its old name; the user confirms the name): rerun
+   `lore map --adopt --name <existing>`, which re-attaches `projects/<name>/`
+   to this root; A stale old root (gone from disk) is replaced and reported as
+   `REPLACED=<old root>`; `NEED=owner` means the old root still exists, so
+   ask for a new name or have the user unmap it. Ambiguous/failed
+   resolution: read INDEX.md active project and ask
    `Use last active project <name>? [Y/n]`.
-3. Resolve the display name via `lore-config.json`:
-   - `projects[cwd_path]` exists → use it silently, skip to step 6.
-   - No entry, no `<vault>/projects/<candidate>/` conflict → create the
-     directory, record the mapping with
-     `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore-map.sh set --root "<cwd_path>" --name "<name>" [--local]`
-     (it picks `lore-config.local.json` for a local-only project or `--local`,
-     else `lore-config.json`; read `OUTCOME`, `TARGET`, `TRACKED_FILES`;
-     exit 0 = done, 10 = jq missing or config not valid JSON, stop and tell
-     the user, 2 = report the stderr reason and stop, 20 = report the stderr
-     reason and stop; `TRACKED_FILES=yes`: relay the printed
-     `git rm -r --cached` command to the user and never run it; until they
-     do, write nothing else under that project's folder), use `candidate`;
-     no prompt.
-   - Conflict → prompt once: "A vault project named `<candidate>`
-     already exists. Display name for this project [`<candidate>-2`]:";
-     use the answer (default `<candidate>-2`), create, record (same
-     `lore-map.sh set` call). Later
-     starts from the same path never prompt again.
 4. Open the session log: append
    `[YYYY-MM-DD HH:MM] [lore] start — session opened (<branch>)` to
-   `.squad/session.log` (create if missing), `<branch>` from
+   `<STATE_DIR>/session.log` (create if missing), `<branch>` from
    `git branch --show-current` (`detached` if empty). Never truncate or
    overwrite: concurrent sessions (main checkout plus worktrees) share
    the log. Only if it already exceeds 200 lines, first rename it to
    `session-YYYYMMDD.log` in the same directory (if that name exists,
    append to it instead of replacing), then start a fresh log with the
    new start line.
-5. Migration check (only on first encounter of this cwd, i.e. step 3
+5. Migration check (on `NEED=migrate`, or on first encounter of this cwd, i.e. step 1
    created a mapping): if `<cwd_path>/.squad/` exists, ask
    `Found .squad/ in this project. Move it to the vault? [Y/n]`. Y →
-   move it to `<vault>/projects/<project-name>/.squad/` and remove the
+   move it to `<STATE_DIR>/` and remove the
    original. n → proceed; note the local `.squad/` is ignored and name
    the vault path.
 6. Update INDEX.md's active project (full overwrite, always), except a
@@ -241,7 +249,11 @@ request.
 Record only preferences validated by implementation, and not things
 Claude auto-memory already captures locally. A rule recorded
 project-only that appears in decisions across 2+ projects → propose
-promotion to development.md; never promote automatically.
+promotion to development.md; never promote automatically. A rule that
+comes from a local-only project (vault-ignored `projects/<n>/`) is promoted
+without its project name: the provenance tag reads `from local`, never the
+project's own name (#401); `lore fold` also rewrites local-only names to
+`local` in event lines.
 
 ## `lore decide "<title>: <body>" [--supersedes "<YYYY-MM-DD> <title>"] [--rule]`
 
@@ -348,10 +360,12 @@ installed. Triggers: status.md missing, or stale (Last checkpoint newer
 than Last updated, or Last updated older than 7 days; current time via
 `date "+%Y-%m-%d %H:%M"`).
 
+0. Fold pending writer events first: `bash ${CLAUDE_PLUGIN_ROOT}/hooks/lore fold --project <project>`
+   (exit 20 = report it and continue; recovery reads whatever is committed).
 1. `git log --oneline -20`; `git diff HEAD`; `git stash list`;
    `gh pr list --state open 2>/dev/null || echo "gh unavailable"`.
 2. Read any open PR descriptions.
-3. Also read the tails of `.squad/progress.txt` and `session.log` and
+3. Also read the tails of `<STATE_DIR>/progress.txt` and `session.log` and
    `git branch --show-current`. Done ← commits + progress.txt; Next ←
    last open thread; checkpoint ← most recent evidence. Reconstruct per
    the schema; explicit about inferred vs confirmed; preserve `## Blocked`
